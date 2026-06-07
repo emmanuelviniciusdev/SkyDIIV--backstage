@@ -1,0 +1,354 @@
+/**
+ * Integration tests for the four workflow steps.
+ *
+ * External boundaries (DB, LLM, weather API, image compositing, R2) are
+ * replaced by in-memory fakes so these tests run without any real network
+ * calls or database connections.
+ * The goal is to verify the end-to-end data flow through all four steps.
+ */
+import { describe, it, expect, vi } from "vitest"
+
+// ---------------------------------------------------------------------------
+// All fixtures and mock objects that need to be referenced inside vi.mock()
+// factories must be created with vi.hoisted() — factories are hoisted to the
+// top of the file before any module-level variable initialisations run.
+// ---------------------------------------------------------------------------
+
+const mocks = vi.hoisted(() => {
+  const USER_ID = "user-integration-test"
+  const WEEK_START = "2026-06-07"
+  const PREFERENCES_ID = "prefs-integration-test"
+
+  // ── Fake DB rows ───────────────────────────────────────────────────────────
+
+  const fakePreferencesRow = {
+    id: PREFERENCES_ID,
+    user_id: USER_ID,
+    location: "Rio de Janeiro, Rio de Janeiro, Brasil",
+    routine_description: "Casual everyday wear, work from home 3 days a week.",
+  }
+
+  const fakeWardrobeRows = [
+    { id: "item-1", title: "White T-Shirt", image_url: "https://r2.example.com/items/item-1.jpg", tags: ["casual", "summer"] },
+    { id: "item-2", title: "Black Jeans", image_url: "https://r2.example.com/items/item-2.jpg", tags: ["casual", "denim"] },
+    { id: "item-3", title: "Blue Sneakers", image_url: null, tags: ["shoes", "casual"] },
+  ]
+
+  const fakeForecast = {
+    location: "Rio de Janeiro, Rio de Janeiro, Brasil",
+    days: Array.from({ length: 7 }, (_, i) => ({
+      date: `2026-06-0${7 + i}`,
+      maxTempC: 28 - i,
+      minTempC: 22 - i,
+      precipitationProbability: i * 10,
+      weatherCode: 0,
+    })),
+  }
+
+  const fakeLlmResponse = JSON.stringify([
+    { weekday: "sunday", clothing_piece_ids: ["item-1", "item-2"] },
+    { weekday: "monday", clothing_piece_ids: ["item-1", "item-3"] },
+    { weekday: "tuesday", clothing_piece_ids: ["item-2", "item-3"] },
+    { weekday: "wednesday", clothing_piece_ids: ["item-1"] },
+    { weekday: "thursday", clothing_piece_ids: ["item-2"] },
+    { weekday: "friday", clothing_piece_ids: ["item-3"] },
+    { weekday: "saturday", clothing_piece_ids: ["item-1", "item-2", "item-3"] },
+  ])
+
+  // ── Fake SQL client ────────────────────────────────────────────────────────
+
+  // Read DB: returns different rows depending on which query was issued.
+  // We use a simple call-counter to cycle through the expected results.
+  let readCallCount = 0
+  const readDb = vi.fn().mockImplementation(() => {
+    readCallCount++
+    if (readCallCount % 2 === 1) {
+      // First call per step pair: preferences
+      return Promise.resolve([fakePreferencesRow])
+    }
+    // Second call: wardrobe
+    return Promise.resolve(fakeWardrobeRows)
+  })
+
+  const txMock = vi.fn().mockResolvedValue([])
+  const writeDb = vi.fn().mockResolvedValue([]) as ReturnType<typeof vi.fn> & {
+    begin: ReturnType<typeof vi.fn>
+  }
+  writeDb.begin = vi.fn().mockImplementation(
+    async (fn: (tx: ReturnType<typeof vi.fn>) => Promise<unknown>) => { return await fn(txMock) },
+  )
+
+  const llmGenerate = vi.fn().mockResolvedValue(fakeLlmResponse)
+
+  const mockCompositeImages = vi.fn().mockResolvedValue(Buffer.from("fake-jpeg"))
+  const mockUploadImageToR2 = vi.fn().mockResolvedValue("https://r2.example.com/outfits/outfit.jpg")
+
+  return {
+    USER_ID,
+    WEEK_START,
+    PREFERENCES_ID,
+    fakeForecast,
+    readDb,
+    writeDb,
+    llmGenerate,
+    mockCompositeImages,
+    mockUploadImageToR2,
+    resetReadCallCount: () => { readCallCount = 0 },
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Module mocks
+// ---------------------------------------------------------------------------
+
+vi.mock("../../src/lib/db/client", () => ({
+  getReadDb: () => mocks.readDb,
+  getWriteDb: () => mocks.writeDb,
+  resetDbClients: vi.fn(),
+}))
+
+vi.mock("../../src/lib/weather/index", () => ({
+  getWeatherProvider: () => ({
+    getForecast: vi.fn().mockResolvedValue(mocks.fakeForecast),
+  }),
+  registerWeatherProvider: vi.fn(),
+}))
+
+vi.mock("../../src/lib/llm/index", () => ({
+  getLlmProvider: () => ({
+    name: "gemini:gemini-2.5-flash",
+    generate: mocks.llmGenerate,
+  }),
+  registerLlmProvider: vi.fn(),
+}))
+
+vi.mock("../../src/lib/image/composite", () => ({
+  compositeImages: (...args: unknown[]) => mocks.mockCompositeImages(...args),
+}))
+
+vi.mock("../../src/lib/storage/r2-client", () => ({
+  uploadImageToR2: (...args: unknown[]) => mocks.mockUploadImageToR2(...args),
+}))
+
+// ---------------------------------------------------------------------------
+// Import steps AFTER mocks are registered
+// ---------------------------------------------------------------------------
+
+import { buildPromptStep } from "../../src/steps/build-prompt"
+import { executePromptStep } from "../../src/steps/execute-prompt"
+import { saveOutfitsStep } from "../../src/steps/save-outfits"
+import { generateImagesStep } from "../../src/steps/generate-images"
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("Step 1 — buildPromptStep()", () => {
+  it("returns the expected shape", async () => {
+    mocks.resetReadCallCount()
+    const result = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
+
+    expect(result.userId).toBe(mocks.USER_ID)
+    expect(result.weeklyOutfitPreferencesId).toBe(mocks.PREFERENCES_ID)
+    expect(result.weekStartDate).toBe(mocks.WEEK_START)
+    expect(typeof result.prompt).toBe("string")
+    expect(result.prompt.length).toBeGreaterThan(100)
+  })
+
+  it("includes wardrobe item IDs in the prompt", async () => {
+    mocks.resetReadCallCount()
+    const result = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
+
+    expect(result.prompt).toContain("ID:item-1")
+    expect(result.prompt).toContain("ID:item-2")
+    expect(result.prompt).toContain("ID:item-3")
+  })
+
+  it("includes the user's routine description in the prompt", async () => {
+    mocks.resetReadCallCount()
+    const result = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
+    expect(result.prompt).toContain("Casual everyday wear")
+  })
+
+  it("includes the weather location in the prompt", async () => {
+    mocks.resetReadCallCount()
+    const result = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
+    expect(result.prompt).toContain("Rio de Janeiro")
+  })
+
+  it("throws when the user has no preferences", async () => {
+    mocks.readDb.mockResolvedValueOnce([])
+
+    await expect(buildPromptStep("unknown-user", mocks.WEEK_START)).rejects.toThrow(
+      "No weekly outfit preferences found",
+    )
+  })
+
+  it("throws when the user has no wardrobe items", async () => {
+    // Preferences found → empty wardrobe
+    mocks.readDb
+      .mockResolvedValueOnce([{
+        id: mocks.PREFERENCES_ID,
+        user_id: mocks.USER_ID,
+        location: "Rio de Janeiro, RJ, Brasil",
+        routine_description: "casual",
+      }])
+      .mockResolvedValueOnce([])
+
+    await expect(buildPromptStep(mocks.USER_ID, mocks.WEEK_START)).rejects.toThrow(
+      "has no wardrobe items",
+    )
+  })
+})
+
+describe("Step 2 — executePromptStep()", () => {
+  it("returns 7 parsed outfit suggestions", async () => {
+    const result = await executePromptStep({ userId: mocks.USER_ID, prompt: "test prompt" })
+    expect(result).toHaveLength(7)
+  })
+
+  it("maps clothing_piece_ids to clothingPieceIds", async () => {
+    const result = await executePromptStep({ userId: mocks.USER_ID, prompt: "test prompt" })
+    expect(result[0].weekday).toBe("sunday")
+    expect(result[0].clothingPieceIds).toEqual(["item-1", "item-2"])
+  })
+
+  it("logs the LLM interaction to the write DB on success", async () => {
+    mocks.writeDb.mockClear()
+    await executePromptStep({ userId: mocks.USER_ID, prompt: "test prompt" })
+
+    // The writeDb should have been called for the INSERT into llm_interactions
+    expect(mocks.writeDb).toHaveBeenCalled()
+    const calls = mocks.writeDb.mock.calls as unknown[][]
+    const insertCall = calls.find((args) => {
+      const firstArg = (args)[0]
+      if (Array.isArray(firstArg)) {
+        return firstArg.some((s: unknown) => typeof s === "string" && /insert into llm_interactions/i.test(s))
+      }
+      return false
+    })
+    expect(insertCall).toBeDefined()
+  })
+
+  it("logs an ERROR and re-throws when the LLM fails", async () => {
+    mocks.llmGenerate.mockRejectedValueOnce(new Error("LLM unavailable"))
+    mocks.writeDb.mockClear()
+
+    await expect(
+      executePromptStep({ userId: mocks.USER_ID, prompt: "test prompt" }),
+    ).rejects.toThrow("LLM unavailable")
+
+    const calls = mocks.writeDb.mock.calls as unknown[][]
+    const insertCall = calls.find((args) => {
+      const firstArg = (args)[0]
+      if (Array.isArray(firstArg)) {
+        return firstArg.some((s: unknown) => typeof s === "string" && /insert into llm_interactions/i.test(s))
+      }
+      return false
+    })
+    expect(insertCall).toBeDefined()
+    const allValues = calls.flat()
+    expect(allValues).toContain("ERROR")
+  })
+})
+
+describe("Step 3 — saveOutfitsStep()", () => {
+  it("returns a SavedOutfitRef array for valid input", async () => {
+    const suggestions = [
+      { weekday: "sunday", clothingPieceIds: ["item-1", "item-2"] },
+      { weekday: "monday", clothingPieceIds: ["item-3"] },
+    ]
+
+    const result = await saveOutfitsStep({
+      userId: mocks.USER_ID,
+      weeklyOutfitPreferencesId: mocks.PREFERENCES_ID,
+      weekStartDate: mocks.WEEK_START,
+      suggestions,
+      dayWeatherSummaries: {
+        sunday: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%",
+        monday: "Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%",
+      },
+    })
+
+    expect(Array.isArray(result)).toBe(true)
+    // The mock tx returns [] for all queries, so the returned refs may be empty
+    // in the mock environment — what matters is the step doesn't throw.
+  })
+})
+
+describe("Step 4 — generateImagesStep()", () => {
+  it("generates images for outfits that have piece images", async () => {
+    mocks.mockCompositeImages.mockClear()
+    mocks.mockUploadImageToR2.mockClear()
+
+    // Also mock fetch for image downloads
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(new Uint8Array([0xff, 0xd8]).buffer),
+    }))
+
+    const savedOutfits = [
+      { outfitId: "o1", weekday: "sunday", clothingPieceIds: ["item-1", "item-2"] },
+    ]
+    const wardrobeImageMap = {
+      "item-1": "https://r2.example.com/items/item-1.jpg",
+      "item-2": "https://r2.example.com/items/item-2.jpg",
+    }
+
+    await generateImagesStep({ userId: mocks.USER_ID, savedOutfits, wardrobeImageMap })
+
+    expect(mocks.mockCompositeImages).toHaveBeenCalledTimes(1)
+    expect(mocks.mockUploadImageToR2).toHaveBeenCalledTimes(1)
+  })
+
+  it("completes without throwing when no outfits have images", async () => {
+    mocks.mockCompositeImages.mockClear()
+    await expect(
+      generateImagesStep({ userId: mocks.USER_ID, savedOutfits: [], wardrobeImageMap: {} }),
+    ).resolves.toBeUndefined()
+    expect(mocks.mockCompositeImages).not.toHaveBeenCalled()
+  })
+})
+
+describe("Full pipeline (Step 1 → 2 → 3 → 4)", () => {
+  it("produces saved outfit data without errors", async () => {
+    mocks.resetReadCallCount()
+
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string) => {
+      // Weather API + geocoding + LLM calls go through the real fetch mock above.
+      // Image fetches (step 4) return a tiny buffer.
+      if (typeof url === "string" && url.includes("r2.example.com")) {
+        return { ok: true, arrayBuffer: () => Promise.resolve(new Uint8Array([0xff, 0xd8]).buffer) }
+      }
+      return { ok: false, status: 404, text: async () => "not found" }
+    }))
+
+    const promptData = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
+
+    expect(promptData.wardrobeImageMap).toBeDefined()
+    expect(promptData.wardrobeImageMap["item-1"]).toBe("https://r2.example.com/items/item-1.jpg")
+    expect(promptData.wardrobeImageMap["item-2"]).toBe("https://r2.example.com/items/item-2.jpg")
+    // item-3 has null imageUrl so it should not be in the map
+    expect(promptData.wardrobeImageMap["item-3"]).toBeUndefined()
+
+    const suggestions = await executePromptStep({
+      userId: promptData.userId,
+      prompt: promptData.prompt,
+    })
+    const savedOutfits = await saveOutfitsStep({
+      userId: promptData.userId,
+      weeklyOutfitPreferencesId: promptData.weeklyOutfitPreferencesId,
+      weekStartDate: promptData.weekStartDate,
+      suggestions,
+      dayWeatherSummaries: promptData.dayWeatherSummaries,
+    })
+    await generateImagesStep({
+      userId: promptData.userId,
+      savedOutfits,
+      wardrobeImageMap: promptData.wardrobeImageMap,
+    })
+
+    expect(suggestions).toHaveLength(7)
+    expect(suggestions.every((s) => s.clothingPieceIds.length > 0)).toBe(true)
+  })
+})
