@@ -7,6 +7,10 @@ compatibility_date = "2025-01-01"
 #   - other Node.js built-ins used by dependencies (postgres.js, @upstash/qstash)
 compatibility_flags = ["nodejs_compat"]
 
+[observability.logs]
+enabled = true
+invocation_logs = true
+
 # ── Secrets ───────────────────────────────────────────────────────────────────
 # Set each secret once with: wrangler secret put <KEY>
 #

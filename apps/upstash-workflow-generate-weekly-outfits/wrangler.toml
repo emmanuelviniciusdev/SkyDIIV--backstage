@@ -34,6 +34,10 @@ LLM_PROVIDER = "gemini_flash"
 #   wrangler secret put R2_SECRET_ACCESS_KEY
 #   wrangler secret put R2_PUBLIC_URL
 
+[observability.logs]
+enabled = true
+invocation_logs = true
+
 # ── Staging / preview environment ─────────────────────────────────────────────
 [env.staging]
 name = "weekly-outfits-worker-staging"
