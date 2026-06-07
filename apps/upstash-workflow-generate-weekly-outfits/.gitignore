@@ -1,0 +1,11 @@
+# Cloudflare / Wrangler
+.wrangler/
+
+# Vitest cache
+node_modules/.vite/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+.dev.vars

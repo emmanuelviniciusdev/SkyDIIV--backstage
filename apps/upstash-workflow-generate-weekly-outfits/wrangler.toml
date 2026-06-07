@@ -1,0 +1,42 @@
+name = "weekly-outfits-worker"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# nodejs_compat enables:
+#   - crypto.randomUUID()
+#   - process.env (populated from Worker bindings below)
+#   - other Node.js built-ins used by dependencies
+compatibility_flags = ["nodejs_compat"]
+
+# Non-sensitive defaults — override per environment if needed
+[vars]
+LLM_PROVIDER = "gemini_flash"
+# GEMINI_MODEL = "gemini-2.5-flash"
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+# Set each secret once with: wrangler secret put <KEY>
+#
+#   wrangler secret put DATABASE_URL
+#   wrangler secret put DATABASE_URL_UNPOOLED
+#   wrangler secret put QSTASH_TOKEN
+#   wrangler secret put QSTASH_CURRENT_SIGNING_KEY
+#   wrangler secret put QSTASH_NEXT_SIGNING_KEY
+#   wrangler secret put GEMINI_API_KEY
+#   wrangler secret put UPSTASH_WORKFLOW_URL
+#
+# ── R2 / image storage secrets ────────────────────────────────────────────────
+# Used by step 4 (generate-images) to upload composite outfit images.
+# Must match the same R2 bucket used by the skydiiv web app.
+#
+#   wrangler secret put R2_ACCOUNT_ID
+#   wrangler secret put R2_BUCKET
+#   wrangler secret put R2_ACCESS_KEY_ID
+#   wrangler secret put R2_SECRET_ACCESS_KEY
+#   wrangler secret put R2_PUBLIC_URL
+
+# ── Staging / preview environment ─────────────────────────────────────────────
+[env.staging]
+name = "weekly-outfits-worker-staging"
+
+[env.staging.vars]
+LLM_PROVIDER = "gemini_flash"
