@@ -15,6 +15,7 @@ invocation_logs = true
 # Set each secret once with: wrangler secret put <KEY>
 #
 #   wrangler secret put DATABASE_URL
+#   wrangler secret put QSTASH_URL
 #   wrangler secret put QSTASH_TOKEN
 #   wrangler secret put QSTASH_CURRENT_SIGNING_KEY
 #   wrangler secret put QSTASH_NEXT_SIGNING_KEY

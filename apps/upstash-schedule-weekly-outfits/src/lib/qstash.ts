@@ -15,7 +15,8 @@ export function getQStashClient(): Client {
   if (!_client) {
     const token = process.env.QSTASH_TOKEN
     if (!token) throw new Error("QSTASH_TOKEN environment variable is not set")
-    _client = new Client({ token })
+    const baseUrl = process.env.QSTASH_URL
+    _client = new Client({ token, ...(baseUrl ? { baseUrl } : {}) })
   }
   return _client
 }
