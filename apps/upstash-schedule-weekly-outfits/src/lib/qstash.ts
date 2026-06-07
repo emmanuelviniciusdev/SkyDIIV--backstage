@@ -57,7 +57,7 @@ export async function dispatchUsersToWorkflow(users: EligibleUser[]): Promise<nu
     const batch = users.slice(i, i + BATCH_SIZE)
     const messages = batch.map((user) => ({
       url: workerUrl,
-      body: JSON.stringify({ userId: user.userId } satisfies GenerateWeeklyOutfitsPayload),
+      body: { userId: user.userId } satisfies GenerateWeeklyOutfitsPayload,
       headers: { "Content-Type": "application/json" },
     }))
 

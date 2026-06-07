@@ -45,9 +45,9 @@ describe("dispatchUsersToWorkflow", () => {
     expect(result).toBe(2)
     expect(mockBatchJSON).toHaveBeenCalledTimes(1)
 
-    const [messages] = mockBatchJSON.mock.calls[0] as [Array<{ url: string; body: string }>]
+    const [messages] = mockBatchJSON.mock.calls[0] as [Array<{ url: string; body: { userId: string } }>]
     expect(messages).toHaveLength(2)
-    expect(JSON.parse(messages[0]!.body)).toEqual({ userId: "a" })
+    expect(messages[0]!.body).toEqual({ userId: "a" })
     expect(messages[0]!.url).toBe("https://worker.example.com")
   })
 
