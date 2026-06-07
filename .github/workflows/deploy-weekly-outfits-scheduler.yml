@@ -85,6 +85,31 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      - name: Sync Worker vars
+        env:
+          ALL_VARS: ${{ toJSON(vars) }}
+          TOML_SECTION: '[env.staging.vars]'
+        run: |
+          node -e "
+            const fs = require('fs');
+            const all = JSON.parse(process.env.ALL_VARS);
+            const skip = new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','CLOUDFLARE_SUBDOMAIN','github_token']);
+            const entries = Object.entries(all).filter(([k]) => !skip.has(k));
+            if (!entries.length) process.exit(0);
+            const lines = entries.map(([k,v]) => k + ' = ' + JSON.stringify(String(v))).join('\n');
+            const header = process.env.TOML_SECTION;
+            let toml = fs.readFileSync('wrangler.toml', 'utf8');
+            const rows = toml.split('\n');
+            const idx = rows.findIndex(l => l.trim() === header);
+            if (idx >= 0) {
+              rows.splice(idx + 1, 0, lines);
+              toml = rows.join('\n');
+            } else {
+              toml = toml.trimEnd() + '\n\n' + header + '\n' + lines + '\n';
+            }
+            fs.writeFileSync('wrangler.toml', toml);
+          "
+
       - name: Deploy to Staging
         run: npm run deploy -- --env staging
         env:
@@ -127,6 +152,31 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Sync Worker vars
+        env:
+          ALL_VARS: ${{ toJSON(vars) }}
+          TOML_SECTION: '[vars]'
+        run: |
+          node -e "
+            const fs = require('fs');
+            const all = JSON.parse(process.env.ALL_VARS);
+            const skip = new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','CLOUDFLARE_SUBDOMAIN','github_token']);
+            const entries = Object.entries(all).filter(([k]) => !skip.has(k));
+            if (!entries.length) process.exit(0);
+            const lines = entries.map(([k,v]) => k + ' = ' + JSON.stringify(String(v))).join('\n');
+            const header = process.env.TOML_SECTION;
+            let toml = fs.readFileSync('wrangler.toml', 'utf8');
+            const rows = toml.split('\n');
+            const idx = rows.findIndex(l => l.trim() === header);
+            if (idx >= 0) {
+              rows.splice(idx + 1, 0, lines);
+              toml = rows.join('\n');
+            } else {
+              toml = toml.trimEnd() + '\n\n' + header + '\n' + lines + '\n';
+            }
+            fs.writeFileSync('wrangler.toml', toml);
+          "
 
       - name: Deploy to Production
         run: npm run deploy
