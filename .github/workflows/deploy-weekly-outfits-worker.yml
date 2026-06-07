@@ -56,7 +56,6 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     environment:
       name: staging
-      url: https://weekly-outfits-worker-staging.${{ secrets.CLOUDFLARE_SUBDOMAIN }}.workers.dev
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,7 +99,6 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
-      url: https://weekly-outfits-worker.${{ secrets.CLOUDFLARE_SUBDOMAIN }}.workers.dev
     steps:
       - name: Checkout
         uses: actions/checkout@v4
