@@ -60,7 +60,7 @@ vi.mock("../../src/lib/storage/r2-client", () => ({
 // Import step AFTER mocks are registered
 // ---------------------------------------------------------------------------
 
-import { generateImagesStep } from "../../src/steps/generate-images"
+import { generateImageStep } from "../../src/steps/generate-images"
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -80,7 +80,7 @@ const WARDROBE_IMAGE_MAP = {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("generateImagesStep()", () => {
+describe("generateImageStep()", () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
@@ -91,68 +91,60 @@ describe("generateImagesStep()", () => {
     }))
   })
 
-  it("calls compositeImages once per outfit with images", async () => {
-    await generateImagesStep({ userId: USER_ID, savedOutfits: [OUTFIT_1, OUTFIT_2], wardrobeImageMap: WARDROBE_IMAGE_MAP })
+  it("calls compositeImages and returns true when outfit has images", async () => {
+    const result = await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
+    expect(mocks.mockCompositeImages).toHaveBeenCalledTimes(1)
+    expect(result).toBe(true)
+  })
+
+  it("calls compositeImages once per outfit when called for multiple outfits", async () => {
+    await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
+    await generateImageStep({ userId: USER_ID, outfit: OUTFIT_2, wardrobeImageMap: WARDROBE_IMAGE_MAP })
     expect(mocks.mockCompositeImages).toHaveBeenCalledTimes(2)
   })
 
-  it("uploads one image per outfit to R2", async () => {
-    await generateImagesStep({ userId: USER_ID, savedOutfits: [OUTFIT_1], wardrobeImageMap: WARDROBE_IMAGE_MAP })
+  it("uploads one image to R2 and returns true", async () => {
+    const result = await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
     expect(mocks.mockUploadImageToR2).toHaveBeenCalledTimes(1)
     const [, key] = mocks.mockUploadImageToR2.mock.calls[0]
     expect(key).toContain("outfit-1")
+    expect(result).toBe(true)
   })
 
   it("updates outfit image_url in DB after upload", async () => {
-    await generateImagesStep({ userId: USER_ID, savedOutfits: [OUTFIT_1], wardrobeImageMap: WARDROBE_IMAGE_MAP })
+    await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
     expect(mocks.mockUpdateOutfitImageUrl).toHaveBeenCalledWith(
       "outfit-1",
       "https://r2.example.com/outfits/outfit-1.jpg",
     )
   })
 
-  it("skips outfits whose pieces have no images in the map", async () => {
-    await generateImagesStep({
+  it("returns false and skips composite when outfit pieces have no images in the map", async () => {
+    const result = await generateImageStep({
       userId: USER_ID,
-      savedOutfits: [{ outfitId: "outfit-noimg", weekday: "tuesday", clothingPieceIds: ["item-unknown"] }],
+      outfit: { outfitId: "outfit-noimg", weekday: "tuesday", clothingPieceIds: ["item-unknown"] },
       wardrobeImageMap: {},
     })
+    expect(result).toBe(false)
     expect(mocks.mockCompositeImages).not.toHaveBeenCalled()
     expect(mocks.mockUploadImageToR2).not.toHaveBeenCalled()
     expect(mocks.mockUpdateOutfitImageUrl).not.toHaveBeenCalled()
   })
 
-  it("skips an outfit when all image fetches fail but does not crash", async () => {
+  it("returns false when all image fetches fail", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network error")))
 
-    await expect(
-      generateImagesStep({ userId: USER_ID, savedOutfits: [OUTFIT_1], wardrobeImageMap: WARDROBE_IMAGE_MAP }),
-    ).resolves.toBeUndefined()
-
+    const result = await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
+    expect(result).toBe(false)
     expect(mocks.mockCompositeImages).not.toHaveBeenCalled()
   })
 
-  it("continues processing remaining outfits when one fails", async () => {
-    mocks.mockCompositeImages
-      .mockImplementationOnce(() => { throw new Error("Composite error on outfit 1") })
-      .mockReturnValueOnce(Buffer.from("fake-jpeg"))
+  it("throws when compositeImages fails", async () => {
+    mocks.mockCompositeImages.mockImplementationOnce(() => { throw new Error("Composite error") })
 
-    await generateImagesStep({
-      userId: USER_ID,
-      savedOutfits: [OUTFIT_1, OUTFIT_2],
-      wardrobeImageMap: WARDROBE_IMAGE_MAP,
-    })
-
-    // First outfit failed but second should still be processed
-    expect(mocks.mockCompositeImages).toHaveBeenCalledTimes(2)
-    expect(mocks.mockUploadImageToR2).toHaveBeenCalledTimes(1)
-    expect(mocks.mockUpdateOutfitImageUrl).toHaveBeenCalledTimes(1)
-  })
-
-  it("completes without throwing for an empty savedOutfits list", async () => {
     await expect(
-      generateImagesStep({ userId: USER_ID, savedOutfits: [], wardrobeImageMap: WARDROBE_IMAGE_MAP }),
-    ).resolves.toBeUndefined()
+      generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP }),
+    ).rejects.toThrow("Composite error")
   })
 
   it("fetches only piece images that are present in the wardrobeImageMap", async () => {
@@ -167,9 +159,9 @@ describe("generateImagesStep()", () => {
       // item-2 is missing
     }
 
-    await generateImagesStep({
+    await generateImageStep({
       userId: USER_ID,
-      savedOutfits: [OUTFIT_1], // has item-1 and item-2
+      outfit: OUTFIT_1, // has item-1 and item-2
       wardrobeImageMap: partialMap,
     })
 

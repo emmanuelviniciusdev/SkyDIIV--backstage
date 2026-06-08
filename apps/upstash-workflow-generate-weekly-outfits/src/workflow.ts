@@ -2,7 +2,7 @@ import { serve } from "@upstash/workflow/cloudflare"
 import { buildPromptStep } from "./steps/build-prompt"
 import { executePromptStep } from "./steps/execute-prompt"
 import { saveOutfitsStep } from "./steps/save-outfits"
-import { generateImagesStep } from "./steps/generate-images"
+import { generateImageStep } from "./steps/generate-images"
 import { resetDbClients } from "./lib/db/client"
 import { createLogger } from "./lib/logger"
 
@@ -73,16 +73,24 @@ export const { fetch: workflowFetch } = serve<WorkflowPayload>(async (context) =
   })
   log.info("Step completed: save-outfits", { savedCount: savedOutfits.length })
 
-  // ── Step 4: Generate images ───────────────────────────────────────────────
-  log.info("Starting step: generate-images")
-  await context.run("generate-images", async () => {
-    await generateImagesStep({
-      userId: promptData.userId,
-      savedOutfits,
-      wardrobeImageMap: promptData.wardrobeImageMap,
+  // ── Step 4: Generate images (one step per outfit) ────────────────────────
+  log.info("Starting steps: generate-images", { outfitCount: savedOutfits.length })
+  let imageGeneratedCount = 0
+  for (const outfit of savedOutfits) {
+    const generated = await context.run(`generate-image-${outfit.outfitId}`, async () => {
+      return generateImageStep({
+        userId: promptData.userId,
+        outfit,
+        wardrobeImageMap: promptData.wardrobeImageMap,
+      })
     })
+    if (generated) imageGeneratedCount++
+  }
+  log.info("Steps completed: generate-images", {
+    outfitCount: savedOutfits.length,
+    imageGeneratedCount,
+    skippedCount: savedOutfits.length - imageGeneratedCount,
   })
-  log.info("Step completed: generate-images")
 
   log.info("Workflow completed", {
     weekStartDate: promptData.weekStartDate,

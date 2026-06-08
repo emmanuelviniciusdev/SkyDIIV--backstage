@@ -6,16 +6,16 @@ import { createLogger } from "../lib/logger"
 import type { Logger } from "../lib/logger"
 import type { SavedOutfitRef } from "../lib/db/weekly-outfits.repository"
 
-export interface GenerateImagesInput {
+export interface GenerateImageInput {
   userId: string
-  /** Outfits that were saved in step 3, with their DB IDs and piece IDs. */
-  savedOutfits: SavedOutfitRef[]
+  /** Single outfit to generate a composite image for. */
+  outfit: SavedOutfitRef
   /** clothing_item_id → public image URL (only for pieces that have images). */
   wardrobeImageMap: Record<string, string>
 }
 
 /**
- * Step 4 — Generates a composite collage image for each saved outfit and
+ * Step 4 — Generates a composite collage image for a single saved outfit and
  * updates its `image_url` in the database.
  *
  *   1. Collect the public image URLs for the outfit's clothing pieces.
@@ -25,76 +25,61 @@ export interface GenerateImagesInput {
  *   4. Upload the result to Cloudflare R2.
  *   5. UPDATE outfits.image_url for the corresponding outfit row.
  *
- * Failures are caught per-outfit and logged as warnings so that a single
- * broken piece image never crashes the whole workflow — outfits are always
- * saved with their clothing items regardless of image generation success.
+ * Returns true if the image was generated, false if skipped (no images
+ * available). Throws on unexpected errors so the caller (workflow step) can
+ * decide whether to retry or swallow the failure.
+ *
+ * Called once per outfit so that each invocation runs in its own Cloudflare
+ * Worker request, keeping CPU usage well within the per-request time limit.
  */
-export async function generateImagesStep(input: GenerateImagesInput): Promise<void> {
-  const log = createLogger("generate-images", input.userId)
-  log.info("Step started", { outfitCount: input.savedOutfits.length })
+export async function generateImageStep(input: GenerateImageInput): Promise<boolean> {
+  const { outfit, wardrobeImageMap, userId } = input
+  const log = createLogger("generate-images", userId)
 
   const repo = new SqlWeeklyOutfitsRepository(getReadDb(), getWriteDb())
 
-  let generatedCount = 0
+  const imageUrls = outfit.clothingPieceIds
+    .map((id) => wardrobeImageMap[id])
+    .filter((url): url is string => Boolean(url))
 
-  for (const outfit of input.savedOutfits) {
-    try {
-      const imageUrls = outfit.clothingPieceIds
-        .map((id) => input.wardrobeImageMap[id])
-        .filter((url): url is string => Boolean(url))
-
-      if (imageUrls.length === 0) {
-        log.warn("No images available for outfit — skipping composite", {
-          outfitId: outfit.outfitId,
-          weekday: outfit.weekday,
-        })
-        continue
-      }
-
-      log.debug("Fetching piece images", {
-        outfitId: outfit.outfitId,
-        weekday: outfit.weekday,
-        imageCount: imageUrls.length,
-      })
-
-      const imageBuffers = await fetchImages(imageUrls, log)
-
-      if (imageBuffers.length === 0) {
-        log.warn("All image fetches failed — skipping composite", {
-          outfitId: outfit.outfitId,
-        })
-        continue
-      }
-
-      const composited = compositeImages(imageBuffers)
-
-      const key = `outfits/${outfit.outfitId}.jpg`
-      const imageUrl = await uploadImageToR2(composited, key)
-
-      await repo.updateOutfitImageUrl(outfit.outfitId, imageUrl)
-
-      log.info("Image generated and saved", {
-        outfitId: outfit.outfitId,
-        weekday: outfit.weekday,
-        key,
-        pieceImages: imageBuffers.length,
-      })
-      generatedCount++
-    } catch (err) {
-      // Never crash the workflow — image generation is best-effort.
-      log.warn("Failed to generate image for outfit — continuing", {
-        outfitId: outfit.outfitId,
-        weekday: outfit.weekday,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
+  if (imageUrls.length === 0) {
+    log.warn("No images available for outfit — skipping composite", {
+      outfitId: outfit.outfitId,
+      weekday: outfit.weekday,
+    })
+    return false
   }
 
-  log.info("Step completed", {
-    outfitCount: input.savedOutfits.length,
-    generatedCount,
-    skippedCount: input.savedOutfits.length - generatedCount,
+  log.debug("Fetching piece images", {
+    outfitId: outfit.outfitId,
+    weekday: outfit.weekday,
+    imageCount: imageUrls.length,
   })
+
+  const imageBuffers = await fetchImages(imageUrls, log)
+
+  if (imageBuffers.length === 0) {
+    log.warn("All image fetches failed — skipping composite", {
+      outfitId: outfit.outfitId,
+    })
+    return false
+  }
+
+  const composited = compositeImages(imageBuffers)
+
+  const key = `outfits/${outfit.outfitId}.jpg`
+  const imageUrl = await uploadImageToR2(composited, key)
+
+  await repo.updateOutfitImageUrl(outfit.outfitId, imageUrl)
+
+  log.info("Image generated and saved", {
+    outfitId: outfit.outfitId,
+    weekday: outfit.weekday,
+    key,
+    pieceImages: imageBuffers.length,
+  })
+
+  return true
 }
 
 // ---------------------------------------------------------------------------

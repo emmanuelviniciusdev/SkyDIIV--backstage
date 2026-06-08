@@ -137,7 +137,7 @@ vi.mock("../../src/lib/storage/r2-client", () => ({
 import { buildPromptStep } from "../../src/steps/build-prompt"
 import { executePromptStep } from "../../src/steps/execute-prompt"
 import { saveOutfitsStep } from "../../src/steps/save-outfits"
-import { generateImagesStep } from "../../src/steps/generate-images"
+import { generateImageStep } from "../../src/steps/generate-images"
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -276,7 +276,7 @@ describe("Step 3 — saveOutfitsStep()", () => {
   })
 })
 
-describe("Step 4 — generateImagesStep()", () => {
+describe("Step 4 — generateImageStep()", () => {
   it("generates images for outfits that have piece images", async () => {
     mocks.mockCompositeImages.mockClear()
     mocks.mockUploadImageToR2.mockClear()
@@ -287,25 +287,24 @@ describe("Step 4 — generateImagesStep()", () => {
       arrayBuffer: () => Promise.resolve(new Uint8Array([0xff, 0xd8]).buffer),
     }))
 
-    const savedOutfits = [
-      { outfitId: "o1", weekday: "sunday", clothingPieceIds: ["item-1", "item-2"] },
-    ]
+    const outfit = { outfitId: "o1", weekday: "sunday", clothingPieceIds: ["item-1", "item-2"] }
     const wardrobeImageMap = {
       "item-1": "https://r2.example.com/items/item-1.jpg",
       "item-2": "https://r2.example.com/items/item-2.jpg",
     }
 
-    await generateImagesStep({ userId: mocks.USER_ID, savedOutfits, wardrobeImageMap })
+    const result = await generateImageStep({ userId: mocks.USER_ID, outfit, wardrobeImageMap })
 
+    expect(result).toBe(true)
     expect(mocks.mockCompositeImages).toHaveBeenCalledTimes(1)
     expect(mocks.mockUploadImageToR2).toHaveBeenCalledTimes(1)
   })
 
-  it("completes without throwing when no outfits have images", async () => {
+  it("returns false without compositing when outfit has no images", async () => {
     mocks.mockCompositeImages.mockClear()
-    await expect(
-      generateImagesStep({ userId: mocks.USER_ID, savedOutfits: [], wardrobeImageMap: {} }),
-    ).resolves.toBeUndefined()
+    const outfit = { outfitId: "o-noimg", weekday: "monday", clothingPieceIds: ["item-unknown"] }
+    const result = await generateImageStep({ userId: mocks.USER_ID, outfit, wardrobeImageMap: {} })
+    expect(result).toBe(false)
     expect(mocks.mockCompositeImages).not.toHaveBeenCalled()
   })
 })
@@ -342,11 +341,9 @@ describe("Full pipeline (Step 1 → 2 → 3 → 4)", () => {
       suggestions,
       dayWeatherSummaries: promptData.dayWeatherSummaries,
     })
-    await generateImagesStep({
-      userId: promptData.userId,
-      savedOutfits,
-      wardrobeImageMap: promptData.wardrobeImageMap,
-    })
+    for (const outfit of savedOutfits) {
+      await generateImageStep({ userId: promptData.userId, outfit, wardrobeImageMap: promptData.wardrobeImageMap })
+    }
 
     expect(suggestions).toHaveLength(7)
     expect(suggestions.every((s) => s.clothingPieceIds.length > 0)).toBe(true)
