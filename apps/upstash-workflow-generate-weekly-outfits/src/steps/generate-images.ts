@@ -9,6 +9,12 @@ import type { SavedOutfitRef } from "../lib/db/weekly-outfits.repository"
 // Thumbnail canvas size in pixels. Both dimensions use this value.
 const CANVAS_SIZE = 400
 
+// Cloudflare Images binding hard limit: 10 transforms per pipeline call.
+// Our pipeline uses 1 transform for the base image + 1 per piece overlay,
+// so the maximum number of pieces we can composite is 9 (1 + 9 = 10).
+// Pieces beyond this cap are omitted from the thumbnail (acceptable for previews).
+const MAX_PIECES_IN_COMPOSITE = 9
+
 export interface GenerateImageInput {
   userId: string
   /** Single outfit to generate a composite image for. */
@@ -46,6 +52,7 @@ export async function generateImageStep(input: GenerateImageInput): Promise<bool
   const imageUrls = outfit.clothingPieceIds
     .map((id) => wardrobeImageMap[id])
     .filter((url): url is string => Boolean(url))
+    .slice(0, MAX_PIECES_IN_COMPOSITE)
 
   if (imageUrls.length === 0) {
     log.warn("No images available for outfit — skipping composite", {
