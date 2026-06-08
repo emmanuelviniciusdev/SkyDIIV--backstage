@@ -1,8 +1,8 @@
 /**
  * Unit tests for the generate-images workflow step.
  *
- * All external boundaries (DB, image compositing, R2 upload, fetch) are
- * replaced by vi mocks so the tests run without network calls.
+ * External boundaries (CF Images binding, DB, R2, fetch) are replaced by
+ * vi mocks so the tests run without any real network calls or Worker bindings.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
@@ -11,26 +11,46 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 // ---------------------------------------------------------------------------
 
 const mocks = vi.hoisted(() => {
+  // CF Images binding mock
+  const mockOutput = vi.fn().mockResolvedValue({
+    response: () => new Response(new Uint8Array([0xff, 0xd8]).buffer, { status: 200 }),
+  })
+  const mockDraw = vi.fn()
+  const mockTransform = vi.fn()
+  const mockInput = vi.fn()
+
+  // Fluent API: each method returns the same object so chains work
+  const pipeline = { transform: mockTransform, draw: mockDraw, output: mockOutput }
+  mockTransform.mockReturnValue(pipeline)
+  mockDraw.mockReturnValue(pipeline)
+  mockInput.mockReturnValue(pipeline)
+
+  const mockGetImages = vi.fn().mockReturnValue({ input: mockInput })
+
+  // DB / R2 mocks
   const mockUpdateOutfitImageUrl = vi.fn().mockResolvedValue(undefined)
-  const mockSaveWeeklyOutfits = vi.fn().mockResolvedValue([])
-  const mockReadDb = vi.fn().mockResolvedValue([])
-  const mockWriteDb = vi.fn().mockResolvedValue([]) as ReturnType<typeof vi.fn> & {
-    begin?: ReturnType<typeof vi.fn>
-  }
+  const mockUploadImageToR2 = vi.fn().mockResolvedValue("https://r2.example.com/outfits/outfit-1.jpg")
+  const mockReadDb = vi.fn()
+  const mockWriteDb = vi.fn() as ReturnType<typeof vi.fn> & { begin?: ReturnType<typeof vi.fn> }
   mockWriteDb.begin = vi.fn().mockResolvedValue([])
 
-  const mockCompositeImages = vi.fn().mockReturnValue(Buffer.from("fake-jpeg"))
-  const mockUploadImageToR2 = vi.fn().mockResolvedValue("https://r2.example.com/outfits/outfit-1.jpg")
-
   return {
+    mockGetImages,
+    mockInput,
+    mockTransform,
+    mockDraw,
+    mockOutput,
+    pipeline,
     mockUpdateOutfitImageUrl,
-    mockSaveWeeklyOutfits,
+    mockUploadImageToR2,
     mockReadDb,
     mockWriteDb,
-    mockCompositeImages,
-    mockUploadImageToR2,
   }
 })
+
+vi.mock("../../src/lib/cf-images", () => ({
+  getImages: mocks.mockGetImages,
+}))
 
 vi.mock("../../src/lib/db/client", () => ({
   getReadDb: () => mocks.mockReadDb,
@@ -39,17 +59,9 @@ vi.mock("../../src/lib/db/client", () => ({
 }))
 
 vi.mock("../../src/lib/db/weekly-outfits.repository", () => ({
-  // Use a regular function (not arrow) so it is constructable with `new`
   SqlWeeklyOutfitsRepository: vi.fn(function () {
-    return {
-      saveWeeklyOutfits: mocks.mockSaveWeeklyOutfits,
-      updateOutfitImageUrl: mocks.mockUpdateOutfitImageUrl,
-    }
+    return { updateOutfitImageUrl: mocks.mockUpdateOutfitImageUrl }
   }),
-}))
-
-vi.mock("../../src/lib/image/composite", () => ({
-  compositeImages: mocks.mockCompositeImages,
 }))
 
 vi.mock("../../src/lib/storage/r2-client", () => ({
@@ -84,26 +96,37 @@ describe("generateImageStep()", () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    // Default: fetch returns a valid 2-byte JPEG stub
+    // Re-wire the fluent chain after clearAllMocks resets return values
+    mocks.mockTransform.mockReturnValue(mocks.pipeline)
+    mocks.mockDraw.mockReturnValue(mocks.pipeline)
+    mocks.mockInput.mockReturnValue(mocks.pipeline)
+    mocks.mockGetImages.mockReturnValue({ input: mocks.mockInput })
+    mocks.mockOutput.mockResolvedValue({
+      response: () => new Response(new Uint8Array([0xff, 0xd8]).buffer, { status: 200 }),
+    })
+    mocks.mockUploadImageToR2.mockResolvedValue("https://r2.example.com/outfits/outfit-1.jpg")
+
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
+      body: new ReadableStream(),
       arrayBuffer: () => Promise.resolve(new Uint8Array([0xff, 0xd8]).buffer),
     }))
   })
 
-  it("calls compositeImages and returns true when outfit has images", async () => {
+  it("calls the CF Images binding and returns true when outfit has images", async () => {
     const result = await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
-    expect(mocks.mockCompositeImages).toHaveBeenCalledTimes(1)
+    expect(mocks.mockInput).toHaveBeenCalled()
+    expect(mocks.mockOutput).toHaveBeenCalledWith({ format: "image/jpeg", quality: 85 })
     expect(result).toBe(true)
   })
 
-  it("calls compositeImages once per outfit when called for multiple outfits", async () => {
+  it("draws one overlay per piece image", async () => {
     await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
-    await generateImageStep({ userId: USER_ID, outfit: OUTFIT_2, wardrobeImageMap: WARDROBE_IMAGE_MAP })
-    expect(mocks.mockCompositeImages).toHaveBeenCalledTimes(2)
+    // OUTFIT_1 has 2 pieces → 2 draw calls
+    expect(mocks.mockDraw).toHaveBeenCalledTimes(2)
   })
 
-  it("uploads one image to R2 and returns true", async () => {
+  it("uploads the output to R2 and returns true", async () => {
     const result = await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
     expect(mocks.mockUploadImageToR2).toHaveBeenCalledTimes(1)
     const [, key] = mocks.mockUploadImageToR2.mock.calls[0]
@@ -119,54 +142,68 @@ describe("generateImageStep()", () => {
     )
   })
 
-  it("returns false and skips composite when outfit pieces have no images in the map", async () => {
+  it("returns false and skips the binding when outfit pieces have no images", async () => {
     const result = await generateImageStep({
       userId: USER_ID,
       outfit: { outfitId: "outfit-noimg", weekday: "tuesday", clothingPieceIds: ["item-unknown"] },
       wardrobeImageMap: {},
     })
     expect(result).toBe(false)
-    expect(mocks.mockCompositeImages).not.toHaveBeenCalled()
+    expect(mocks.mockInput).not.toHaveBeenCalled()
     expect(mocks.mockUploadImageToR2).not.toHaveBeenCalled()
-    expect(mocks.mockUpdateOutfitImageUrl).not.toHaveBeenCalled()
   })
 
-  it("returns false when all image fetches fail", async () => {
+  it("returns false when all piece image fetches fail", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network error")))
 
     const result = await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
     expect(result).toBe(false)
-    expect(mocks.mockCompositeImages).not.toHaveBeenCalled()
+    expect(mocks.mockInput).not.toHaveBeenCalled()
   })
 
-  it("throws when compositeImages fails", async () => {
-    mocks.mockCompositeImages.mockImplementationOnce(() => { throw new Error("Composite error") })
+  it("proceeds with remaining pieces when one fetch fails", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new Error("Network error on item-1"))
+      .mockResolvedValue({ ok: true, body: new ReadableStream(), arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)) })
+    vi.stubGlobal("fetch", fetchMock)
+
+    // OUTFIT_1 has 2 pieces; item-1 fails, item-2 succeeds
+    const result = await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
+    // Only 1 valid stream → 1 draw call
+    expect(mocks.mockDraw).toHaveBeenCalledTimes(1)
+    expect(result).toBe(true)
+  })
+
+  it("throws when the CF Images binding fails", async () => {
+    mocks.mockOutput.mockRejectedValueOnce(new Error("Images binding error"))
 
     await expect(
       generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP }),
-    ).rejects.toThrow("Composite error")
+    ).rejects.toThrow("Images binding error")
   })
 
-  it("fetches only piece images that are present in the wardrobeImageMap", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      arrayBuffer: () => Promise.resolve(new Uint8Array([0xff, 0xd8]).buffer),
-    })
+  it("fetches only piece images present in wardrobeImageMap", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, body: new ReadableStream(), arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)) })
     vi.stubGlobal("fetch", fetchMock)
 
-    const partialMap = {
-      "item-1": "https://r2.example.com/items/item-1.jpg",
-      // item-2 is missing
-    }
-
+    // partialMap omits item-2
     await generateImageStep({
       userId: USER_ID,
-      outfit: OUTFIT_1, // has item-1 and item-2
-      wardrobeImageMap: partialMap,
+      outfit: OUTFIT_1,
+      wardrobeImageMap: { "item-1": "https://r2.example.com/items/item-1.jpg" },
     })
 
-    // Only 1 fetch for item-1 (item-2 has no URL)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock.mock.calls[0][0]).toBe("https://r2.example.com/items/item-1.jpg")
+    const fetchedUrls = fetchMock.mock.calls.map((c: [string]) => c[0])
+    // item-2 has no URL in the map — it must never be fetched
+    expect(fetchedUrls.some((u: string) => u.includes("item-2"))).toBe(false)
+    // item-1 IS in the map and must be fetched (at least once; it's also used as the base)
+    expect(fetchedUrls.some((u: string) => u.includes("item-1"))).toBe(true)
+  })
+
+  it("calls the binding for multiple outfits when called in sequence", async () => {
+    await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
+    await generateImageStep({ userId: USER_ID, outfit: OUTFIT_2, wardrobeImageMap: WARDROBE_IMAGE_MAP })
+    // OUTFIT_1 has 2 pieces + OUTFIT_2 has 1 piece = 3 draw calls total
+    expect(mocks.mockDraw).toHaveBeenCalledTimes(3)
   })
 })

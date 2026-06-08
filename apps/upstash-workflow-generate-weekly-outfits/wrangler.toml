@@ -35,6 +35,13 @@ LLM_PROVIDER = "gemini_flash"
 #   wrangler secret put R2_SECRET_ACCESS_KEY
 #   wrangler secret put R2_PUBLIC_URL
 
+# ── Cloudflare Images binding ─────────────────────────────────────────────────
+# Provides the IMAGES binding used by step 4 (generate-images) to composite
+# outfit thumbnails without any in-Worker CPU usage (Cloudflare's backend does
+# the pixel work).
+[images]
+binding = "IMAGES"
+
 [observability.logs]
 enabled = true
 invocation_logs = true

@@ -6,7 +6,7 @@
  * calls or database connections.
  * The goal is to verify the end-to-end data flow through all four steps.
  */
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 
 // ---------------------------------------------------------------------------
 // All fixtures and mock objects that need to be referenced inside vi.mock()
@@ -83,6 +83,19 @@ const mocks = vi.hoisted(() => {
   const mockCompositeImages = vi.fn().mockResolvedValue(Buffer.from("fake-jpeg"))
   const mockUploadImageToR2 = vi.fn().mockResolvedValue("https://r2.example.com/outfits/outfit.jpg")
 
+  // CF Images binding mock (fluent pipeline)
+  const mockOutput = vi.fn().mockResolvedValue({
+    response: () => new Response(new Uint8Array([0xff, 0xd8]).buffer, { status: 200 }),
+  })
+  const mockDraw = vi.fn()
+  const mockTransform = vi.fn()
+  const mockInput = vi.fn()
+  const cfPipeline = { transform: mockTransform, draw: mockDraw, output: mockOutput }
+  mockTransform.mockReturnValue(cfPipeline)
+  mockDraw.mockReturnValue(cfPipeline)
+  mockInput.mockReturnValue(cfPipeline)
+  const mockGetImages = vi.fn().mockReturnValue({ input: mockInput })
+
   return {
     USER_ID,
     WEEK_START,
@@ -93,6 +106,12 @@ const mocks = vi.hoisted(() => {
     llmGenerate,
     mockCompositeImages,
     mockUploadImageToR2,
+    mockGetImages,
+    mockInput,
+    mockTransform,
+    mockDraw,
+    mockOutput,
+    cfPipeline,
     resetReadCallCount: () => { readCallCount = 0 },
   }
 })
@@ -128,6 +147,10 @@ vi.mock("../../src/lib/image/composite", () => ({
 
 vi.mock("../../src/lib/storage/r2-client", () => ({
   uploadImageToR2: (...args: unknown[]) => mocks.mockUploadImageToR2(...args),
+}))
+
+vi.mock("../../src/lib/cf-images", () => ({
+  getImages: () => mocks.mockGetImages(),
 }))
 
 // ---------------------------------------------------------------------------
@@ -277,16 +300,26 @@ describe("Step 3 — saveOutfitsStep()", () => {
 })
 
 describe("Step 4 — generateImageStep()", () => {
-  it("generates images for outfits that have piece images", async () => {
-    mocks.mockCompositeImages.mockClear()
-    mocks.mockUploadImageToR2.mockClear()
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // Re-wire the fluent chain after clearAllMocks resets all return values
+    mocks.mockTransform.mockReturnValue(mocks.cfPipeline)
+    mocks.mockDraw.mockReturnValue(mocks.cfPipeline)
+    mocks.mockInput.mockReturnValue(mocks.cfPipeline)
+    mocks.mockGetImages.mockReturnValue({ input: mocks.mockInput })
+    mocks.mockUploadImageToR2.mockResolvedValue("https://r2.example.com/outfits/outfit.jpg")
+    mocks.mockOutput.mockResolvedValue({
+      response: () => new Response(new Uint8Array([0xff, 0xd8]).buffer, { status: 200 }),
+    })
 
-    // Also mock fetch for image downloads
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
+      body: new ReadableStream(),
       arrayBuffer: () => Promise.resolve(new Uint8Array([0xff, 0xd8]).buffer),
     }))
+  })
 
+  it("calls the CF Images binding and returns true for an outfit with images", async () => {
     const outfit = { outfitId: "o1", weekday: "sunday", clothingPieceIds: ["item-1", "item-2"] }
     const wardrobeImageMap = {
       "item-1": "https://r2.example.com/items/item-1.jpg",
@@ -296,16 +329,16 @@ describe("Step 4 — generateImageStep()", () => {
     const result = await generateImageStep({ userId: mocks.USER_ID, outfit, wardrobeImageMap })
 
     expect(result).toBe(true)
-    expect(mocks.mockCompositeImages).toHaveBeenCalledTimes(1)
+    expect(mocks.mockInput).toHaveBeenCalled()
+    expect(mocks.mockOutput).toHaveBeenCalledWith({ format: "image/jpeg", quality: 85 })
     expect(mocks.mockUploadImageToR2).toHaveBeenCalledTimes(1)
   })
 
-  it("returns false without compositing when outfit has no images", async () => {
-    mocks.mockCompositeImages.mockClear()
+  it("returns false without calling the binding when outfit has no images", async () => {
     const outfit = { outfitId: "o-noimg", weekday: "monday", clothingPieceIds: ["item-unknown"] }
     const result = await generateImageStep({ userId: mocks.USER_ID, outfit, wardrobeImageMap: {} })
     expect(result).toBe(false)
-    expect(mocks.mockCompositeImages).not.toHaveBeenCalled()
+    expect(mocks.mockInput).not.toHaveBeenCalled()
   })
 })
 
@@ -313,13 +346,10 @@ describe("Full pipeline (Step 1 → 2 → 3 → 4)", () => {
   it("produces saved outfit data without errors", async () => {
     mocks.resetReadCallCount()
 
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string) => {
-      // Weather API + geocoding + LLM calls go through the real fetch mock above.
-      // Image fetches (step 4) return a tiny buffer.
-      if (typeof url === "string" && url.includes("r2.example.com")) {
-        return { ok: true, arrayBuffer: () => Promise.resolve(new Uint8Array([0xff, 0xd8]).buffer) }
-      }
-      return { ok: false, status: 404, text: async () => "not found" }
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      body: new ReadableStream(),
+      arrayBuffer: () => Promise.resolve(new Uint8Array([0xff, 0xd8]).buffer),
     }))
 
     const promptData = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
@@ -347,5 +377,6 @@ describe("Full pipeline (Step 1 → 2 → 3 → 4)", () => {
 
     expect(suggestions).toHaveLength(7)
     expect(suggestions.every((s) => s.clothingPieceIds.length > 0)).toBe(true)
+    expect(Array.isArray(savedOutfits)).toBe(true)
   })
 })

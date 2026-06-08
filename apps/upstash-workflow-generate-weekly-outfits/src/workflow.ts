@@ -20,11 +20,13 @@ function getCurrentWeekStartDate(): string {
 /**
  * GenerateWeeklyOutfits — Upstash Workflow (Cloudflare Workers)
  *
- * Three sequential durable steps:
- *   1. build-prompt  — loads preferences, wardrobe, weather → builds LLM prompt.
+ * Four sequential durable steps:
+ *   1. build-prompt   — loads preferences, wardrobe, weather → builds LLM prompt.
  *   2. execute-prompt — calls the LLM; validates and parses JSON suggestions.
  *   3. save-outfits   — persists generated outfits to the DB (idempotent).
- *   4. generate-images — generates a composite collage image for each saved outfit.
+ *   4. generate-image — one step per outfit; composites a thumbnail via the
+ *                       Cloudflare Images binding (env.IMAGES). All pixel work
+ *                       is done by Cloudflare's backend
  */
 export const { fetch: workflowFetch } = serve<WorkflowPayload>(async (context) => {
   const { userId } = context.requestPayload
@@ -73,8 +75,10 @@ export const { fetch: workflowFetch } = serve<WorkflowPayload>(async (context) =
   })
   log.info("Step completed: save-outfits", { savedCount: savedOutfits.length })
 
-  // ── Step 4: Generate images (one step per outfit) ────────────────────────
-  log.info("Starting steps: generate-images", { outfitCount: savedOutfits.length })
+  // ── Step 4: Generate thumbnails (one CF Images call per outfit) ───────────
+  // Each outfit runs in its own workflow step so it gets a fresh Worker
+  // invocation — and therefore a fresh CPU budget — for the async binding call.
+  log.info("Starting steps: generate-image", { outfitCount: savedOutfits.length })
   let imageGeneratedCount = 0
   for (const outfit of savedOutfits) {
     const generated = await context.run(`generate-image-${outfit.outfitId}`, async () => {
@@ -86,7 +90,7 @@ export const { fetch: workflowFetch } = serve<WorkflowPayload>(async (context) =
     })
     if (generated) imageGeneratedCount++
   }
-  log.info("Steps completed: generate-images", {
+  log.info("Steps completed: generate-image", {
     outfitCount: savedOutfits.length,
     imageGeneratedCount,
     skippedCount: savedOutfits.length - imageGeneratedCount,
@@ -95,5 +99,6 @@ export const { fetch: workflowFetch } = serve<WorkflowPayload>(async (context) =
   log.info("Workflow completed", {
     weekStartDate: promptData.weekStartDate,
     suggestionCount: suggestions.length,
+    savedCount: savedOutfits.length,
   })
 })

@@ -5,7 +5,9 @@
 // which covers the WebP piece images stored in Cloudflare R2.
 import { PhotonImage, SamplingFilter, crop, resize, watermark } from "@cf-wasm/photon"
 
-const CANVAS_SIZE = 1600
+// 400×400 keeps CPU usage well within Cloudflare Workers limits.
+// The full-resolution composite (1600×1600) lives in the main app via Sharp.
+const CANVAS_SIZE = 400
 
 /**
  * Distributes `total` pixels across `count` slots, adding 1 extra pixel to
@@ -30,7 +32,8 @@ function coverResize(img: PhotonImage, targetW: number, targetH: number): Photon
   const scaledW = Math.max(targetW, Math.round(srcW * scale))
   const scaledH = Math.max(targetH, Math.round(srcH * scale))
 
-  const scaled = resize(img, scaledW, scaledH, SamplingFilter.CatmullRom)
+  // Triangle (bilinear) is 3-4× faster than CatmullRom with acceptable quality for thumbnails.
+  const scaled = resize(img, scaledW, scaledH, SamplingFilter.Triangle)
 
   if (scaledW === targetW && scaledH === targetH) return scaled
 
