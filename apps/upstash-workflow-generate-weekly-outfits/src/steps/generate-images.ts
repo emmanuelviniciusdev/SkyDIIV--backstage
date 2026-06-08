@@ -9,11 +9,12 @@ import type { SavedOutfitRef } from "../lib/db/weekly-outfits.repository"
 // Thumbnail canvas size in pixels. Both dimensions use this value.
 const CANVAS_SIZE = 400
 
-// Cloudflare Images binding hard limit: 10 transforms per pipeline call.
-// Our pipeline uses 1 transform for the base image + 1 per piece overlay,
-// so the maximum number of pieces we can composite is 9 (1 + 9 = 10).
+// Cloudflare Images binding hard limit: 10 transforms per pipeline call
+// (exclusive — the actual usable maximum is 9).
+// Our pipeline consumes 1 transform for the base image + 1 per piece overlay,
+// so capping at 8 pieces gives 1 + 8 = 9 total transforms, safely under the limit.
 // Pieces beyond this cap are omitted from the thumbnail (acceptable for previews).
-const MAX_PIECES_IN_COMPOSITE = 9
+const MAX_PIECES_IN_COMPOSITE = 8
 
 export interface GenerateImageInput {
   userId: string
