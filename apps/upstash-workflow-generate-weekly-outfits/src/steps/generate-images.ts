@@ -9,12 +9,17 @@ import type { SavedOutfitRef } from "../lib/db/weekly-outfits.repository"
 // Thumbnail canvas size in pixels. Both dimensions use this value.
 const CANVAS_SIZE = 400
 
-// Cloudflare Images binding hard limit: 10 transforms per pipeline call
-// (exclusive — the actual usable maximum is 9).
-// Our pipeline consumes 1 transform for the base image + 1 per piece overlay,
-// so capping at 8 pieces gives 1 + 8 = 9 total transforms, safely under the limit.
-// Pieces beyond this cap are omitted from the thumbnail (acceptable for previews).
-const MAX_PIECES_IN_COMPOSITE = 8
+// Number of overlays drawn per Cloudflare Images pipeline execution.
+// Each overlay adds a child .input() + .transform() (~2 operations) and CF caps
+// a single pipeline tree at 10 operations, so 3 draws (~7 ops) stays safely
+// under the limit. Larger outfits are composited across multiple batches.
+const DRAWS_PER_BATCH = 3
+
+// Visual cap on how many pieces appear in a thumbnail. A 400×400 grid becomes
+// unreadable beyond this, and it also bounds the number of pipeline executions
+// (and therefore billable transformations) per outfit. Not a hard API limit —
+// the batching above can handle any count — purely a quality/cost guard.
+const MAX_PIECES_IN_COMPOSITE = 12
 
 export interface GenerateImageInput {
   userId: string
@@ -187,9 +192,15 @@ async function fetchPieceImages(
  * binding. Each piece stream is drawn at its calculated grid cell position.
  * Cloudflare's backend performs all pixel operations — the Worker spends no CPU.
  *
- * The first piece is used as the canvas base (scaled to fill CANVAS_SIZE).
- * All pieces (including the first) are then drawn as grid-cell overlays, so
- * the base is fully covered regardless of layout.
+ * Cloudflare flattens an entire `.input()/.transform()/.draw()` chain into a
+ * single operation tree and caps it at 10 operations. Every overlay adds a
+ * child `.input()` + `.transform()`, so a single pipeline overflows after only
+ * a few pieces. To support any number of pieces we draw them in small batches:
+ * each batch is its own pipeline execution whose JPEG output becomes the canvas
+ * input for the next batch. This keeps every pipeline well under the limit.
+ *
+ * The first piece is scaled to fill the canvas as the initial background; it is
+ * then fully covered by the grid-cell overlays (including its own cell).
  */
 async function buildComposite(
   validUrls: string[],
@@ -199,27 +210,43 @@ async function buildComposite(
   const images = getImages()
   const cells = buildGridCells(streams.length)
 
-  // The base image establishes the canvas dimensions. Because every grid cell
-  // is drawn as an overlay, the base content is completely hidden.
-  // We re-fetch piece[0] as the base to avoid consuming its stream twice.
+  // The initial background establishes the canvas dimensions. We re-fetch
+  // piece[0] for it so its original stream stays available for its own cell.
   const baseRes = await fetch(validUrls[0])
   if (!baseRes.ok) throw new Error(`Failed to re-fetch base image: ${validUrls[0]}`)
 
-  let pipeline = images
-    .input(baseRes.body!)
-    .transform({ width: CANVAS_SIZE, height: CANVAS_SIZE, fit: "cover" })
+  let canvas: ArrayBuffer = await (
+    await images
+      .input(baseRes.body!)
+      .transform({ width: CANVAS_SIZE, height: CANVAS_SIZE, fit: "cover" })
+      .output({ format: "image/jpeg", quality: 85 })
+  ).response().arrayBuffer()
 
-  for (const cell of cells) {
-    pipeline = pipeline.draw(
-      images.input(streams[cell.urlIndex]).transform({ width: cell.width, height: cell.height, fit: "cover" }),
-      { top: cell.top, left: cell.left },
-    )
+  // Each overlay costs ~2 operations (child input + transform), so a batch of
+  // DRAWS_PER_BATCH=3 keeps a pipeline at ~7 operations — safely under the cap.
+  for (let i = 0; i < cells.length; i += DRAWS_PER_BATCH) {
+    const batch = cells.slice(i, i + DRAWS_PER_BATCH)
+
+    let pipeline = images.input(canvas)
+    for (const cell of batch) {
+      pipeline = pipeline.draw(
+        images.input(streams[cell.urlIndex]).transform({ width: cell.width, height: cell.height, fit: "cover" }),
+        { top: cell.top, left: cell.left },
+      )
+    }
+
+    canvas = await (
+      await pipeline.output({ format: "image/jpeg", quality: 85 })
+    ).response().arrayBuffer()
   }
 
-  const output = await pipeline.output({ format: "image/jpeg", quality: 85 })
-  const buffer = Buffer.from(await output.response().arrayBuffer())
+  const buffer = Buffer.from(canvas)
 
-  log.debug("CF Images composite built", { cells: cells.length, bytes: buffer.byteLength })
+  log.debug("CF Images composite built", {
+    cells: cells.length,
+    batches: Math.ceil(cells.length / DRAWS_PER_BATCH),
+    bytes: buffer.byteLength,
+  })
 
   return buffer
 }

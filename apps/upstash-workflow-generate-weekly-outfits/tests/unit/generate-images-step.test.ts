@@ -126,6 +126,24 @@ describe("generateImageStep()", () => {
     expect(mocks.mockDraw).toHaveBeenCalledTimes(2)
   })
 
+  it("batches draws across multiple pipelines for outfits with many pieces", async () => {
+    // 10 pieces would overflow a single CF Images pipeline (10-op limit), so
+    // they must be composited across several batched .output() executions.
+    const pieceIds = Array.from({ length: 10 }, (_, i) => `item-${i}`)
+    const manyPieceMap = Object.fromEntries(
+      pieceIds.map((id) => [id, `https://r2.example.com/items/${id}.jpg`]),
+    )
+    const outfit = { outfitId: "outfit-many", weekday: "sunday", clothingPieceIds: pieceIds }
+
+    const result = await generateImageStep({ userId: USER_ID, outfit, wardrobeImageMap: manyPieceMap })
+
+    expect(result).toBe(true)
+    // One draw per piece, regardless of how many pipelines they were split across.
+    expect(mocks.mockDraw).toHaveBeenCalledTimes(10)
+    // Background pipeline + at least one batched pipeline → multiple outputs.
+    expect(mocks.mockOutput.mock.calls.length).toBeGreaterThan(1)
+  })
+
   it("uploads the output to R2 and returns true", async () => {
     const result = await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
     expect(mocks.mockUploadImageToR2).toHaveBeenCalledTimes(1)
