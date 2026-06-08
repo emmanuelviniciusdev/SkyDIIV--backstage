@@ -71,6 +71,7 @@ export const { fetch: workflowFetch } = serve<WorkflowPayload>(async (context) =
       weekStartDate: promptData.weekStartDate,
       suggestions,
       dayWeatherSummaries: promptData.dayWeatherSummaries,
+      validClothingItemIds: promptData.validClothingItemIds,
     })
   })
   log.info("Step completed: save-outfits", { savedCount: savedOutfits.length })

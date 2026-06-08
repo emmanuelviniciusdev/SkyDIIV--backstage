@@ -16,6 +16,12 @@ export interface BuildPromptResult {
   dayWeatherSummaries: Record<string, string>
   /** Maps clothing item ID → public image URL for every wardrobe piece that has an image. */
   wardrobeImageMap: Record<string, string>
+  /**
+   * Every clothing item ID that belongs to this user's wardrobe.
+   * Used in step 3 to filter out any IDs the LLM hallucinated so they never
+   * reach the DB and trigger a foreign-key constraint violation.
+   */
+  validClothingItemIds: string[]
 }
 
 function buildDayWeatherSummaries(days: DailyWeather[]): Record<string, string> {
@@ -110,5 +116,6 @@ export async function buildPromptStep(
     prompt,
     dayWeatherSummaries,
     wardrobeImageMap,
+    validClothingItemIds: wardrobeItems.map((item) => item.id),
   }
 }

@@ -12,6 +12,13 @@ export interface SaveOutfitsInput {
   weekStartDate: string
   suggestions: ParsedOutfitSuggestion[]
   dayWeatherSummaries: Record<string, string>
+  /**
+   * IDs of every clothing item that actually belongs to this user's wardrobe
+   * (sourced from step 1). Any ID the LLM returns that is not in this set is
+   * dropped here with a warning so it never reaches the DB and triggers a
+   * foreign-key constraint violation.
+   */
+  validClothingItemIds: string[]
 }
 
 /**
@@ -31,13 +38,29 @@ export async function saveOutfitsStep(input: SaveOutfitsInput): Promise<SavedOut
     weeklyOutfitPreferencesId: input.weeklyOutfitPreferencesId,
   })
 
+  // Filter out any clothing item IDs the LLM hallucinated so they never reach
+  // the DB and trigger a foreign-key constraint violation.
+  const validIds = new Set(input.validClothingItemIds)
+  const sanitisedSuggestions = input.suggestions.map((s) => {
+    const validPieceIds = s.clothingPieceIds.filter((id) => validIds.has(id))
+    const hallucinated = s.clothingPieceIds.filter((id) => !validIds.has(id))
+    if (hallucinated.length > 0) {
+      log.warn("LLM hallucinated clothing item IDs — dropping them", {
+        weekday: s.weekday,
+        hallucinated,
+        kept: validPieceIds.length,
+      })
+    }
+    return { ...s, clothingPieceIds: validPieceIds }
+  })
+
   const repo = new SqlWeeklyOutfitsRepository(getReadDb(), getWriteDb())
 
   const savedOutfits = await repo.saveWeeklyOutfits({
     userId: input.userId,
     weeklyOutfitPreferencesId: input.weeklyOutfitPreferencesId,
     weekStartDate: input.weekStartDate,
-    suggestions: input.suggestions,
+    suggestions: sanitisedSuggestions,
     dayWeatherSummaries: input.dayWeatherSummaries,
   })
 
