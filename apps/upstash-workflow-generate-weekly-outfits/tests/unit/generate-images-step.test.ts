@@ -66,6 +66,7 @@ vi.mock("../../src/lib/db/weekly-outfits.repository", () => ({
 
 vi.mock("../../src/lib/storage/r2-client", () => ({
   uploadImageToR2: mocks.mockUploadImageToR2,
+  deleteImageFromR2: vi.fn().mockResolvedValue(undefined),
 }))
 
 // ---------------------------------------------------------------------------

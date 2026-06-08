@@ -147,6 +147,7 @@ vi.mock("../../src/lib/image/composite", () => ({
 
 vi.mock("../../src/lib/storage/r2-client", () => ({
   uploadImageToR2: (...args: unknown[]) => mocks.mockUploadImageToR2(...args),
+  deleteImageFromR2: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock("../../src/lib/cf-images", () => ({

@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3"
 
 function getR2Client(): S3Client {
   const accountId = process.env.R2_ACCOUNT_ID
@@ -35,6 +35,24 @@ function getPublicUrl(key: string): string {
   const bucket = process.env.R2_BUCKET
   if (!accountId || !bucket) throw new Error("Missing R2 configuration to build public URL")
   return `https://${accountId}.r2.cloudflarestorage.com/${bucket}/${key}`
+}
+
+/**
+ * Deletes an object from Cloudflare R2 by key.
+ * Resolves silently if the object does not exist (R2 returns 204 for missing keys).
+ */
+export async function deleteImageFromR2(key: string): Promise<void> {
+  const bucket = process.env.R2_BUCKET
+  if (!bucket) throw new Error("R2_BUCKET environment variable is not set")
+
+  const client = getR2Client()
+
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    }),
+  )
 }
 
 /**

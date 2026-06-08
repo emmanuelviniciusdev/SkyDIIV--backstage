@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto"
 import type postgres from "postgres"
 import { createLogger } from "../logger"
+import { deleteImageFromR2 } from "../storage/r2-client"
 
 export interface OutfitSuggestion {
   weekday: string
@@ -79,6 +80,7 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
         log.info("Deleted existing outfits", { count: existingOutfitIds.length })
       }
 
+
       const now = new Date()
       const refs: SavedOutfitRef[] = []
 
@@ -144,6 +146,28 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
       log.info("Transaction completed", { insertedCount: refs.length })
       return refs
     })
+
+    // Delete old thumbnail images from R2 after the DB transaction has committed.
+    // Done outside the transaction because object storage is not transactional —
+    // a failure here must never roll back the successfully saved outfits.
+    // R2 returns 204 for keys that don't exist, so this is safe to call even when
+    // a previous run generated no thumbnail (image_url was null).
+    if (existingOutfitIds.length > 0) {
+      const deletions = existingOutfitIds.map(async (outfitId) => {
+        const key = `outfits/${outfitId}.jpg`
+        try {
+          await deleteImageFromR2(key)
+          log.debug("Deleted old thumbnail from R2", { key })
+        } catch (err) {
+          log.warn("Failed to delete old thumbnail from R2 — continuing", {
+            key,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      })
+      await Promise.all(deletions)
+      log.info("R2 thumbnail cleanup complete", { count: existingOutfitIds.length })
+    }
 
     return savedRefs ?? []
   }
