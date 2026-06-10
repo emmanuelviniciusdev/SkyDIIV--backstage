@@ -25,6 +25,12 @@ LLM_PROVIDER = "gemini_flash"
 #   wrangler secret put GEMINI_API_KEY
 #   wrangler secret put UPSTASH_WORKFLOW_URL
 #
+# ── Redis ─────────────────────────────────────────────────────────────────────
+#   wrangler secret put UPSTASH_REDIS_REST_URL
+#   wrangler secret put UPSTASH_REDIS_REST_TOKEN
+#   # or:
+#   wrangler secret put REDIS_URL
+#
 # ── R2 / image storage secrets ────────────────────────────────────────────────
 # Used by step 4 (generate-images) to upload composite outfit images.
 # Must match the same R2 bucket used by the skydiiv web app.

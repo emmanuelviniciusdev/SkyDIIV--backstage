@@ -2,6 +2,7 @@ import { serve } from "@upstash/workflow/cloudflare"
 import { buildPromptStep } from "./steps/build-prompt"
 import { executePromptStep } from "./steps/execute-prompt"
 import { saveOutfitsStep } from "./steps/save-outfits"
+import { invalidateWeeklyOutfitsCacheStep } from "./steps/invalidate-weekly-outfits-cache"
 import { generateImageStep } from "./steps/generate-images"
 import { resetDbClients } from "./lib/db/client"
 import { createLogger } from "./lib/logger"
@@ -24,6 +25,7 @@ function getCurrentWeekStartDate(): string {
  *   1. build-prompt   — loads preferences, wardrobe, weather → builds LLM prompt.
  *   2. execute-prompt — calls the LLM; validates and parses JSON suggestions.
  *   3. save-outfits   — persists generated outfits to the DB (idempotent).
+ *   3b. invalidate-weekly-outfits-cache — clears the skydiiv web app Redis cache.
  *   4. generate-image — one step per outfit; composites a thumbnail via the
  *                       Cloudflare Images binding (env.IMAGES). All pixel work
  *                       is done by Cloudflare's backend
@@ -75,6 +77,16 @@ export const { fetch: workflowFetch } = serve<WorkflowPayload>(async (context) =
     })
   })
   log.info("Step completed: save-outfits", { savedCount: savedOutfits.length })
+
+  // ── Step 3b: Invalidate web app cache ─────────────────────────────────────
+  log.info("Starting step: invalidate-weekly-outfits-cache")
+  await context.run("invalidate-weekly-outfits-cache", async () => {
+    await invalidateWeeklyOutfitsCacheStep({
+      userId: promptData.userId,
+      weekStartDate: promptData.weekStartDate,
+    })
+  })
+  log.info("Step completed: invalidate-weekly-outfits-cache")
 
   // ── Step 4: Generate thumbnails (one CF Images call per outfit) ───────────
   // Each outfit runs in its own workflow step so it gets a fresh Worker
