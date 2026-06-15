@@ -18,12 +18,17 @@ const mocks = vi.hoisted(() => {
     { id: "item-2", title: "Calça jeans", image_url: null, tags: ["casual", "denim"] },
   ]
 
-  let readCallCount = 0
-  const readDb = vi.fn().mockImplementation(() => {
-    readCallCount++
-    // Interleaved calls: first call -> preferences, second call -> wardrobe
-    if (readCallCount % 2 === 1) return Promise.resolve([fakePreferencesRow])
-    return Promise.resolve(fakeWardrobeRows)
+  const fakeUserRow = {
+    first_name: "Ana",
+    last_name: "Costa",
+  }
+
+  const readDb = vi.fn().mockImplementation((strings: TemplateStringsArray | string[]) => {
+    const query = Array.isArray(strings) ? strings.join("") : String(strings)
+    if (query.includes("weekly_outfit_preferences")) return Promise.resolve([fakePreferencesRow])
+    if (query.includes("clothing_items")) return Promise.resolve(fakeWardrobeRows)
+    if (query.includes("users")) return Promise.resolve([fakeUserRow])
+    return Promise.resolve([])
   })
 
   const writeDb = vi.fn().mockResolvedValue([])
@@ -36,13 +41,11 @@ const mocks = vi.hoisted(() => {
     PREFERENCES_ID,
     fakePreferencesRow,
     fakeWardrobeRows,
+    fakeUserRow,
     readDb,
     writeDb,
     fakePanorama,
     llmGenerate,
-    resetReadCallCount: () => {
-      readCallCount = 0
-    },
   }
 })
 
@@ -71,12 +74,13 @@ import { savePanoramaStep } from "../../src/workflows/generate-wardrobe-panorama
 // ---------------------------------------------------------------------------
 
 describe("generate-wardrobe-panorama workflow steps", () => {
-  it("builds a prompt containing preferences and wardrobe data", async () => {
-    mocks.resetReadCallCount()
+  it("builds a prompt containing user name, preferences and wardrobe data", async () => {
     const result = await buildPromptStep(mocks.USER_ID)
 
     expect(result.userId).toBe(mocks.USER_ID)
     expect(typeof result.prompt).toBe("string")
+    expect(result.prompt).toContain("DADOS DO USUÁRIO:")
+    expect(result.prompt).toContain("Nome: Ana")
     expect(result.prompt).toContain("PREFERÊNCIAS DO USUÁRIO:")
     expect(result.prompt).toContain("DADOS DO GUARDA-ROUPA:")
     expect(result.prompt).toContain("Total de peças: 2")
@@ -86,7 +90,6 @@ describe("generate-wardrobe-panorama workflow steps", () => {
   })
 
   it("calls the LLM and returns an interaction id and response", async () => {
-    mocks.resetReadCallCount()
     const promptData = await buildPromptStep(mocks.USER_ID)
     const exec = await executePromptStep({ userId: promptData.userId, prompt: promptData.prompt })
 
