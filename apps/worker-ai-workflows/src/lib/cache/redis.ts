@@ -40,6 +40,28 @@ export function getUpstashRestCredentials(): UpstashRestCredentials | null {
 }
 
 /**
+ * Checks whether a Redis key exists via the Upstash REST API (works in Cloudflare Workers).
+ * Returns false when the key is missing or Redis is not configured.
+ */
+export async function existsRedisKey(key: string): Promise<boolean> {
+  const credentials = getUpstashRestCredentials()
+  if (!credentials) return false
+
+  const response = await fetch(`${credentials.url}/exists/${encodeURIComponent(key)}`, {
+    headers: {
+      Authorization: `Bearer ${credentials.token}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Redis EXISTS failed (${response.status})`)
+  }
+
+  const body: { result?: number } = await response.json()
+  return body.result === 1
+}
+
+/**
  * Deletes a Redis key via the Upstash REST API (works in Cloudflare Workers).
  * Returns true when the key was deleted, false when it did not exist or Redis is not configured.
  */
