@@ -7,6 +7,7 @@ Workflows are registered with `serveMany`, which routes each request by the **la
 | Endpoint | Workflow | Purpose |
 |---|---|---|
 | `POST /generate-weekly-outfits` | `generate-weekly-outfits` | Generates a full week of outfit suggestions for one user |
+| `POST /generate-wardrobe-panorama` | `generate-wardrobe-panorama` | Generates a wardrobe panorama for one user when the web app marks their wardrobe as updated |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
 ## generate-weekly-outfits
@@ -19,6 +20,18 @@ Given a `userId`, the workflow:
 4. Persists the generated outfits to the database (idempotent per user/week — safe to re-run)
 5. Invalidates the Skydiiv web app's Redis cache for that user/week
 6. Composites per-day wardrobe images into 400×400 JPEG collage thumbnails (via the Cloudflare Images binding) and uploads them to **Cloudflare R2**
+
+## generate-wardrobe-panorama
+
+Given a `userId`, the workflow runs only when the Skydiiv web app has set the Redis marker `wardrobe-update-check:{userId}--wardrobe-panorama`. Five sequential durable steps:
+
+1. **check-wardrobe-update** — verifies the Redis marker exists; exits early if absent
+2. **build-prompt** — loads preferences and wardrobe from PostgreSQL, builds the LLM prompt
+3. **execute-prompt** — calls the LLM and logs the interaction
+4. **save-panorama** — persists the markdown panorama to `wardrobe_panorama` (idempotent per user)
+5. **clear-wardrobe-update-check** — removes the Redis marker after a successful run
+
+Triggered on Thursdays by `worker-scheduler` via QStash (`WARDROBE_PANORAMA_WORKER_URL`).
 
 ## Architecture
 
@@ -70,25 +83,34 @@ graph TD
 │   ├── index.ts                            # Worker HTTP entry point (health check + serveMany dispatch)
 │   ├── workflows/
 │   │   ├── index.ts                        # serveMany registry: endpoint key → workflow
-│   │   └── generate-weekly-outfits/
+│   │   ├── generate-weekly-outfits/
+│   │   │   ├── workflow.ts                 # createWorkflow() definition (durable steps)
+│   │   │   └── steps/
+│   │   │       ├── build-prompt.ts         # Step 1: load data + build LLM prompt
+│   │   │       ├── execute-prompt.ts       # Step 2: call LLM + parse response
+│   │   │       ├── save-outfits.ts         # Step 3: persist outfits to DB (idempotent)
+│   │   │       ├── invalidate-weekly-outfits-cache.ts  # Step 3b: clear web app Redis cache
+│   │   │       └── generate-images.ts      # Step 4: composite + upload collage images
+│   │   └── generate-wardrobe-panorama/
 │   │       ├── workflow.ts                 # createWorkflow() definition (durable steps)
 │   │       └── steps/
-│   │           ├── build-prompt.ts         # Step 1: load data + build LLM prompt
-│   │           ├── execute-prompt.ts       # Step 2: call LLM + parse response
-│   │           ├── save-outfits.ts         # Step 3: persist outfits to DB (idempotent)
-│   │           ├── invalidate-weekly-outfits-cache.ts  # Step 3b: clear web app Redis cache
-│   │           └── generate-images.ts      # Step 4: composite + upload collage images
+│   │           ├── check-wardrobe-update.ts        # Step 1: verify Redis marker
+│   │           ├── build-prompt.ts                 # Step 2: load data + build LLM prompt
+│   │           ├── execute-prompt.ts             # Step 3: call LLM
+│   │           ├── save-panorama.ts              # Step 4: persist panorama to DB
+│   │           └── clear-wardrobe-update-check.ts  # Step 5: remove Redis marker
 │   └── lib/                                # Shared infrastructure across workflows
 │       ├── db/
 │       │   ├── client.ts                   # Read/write Postgres pool singletons
 │       │   ├── preferences.repository.ts
 │       │   ├── wardrobe.repository.ts
 │       │   ├── weekly-outfits.repository.ts
+│       │   ├── wardrobe-panorama.repository.ts
 │       │   └── llm-interactions.repository.ts
 │       ├── prompt/                         # pt-BR prompt template + builder/parser
 │       ├── llm/                            # LLM provider registry (default: Gemini)
 │       ├── weather/                        # Open-Meteo forecast + geocoding
-│       ├── cache/                          # Upstash Redis client + weekly-outfits cache keys
+│       ├── cache/                          # Upstash Redis client + web app cache keys
 │       ├── storage/r2-client.ts            # R2 upload via S3 API
 │       ├── cf-images.ts                    # Cloudflare Images binding accessor
 │       └── logger.ts                       # Structured JSON logger
@@ -146,6 +168,20 @@ The `generate-weekly-outfits` workflow reads from and writes to the following ta
 - `weekly_outfits.week_start_date` is always the **Sunday** of the target week (UTC)
 - `weekly_outfits.day_of_week` is `0` (Sunday) through `6` (Saturday)
 - Re-running for the same `userId` + `week_start_date` deletes and re-creates outfits atomically (idempotent)
+
+The `generate-wardrobe-panorama` workflow reads from and writes to the following tables:
+
+| Table | Operation | Purpose |
+|---|---|---|
+| `weekly_outfit_preferences` | Read | User's location and style/routine description used to build the prompt |
+| `clothing_items` | Read | User's wardrobe items (id, title, image URL, tags) passed to the LLM |
+| `wardrobe_panorama` | Write | One markdown panorama per user; updated on re-run (idempotent) |
+| `llm_interactions` | Write | Audit log of every LLM call (prompt, response, latency, status) |
+
+**Key behaviors:**
+- Runs only when Redis key `wardrobe-update-check:{userId}--wardrobe-panorama` exists
+- Step 5 removes that Redis key after a successful save (non-fatal if Redis is unavailable)
+- Re-running for the same `userId` updates the existing `wardrobe_panorama` record
 
 ---
 
@@ -256,7 +292,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally:
 | `UPSTASH_WORKFLOW_URL` | Public **origin** of this worker (used for workflow callbacks; no path) |
 | `GEMINI_API_KEY` | API key for the default LLM provider (Gemini) |
 | `GEMINI_MODEL` | _(optional)_ Defaults to `gemini-2.5-flash` |
-| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (web app cache invalidation) |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (web app cache read/write) |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
 | `R2_ACCOUNT_ID` | Cloudflare account ID for R2 |
 | `R2_BUCKET` | R2 bucket name (shared with Skydiiv web app) |
@@ -304,9 +340,9 @@ wrangler deployments list   # copy the workers.dev URL (origin only)
 wrangler secret put UPSTASH_WORKFLOW_URL
 ```
 
-> **Upstream trigger:** `worker-scheduler` dispatches to this worker via the
-> `WEEKLY_OUTFITS_WORKER_URL` env var, which must point at the full endpoint
-> `https://worker-ai-workflows.<subdomain>.workers.dev/generate-weekly-outfits`.
+> **Upstream triggers:** `worker-scheduler` dispatches to this worker via:
+> - `WEEKLY_OUTFITS_WORKER_URL` → `https://worker-ai-workflows.<subdomain>.workers.dev/generate-weekly-outfits`
+> - `WARDROBE_PANORAMA_WORKER_URL` → `https://worker-ai-workflows.<subdomain>.workers.dev/generate-wardrobe-panorama`
 
 ---
 
@@ -314,7 +350,8 @@ wrangler secret put UPSTASH_WORKFLOW_URL
 
 - **Week boundaries** — the week always starts on **Sunday UTC**. Re-running mid-week regenerates the entire week.
 - **Idempotency** — safe to re-run for the same user/week. Existing outfits are replaced atomically.
-- **Graceful degradation** — if the weather API fails, the workflow continues without weather data. If the Redis cache invalidation or an individual outfit's image generation fails, a warning is logged but the workflow still completes.
+- **Graceful degradation** — if the weather API fails, the workflow continues without weather data. If Redis cache invalidation/clearing or an individual outfit's image generation fails, a warning is logged but the workflow still completes.
+- **Wardrobe panorama gating** — `generate-wardrobe-panorama` skips users without the `wardrobe-update-check:{userId}--wardrobe-panorama` Redis marker.
 - **Locale** — prompts and weather descriptions are in **Brazilian Portuguese** (`pt-BR`).
 - **Audit logging** — every LLM call (prompt, response, latency, status) is logged to the `llm_interactions` table.
 
@@ -328,5 +365,4 @@ wrangler secret put UPSTASH_WORKFLOW_URL
 | [Upstash](https://upstash.com) | QStash workflow orchestration + Redis cache |
 | [Open-Meteo](https://open-meteo.com) | Free weather forecast + geocoding APIs |
 | [Cloudflare R2](https://developers.cloudflare.com/r2/) | Image storage (shared bucket with the Skydiiv web app) |
-```
 
