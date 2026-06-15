@@ -11,7 +11,7 @@ export interface LogLlmInteractionInput {
   latencyMs: number
 }
 
-const CREATED_BY = "upstash-workflow-generate-weekly-outfits"
+const CREATED_BY = "worker-ai-workflows"
 
 export class SqlLlmInteractionsRepository {
   constructor(private readonly db: postgres.Sql) {}

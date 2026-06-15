@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config"
 
 export default defineConfig({
   test: {
-    name: "upstash-workflow-generate-weekly-outfits",
+    name: "worker-ai-workflows",
     globals: true,
     environment: "node",
     include: ["tests/**/*.test.ts"],

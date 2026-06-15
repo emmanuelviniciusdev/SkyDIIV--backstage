@@ -73,7 +73,7 @@ vi.mock("../../src/lib/storage/r2-client", () => ({
 // Import step AFTER mocks are registered
 // ---------------------------------------------------------------------------
 
-import { generateImageStep } from "../../src/steps/generate-images"
+import { generateImageStep } from "../../src/workflows/generate-weekly-outfits/steps/generate-images"
 
 // ---------------------------------------------------------------------------
 // Fixtures

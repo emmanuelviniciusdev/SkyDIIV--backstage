@@ -50,7 +50,8 @@ every-sunday → weekly-outfits flow
   │  1. SELECT user_id FROM weekly_outfit_preferences
   │  2. QStash batchJSON → { userId } × N
   ▼
-weekly-outfits-worker             (Cloudflare — @upstash/workflow)
+worker-ai-workflows               (Cloudflare — @upstash/workflow)
+  POST /generate-weekly-outfits
 ```
 
 ---
@@ -137,7 +138,7 @@ Copy `.env.example` to `.dev.vars` for local development.
 | `QSTASH_NEXT_SIGNING_KEY` | ✅ | all endpoints | QStash next signing key (key rotation) |
 | `QSTASH_TOKEN` | ✅ | flows that publish | Upstash QStash API token (for publishing messages) |
 | `DATABASE_URL` | ✅ | weekly-outfits flow | Neon PostgreSQL pooled connection string |
-| `WEEKLY_OUTFITS_WORKER_URL` | ✅ | weekly-outfits flow | Public URL of the `weekly-outfits-worker` Cloudflare Worker |
+| `WEEKLY_OUTFITS_WORKER_URL` | ✅ | weekly-outfits flow | Full endpoint URL of the `worker-ai-workflows` `generate-weekly-outfits` workflow (path included) |
 
 ### Setting secrets in Cloudflare
 
@@ -223,7 +224,7 @@ Required GitHub secrets (same account-level secrets as the workflow worker):
 | `QSTASH_TOKEN` | Upstash QStash API token |
 | `QSTASH_CURRENT_SIGNING_KEY` | QStash current signing key |
 | `QSTASH_NEXT_SIGNING_KEY` | QStash next signing key |
-| `WEEKLY_OUTFITS_WORKER_URL` | Weekly outfits workflow worker URL |
+| `WEEKLY_OUTFITS_WORKER_URL` | worker-ai-workflows `/generate-weekly-outfits` endpoint URL |
 
 ---
 

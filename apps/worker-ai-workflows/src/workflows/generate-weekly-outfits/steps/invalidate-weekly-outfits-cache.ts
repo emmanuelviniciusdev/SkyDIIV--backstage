@@ -1,5 +1,5 @@
-import { deleteCachedWeeklyOutfits } from "../lib/cache/weekly-outfits-cache"
-import { createLogger } from "../lib/logger"
+import { deleteCachedWeeklyOutfits } from "../../../lib/cache/weekly-outfits-cache"
+import { createLogger } from "../../../lib/logger"
 
 export interface InvalidateWeeklyOutfitsCacheInput {
   userId: string

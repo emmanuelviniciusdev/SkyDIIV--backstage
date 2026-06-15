@@ -1,4 +1,4 @@
-name = "weekly-outfits-worker"
+name = "worker-ai-workflows"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
@@ -54,7 +54,7 @@ invocation_logs = true
 
 # ── Staging / preview environment ─────────────────────────────────────────────
 [env.staging]
-name = "weekly-outfits-worker-staging"
+name = "worker-ai-workflows-staging"
 
 [env.staging.vars]
 LLM_PROVIDER = "gemini_flash"

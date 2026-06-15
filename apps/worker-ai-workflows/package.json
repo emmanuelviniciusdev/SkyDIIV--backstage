@@ -1,5 +1,5 @@
 {
-  "name": "upstash-workflow-generate-weekly-outfits",
+  "name": "worker-ai-workflows",
   "version": "1.0.0",
   "private": true,
   "scripts": {

@@ -8,7 +8,7 @@ vi.mock("../../src/lib/cache/weekly-outfits-cache", () => ({
   deleteCachedWeeklyOutfits: mocks.deleteCachedWeeklyOutfits,
 }))
 
-import { invalidateWeeklyOutfitsCacheStep } from "../../src/steps/invalidate-weekly-outfits-cache"
+import { invalidateWeeklyOutfitsCacheStep } from "../../src/workflows/generate-weekly-outfits/steps/invalidate-weekly-outfits-cache"
 
 describe("invalidateWeeklyOutfitsCacheStep", () => {
   beforeEach(() => {
