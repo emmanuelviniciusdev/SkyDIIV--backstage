@@ -1,6 +1,7 @@
 name: Deploy — Worker AI Workflows
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
