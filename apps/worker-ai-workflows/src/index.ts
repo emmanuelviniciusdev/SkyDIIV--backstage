@@ -1,4 +1,4 @@
-import { workflowFetch } from "./workflow"
+import { workflowsFetch } from "./workflows"
 import { createLogger } from "./lib/logger"
 import { setImages, type ImagesBinding } from "./lib/cf-images"
 
@@ -7,14 +7,15 @@ type Env = Record<string, string | undefined> & {
 }
 
 /**
- * Cloudflare Worker entry point — GenerateWeeklyOutfits workflow.
+ * Cloudflare Worker entry point — worker-ai-workflows.
  *
- * Copies all Worker bindings into process.env so downstream modules that
- * read process.env work without modification, then delegates to the
- * @upstash/workflow cloudflare adapter.
+ * A generic host for AI-related Upstash Workflows. Copies all Worker bindings
+ * into process.env so downstream modules that read process.env work without
+ * modification, then delegates to the @upstash/workflow serveMany router.
  *
  * GET / → health-check (useful for uptime monitors).
- * All other paths → Upstash Workflow handler.
+ * All other paths → serveMany, which dispatches by the last path segment:
+ *   POST /generate-weekly-outfits → generate-weekly-outfits workflow
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -34,7 +35,7 @@ export default {
     }
 
     try {
-      const response = await workflowFetch(request, env)
+      const response = await workflowsFetch(request, env)
       log.info("Request handled", { path: pathname, status: response.status })
       return response
     } catch (err) {

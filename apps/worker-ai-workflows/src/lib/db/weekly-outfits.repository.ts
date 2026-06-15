@@ -40,7 +40,7 @@ const WEEKDAY_TO_DAY_OF_WEEK: Record<string, number> = {
   saturday: 6,
 }
 
-const CREATED_BY = "upstash-workflow-generate-weekly-outfits"
+const CREATED_BY = "worker-ai-workflows"
 
 export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
   constructor(

@@ -158,10 +158,10 @@ vi.mock("../../src/lib/cf-images", () => ({
 // Import steps AFTER mocks are registered
 // ---------------------------------------------------------------------------
 
-import { buildPromptStep } from "../../src/steps/build-prompt"
-import { executePromptStep } from "../../src/steps/execute-prompt"
-import { saveOutfitsStep } from "../../src/steps/save-outfits"
-import { generateImageStep } from "../../src/steps/generate-images"
+import { buildPromptStep } from "../../src/workflows/generate-weekly-outfits/steps/build-prompt"
+import { executePromptStep } from "../../src/workflows/generate-weekly-outfits/steps/execute-prompt"
+import { saveOutfitsStep } from "../../src/workflows/generate-weekly-outfits/steps/save-outfits"
+import { generateImageStep } from "../../src/workflows/generate-weekly-outfits/steps/generate-images"
 
 // ---------------------------------------------------------------------------
 // Tests

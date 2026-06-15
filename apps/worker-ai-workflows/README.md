@@ -1,23 +1,31 @@
-# Generate Weekly Outfits — Upstash Workflow
+# worker-ai-workflows
 
-A **Cloudflare Worker** that runs a durable **Upstash Workflow** to automatically generate a full week of outfit suggestions (Sunday–Saturday) for a given user.
+A generic **Cloudflare Worker** that hosts AI-related **Upstash Workflows**. Each workflow is exposed at its own endpoint and runs as a durable, multi-step QStash workflow.
 
-## What It Does
+Workflows are registered with `serveMany`, which routes each request by the **last path segment** of its URL.
 
-Given a `userId`, the worker:
+| Endpoint | Workflow | Purpose |
+|---|---|---|
+| `POST /generate-weekly-outfits` | `generate-weekly-outfits` | Generates a full week of outfit suggestions for one user |
+| `GET /` | — | Health check → `{ status: "ok", timestamp }` |
+
+## generate-weekly-outfits
+
+Given a `userId`, the workflow:
 
 1. Loads the user's wardrobe, style preferences, and location from the shared PostgreSQL database
 2. Fetches a 7-day weather forecast for the user's location via Open-Meteo
 3. Builds a prompt in Brazilian Portuguese and calls an LLM to select clothing items by ID for each day
 4. Persists the generated outfits to the database (idempotent per user/week — safe to re-run)
-5. Composites per-day wardrobe images into 1600×1600 JPEG collage thumbnails and uploads them to **Cloudflare R2**
+5. Invalidates the Skydiiv web app's Redis cache for that user/week
+6. Composites per-day wardrobe images into 400×400 JPEG collage thumbnails (via the Cloudflare Images binding) and uploads them to **Cloudflare R2**
 
 ## Architecture
 
 ```mermaid
 graph TD
-    S["Upstash Scheduler"] -- "POST {userId} via QStash" --> B["Cloudflare Worker\nweekly-outfits-worker"]
-    B --> W["Upstash Workflow\n4 durable steps"]
+    S["worker-scheduler"] -- "POST {userId} via QStash" --> B["Cloudflare Worker\nworker-ai-workflows\nPOST /generate-weekly-outfits"]
+    B --> W["Upstash Workflow\ndurable steps"]
 
     W --> S1["Step 1\nbuild-prompt"]
     S1 --> DB1["Neon PostgreSQL\n(read preferences + wardrobe)"]
@@ -29,53 +37,12 @@ graph TD
     S2 --> S3["Step 3\nsave-outfits"]
     S3 --> DB2["Neon PostgreSQL\n(write outfits)"]
 
-    S3 --> S4["Step 4\ngenerate-images"]
+    S3 --> S3b["Step 3b\ninvalidate-weekly-outfits-cache"]
+    S3b --> RD["Upstash Redis\n(web app cache)"]
+
+    S3b --> S4["Step 4\ngenerate-image (per outfit)"]
     S4 --> R2["Cloudflare R2\n(fetch source images, upload collages)"]
     S4 --> DB3["Neon PostgreSQL\n(update outfits.image_url)"]
-```
-
-## Workflow Steps in Detail
-
-```mermaid
-sequenceDiagram
-    participant Scheduler as Upstash Scheduler
-    participant Worker as Cloudflare Worker
-    participant DB as Neon PostgreSQL
-    participant WX as Open-Meteo
-    participant LLM as LLM
-    participant R2 as Cloudflare R2
-
-    Scheduler->>Worker: POST {userId} (QStash signed)
-    Note over Worker: Validate payload, compute week start date
-
-    rect rgb(240, 248, 255)
-        Note over Worker: Step 1 — build-prompt
-        Worker->>DB: Load preferences + wardrobe items
-        Worker->>WX: Geocode location → lat/lon
-        Worker->>WX: Fetch 7-day weather forecast
-        Worker-->>Worker: Build pt-BR prompt
-    end
-
-    rect rgb(240, 255, 240)
-        Note over Worker: Step 2 — execute-prompt
-        Worker->>LLM: Send prompt
-        LLM-->>Worker: JSON: [{weekday, clothingPieceIds[]}] × 7
-        Worker->>DB: Log to llm_interactions (audit)
-    end
-
-    rect rgb(255, 248, 240)
-        Note over Worker: Step 3 — save-outfits
-        Worker->>DB: DELETE existing outfits for user/week
-        Worker->>DB: INSERT outfits + outfit_items + weekly_outfits
-    end
-
-    rect rgb(255, 240, 255)
-        Note over Worker: Step 4 — generate-images
-        Worker->>R2: Fetch wardrobe piece images
-        Worker-->>Worker: Composite 1600×1600 JPEG grid (Photon WASM)
-        Worker->>R2: Upload outfits/{id}.jpg
-        Worker->>DB: UPDATE outfits.image_url
-    end
 ```
 
 ## Tech Stack
@@ -84,12 +51,12 @@ sequenceDiagram
 |---|---|
 | Runtime | Cloudflare Workers (`nodejs_compat`) |
 | Language | TypeScript 5.7 (strict) |
-| Workflow orchestration | [@upstash/workflow](https://upstash.com/docs/workflow) + QStash |
+| Workflow orchestration | [@upstash/workflow](https://upstash.com/docs/workflow) (`serveMany`) + QStash |
 | Database | PostgreSQL via [postgres.js](https://github.com/porsager/postgres) (Neon) |
 | LLM | Configurable (default: Google Gemini `gemini-2.5-flash`) |
 | Weather | Open-Meteo Forecast + Geocoding APIs |
 | Object storage | Cloudflare R2 (S3-compatible via `@aws-sdk/client-s3`) |
-| Image processing | `@cf-wasm/photon` (WASM) |
+| Image processing | Cloudflare Images binding (`env.IMAGES`) |
 | Validation | Zod |
 | Dev / deploy | Wrangler 4 |
 | Testing | Vitest 4 (unit + integration) |
@@ -100,43 +67,71 @@ sequenceDiagram
 
 ```
 ├── src/
-│   ├── index.ts                        # Worker HTTP entry point (health check + workflow dispatch)
-│   ├── workflow.ts                     # Upstash Workflow definition (4 steps)
-│   ├── steps/
-│   │   ├── build-prompt.ts             # Step 1: load data + build LLM prompt
-│   │   ├── execute-prompt.ts           # Step 2: call LLM + parse response
-│   │   ├── save-outfits.ts             # Step 3: persist outfits to DB (idempotent)
-│   │   └── generate-images.ts          # Step 4: composite + upload collage images
-│   └── lib/
+│   ├── index.ts                            # Worker HTTP entry point (health check + serveMany dispatch)
+│   ├── workflows/
+│   │   ├── index.ts                        # serveMany registry: endpoint key → workflow
+│   │   └── generate-weekly-outfits/
+│   │       ├── workflow.ts                 # createWorkflow() definition (durable steps)
+│   │       └── steps/
+│   │           ├── build-prompt.ts         # Step 1: load data + build LLM prompt
+│   │           ├── execute-prompt.ts       # Step 2: call LLM + parse response
+│   │           ├── save-outfits.ts         # Step 3: persist outfits to DB (idempotent)
+│   │           ├── invalidate-weekly-outfits-cache.ts  # Step 3b: clear web app Redis cache
+│   │           └── generate-images.ts      # Step 4: composite + upload collage images
+│   └── lib/                                # Shared infrastructure across workflows
 │       ├── db/
-│       │   ├── client.ts               # Read/write Postgres pool singletons
+│       │   ├── client.ts                   # Read/write Postgres pool singletons
 │       │   ├── preferences.repository.ts
 │       │   ├── wardrobe.repository.ts
 │       │   ├── weekly-outfits.repository.ts
 │       │   └── llm-interactions.repository.ts
-│       ├── prompt/
-│       │   ├── template.ts             # pt-BR fashion-assistant prompt template
-│       │   └── builder.ts              # Prompt interpolation + Zod parsing of LLM JSON
-│       ├── llm/
-│       │   └── gemini.provider.ts      # Default LLM provider (Gemini)
-│       ├── weather/
-│       │   └── open-meteo.provider.ts  # 7-day forecast fetcher
-│       ├── image/
-│       │   └── composite.ts            # 1600×1600 collage builder (Photon WASM)
-│       ├── storage/
-│       │   └── r2-client.ts            # R2 upload via S3 API
-│       └── logger.ts                   # Structured JSON logger
+│       ├── prompt/                         # pt-BR prompt template + builder/parser
+│       ├── llm/                            # LLM provider registry (default: Gemini)
+│       ├── weather/                        # Open-Meteo forecast + geocoding
+│       ├── cache/                          # Upstash Redis client + weekly-outfits cache keys
+│       ├── storage/r2-client.ts            # R2 upload via S3 API
+│       ├── cf-images.ts                    # Cloudflare Images binding accessor
+│       └── logger.ts                       # Structured JSON logger
 ├── tests/
-│   ├── unit/                           # Unit tests per module
-│   └── integration/                    # Full 4-step pipeline integration tests
-├── wrangler.toml                       # Cloudflare Worker config + environments
-├── .env.example                        # Secret reference (copy to .dev.vars for local dev)
+│   ├── unit/                               # Unit tests per module
+│   └── integration/                        # Full pipeline integration tests
+├── wrangler.toml                           # Cloudflare Worker config + environments
+├── .env.example                            # Secret reference (copy to .dev.vars for local dev)
 └── package.json
 ```
 
+## Adding a new workflow
+
+1. Create `src/workflows/<endpoint-name>/workflow.ts` and export a workflow built with `createWorkflow(...)`:
+
+```ts
+import { createWorkflow } from "@upstash/workflow/cloudflare"
+
+export interface MyWorkflowPayload {
+  userId: string
+}
+
+export const myWorkflow = createWorkflow<MyWorkflowPayload, void>(async (context) => {
+  // context.run("step-name", async () => { ... })
+})
+```
+
+2. Register it in `src/workflows/index.ts` under its endpoint key:
+
+```ts
+export const { fetch: workflowsFetch } = serveMany({
+  "generate-weekly-outfits": generateWeeklyOutfitsWorkflow,
+  "my-endpoint": myWorkflow,
+})
+```
+
+3. The workflow is now reachable at `POST /my-endpoint`. No changes to `src/index.ts` are needed.
+
+> Workflow keys cannot contain `/`. `serveMany` derives the workflow from the last URL path segment, and QStash step callbacks preserve that path automatically.
+
 ## Database
 
-The worker reads from and writes to the following tables:
+The `generate-weekly-outfits` workflow reads from and writes to the following tables:
 
 | Table | Operation | Purpose |
 |---|---|---|
@@ -159,7 +154,7 @@ The worker reads from and writes to the following tables:
 This worker does not handle end-user authentication. Security is enforced at the transport layer:
 
 - **Request signing** — all workflow requests are signed by Upstash QStash and verified by `@upstash/workflow` using `QSTASH_CURRENT_SIGNING_KEY` / `QSTASH_NEXT_SIGNING_KEY` before any step executes
-- **Health endpoint** — `GET /` is the only public endpoint; it returns `{ status: "ok", timestamp }`
+- **Health endpoint** — `GET /` is the only unsigned public endpoint; it returns `{ status: "ok", timestamp }`
 - **Database access** — direct Postgres connections via env secrets; `userId` comes from the verified workflow payload
 - **R2 access** — S3 API key pair scoped to the shared Skydiiv bucket
 
@@ -173,7 +168,7 @@ This worker does not handle end-user authentication. Security is enforced at the
 - [Wrangler](https://developers.cloudflare.com/workers/wrangler/) 4 (`npm i -g wrangler`)
 - [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/) (for local testing with Upstash callbacks)
 - A [Cloudflare](https://cloudflare.com) account with Workers and R2 enabled
-- An [Upstash](https://upstash.com) account (QStash)
+- An [Upstash](https://upstash.com) account (QStash + Redis)
 - A [Neon](https://neon.tech) PostgreSQL database (shared with the Skydiiv web app)
 - An API key for the configured LLM provider
 
@@ -204,17 +199,17 @@ The worker starts at `http://localhost:8787`.
 cloudflared tunnel --url http://localhost:8787
 ```
 
-`cloudflared` prints a public URL, e.g. `https://foo.bar.baz.trycloudflare.com`. Set this as `UPSTASH_WORKFLOW_URL` in your `.dev.vars` and restart `npm run dev`.
+`cloudflared` prints a public URL, e.g. `https://foo.bar.baz.trycloudflare.com`. Set this **origin** (no path) as `UPSTASH_WORKFLOW_URL` in your `.dev.vars` and restart `npm run dev`.
 
-**4. Trigger the workflow:**
+**4. Trigger a workflow:**
 
 ```bash
-curl -X POST https://foo.bar.baz.trycloudflare.com \
+curl -X POST https://foo.bar.baz.trycloudflare.com/generate-weekly-outfits \
   -H "Content-Type: application/json" \
   -d '{"userId": <USER_ID>}'
 ```
 
-Replace the URL with your `cloudflared` tunnel URL and `userId` with a real user ID from the database.
+Replace the origin with your `cloudflared` tunnel URL and `userId` with a real user ID from the database.
 
 ### Running Tests
 
@@ -239,8 +234,8 @@ npm run lint:fix      # auto-fix
 
 | Setting | Value |
 |---|---|
-| Worker name (production) | `weekly-outfits-worker` |
-| Worker name (staging) | `weekly-outfits-worker-staging` |
+| Worker name (production) | `worker-ai-workflows` |
+| Worker name (staging) | `worker-ai-workflows-staging` |
 | Entry point | `src/index.ts` |
 | Compatibility date | `2025-01-01` |
 | Compatibility flags | `nodejs_compat` |
@@ -258,9 +253,11 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally:
 | `QSTASH_TOKEN` | QStash API token |
 | `QSTASH_CURRENT_SIGNING_KEY` | Request verification (current) |
 | `QSTASH_NEXT_SIGNING_KEY` | Request verification (rotation) |
-| `UPSTASH_WORKFLOW_URL` | Public URL of this worker (used for workflow callbacks) |
+| `UPSTASH_WORKFLOW_URL` | Public **origin** of this worker (used for workflow callbacks; no path) |
 | `GEMINI_API_KEY` | API key for the default LLM provider (Gemini) |
 | `GEMINI_MODEL` | _(optional)_ Defaults to `gemini-2.5-flash` |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (web app cache invalidation) |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
 | `R2_ACCOUNT_ID` | Cloudflare account ID for R2 |
 | `R2_BUCKET` | R2 bucket name (shared with Skydiiv web app) |
 | `R2_ACCESS_KEY_ID` | R2 S3-compatible access key |
@@ -273,13 +270,13 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally:
 
 ### CI/CD Pipeline
 
-The GitHub Actions workflow (`.github/workflows/deploy-weekly-outfits-worker.yml`) triggers on pushes to `main` or `staging` branches when files under `apps/upstash-workflow-generate-weekly-outfits/` change.
+The GitHub Actions workflow (`.github/workflows/deploy-worker-ai-workflows.yml`) triggers on pushes to `main` or `staging` branches when files under `apps/worker-ai-workflows/` change.
 
 ```mermaid
 flowchart LR
     PR["Pull Request"] --> CI["CI Job\nlint + test"]
-    CI -->|push to staging| DS["Deploy → Staging\nweekly-outfits-worker-staging"]
-    CI -->|push to main| DP["Deploy → Production\nweekly-outfits-worker"]
+    CI -->|push to staging| DS["Deploy → Staging\nworker-ai-workflows-staging"]
+    CI -->|push to main| DP["Deploy → Production\nworker-ai-workflows"]
 ```
 
 ### Required GitHub Secrets
@@ -300,12 +297,16 @@ npm run deploy
 npm run deploy -- --env staging
 ```
 
-After the first deploy, update `UPSTASH_WORKFLOW_URL` with the deployed worker URL:
+After the first deploy, update `UPSTASH_WORKFLOW_URL` with the deployed worker origin:
 
 ```bash
-wrangler deployments list   # copy the workers.dev URL
+wrangler deployments list   # copy the workers.dev URL (origin only)
 wrangler secret put UPSTASH_WORKFLOW_URL
 ```
+
+> **Upstream trigger:** `worker-scheduler` dispatches to this worker via the
+> `WEEKLY_OUTFITS_WORKER_URL` env var, which must point at the full endpoint
+> `https://worker-ai-workflows.<subdomain>.workers.dev/generate-weekly-outfits`.
 
 ---
 
@@ -313,7 +314,7 @@ wrangler secret put UPSTASH_WORKFLOW_URL
 
 - **Week boundaries** — the week always starts on **Sunday UTC**. Re-running mid-week regenerates the entire week.
 - **Idempotency** — safe to re-run for the same user/week. Existing outfits are replaced atomically.
-- **Graceful degradation** — if the weather API fails, the workflow continues without weather data. If image generation fails for an individual outfit, a warning is logged but the workflow still completes.
+- **Graceful degradation** — if the weather API fails, the workflow continues without weather data. If the Redis cache invalidation or an individual outfit's image generation fails, a warning is logged but the workflow still completes.
 - **Locale** — prompts and weather descriptions are in **Brazilian Portuguese** (`pt-BR`).
 - **Audit logging** — every LLM call (prompt, response, latency, status) is logged to the `llm_interactions` table.
 
@@ -324,6 +325,8 @@ wrangler secret put UPSTASH_WORKFLOW_URL
 | Service | Role |
 |---|---|
 | [Neon](https://neon.tech) | Serverless PostgreSQL (shared schema with the Skydiiv web app) |
-| [Upstash](https://upstash.com) | QStash scheduler + durable workflow orchestration |
+| [Upstash](https://upstash.com) | QStash workflow orchestration + Redis cache |
 | [Open-Meteo](https://open-meteo.com) | Free weather forecast + geocoding APIs |
 | [Cloudflare R2](https://developers.cloudflare.com/r2/) | Image storage (shared bucket with the Skydiiv web app) |
+```
+

@@ -13,8 +13,9 @@ export interface GenerateWeeklyOutfitsPayload {
 }
 
 /**
- * Publishes one QStash message per eligible user to the weekly-outfits worker
- * URL, batching requests in groups of BATCH_SIZE (QStash limit: 100/call).
+ * Publishes one QStash message per eligible user to the worker-ai-workflows
+ * generate-weekly-outfits endpoint (WEEKLY_OUTFITS_WORKER_URL, path included),
+ * batching requests in groups of BATCH_SIZE (QStash limit: 100/call).
  *
  * Returns the total number of messages dispatched.
  */
@@ -46,7 +47,8 @@ export async function dispatchUsersToWorkflow(users: EligibleUser[]): Promise<nu
  * Weekly outfits flow — registered on Sunday.
  *
  * 1. Query weekly_outfit_preferences for all users with preferences defined.
- * 2. Batch-publish { userId } to the weekly-outfits workflow worker via QStash.
+ * 2. Batch-publish { userId } to the worker-ai-workflows generate-weekly-outfits
+ *    endpoint via QStash.
  * 3. Report how many messages were dispatched.
  */
 export const weeklyOutfitsFlow: ScheduleFlow = {
