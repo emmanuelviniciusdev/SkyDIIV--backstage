@@ -15,7 +15,8 @@ vi.mock("@upstash/qstash", () => ({
   Receiver: vi.fn(function () {}),
 }))
 
-import { dispatchUsersToWorkflow, resetQStashClients } from "../../src/lib/qstash"
+import { dispatchUsersToWorkflow } from "../../src/flows/weekly-outfits.flow"
+import { resetQStashClients } from "../../src/lib/qstash"
 
 describe("dispatchUsersToWorkflow", () => {
   beforeEach(() => {

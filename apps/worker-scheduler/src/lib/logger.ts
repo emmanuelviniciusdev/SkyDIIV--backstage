@@ -1,5 +1,5 @@
 /**
- * Minimal structured logger for the weekly-outfits Cloudflare Worker.
+ * Minimal structured logger for the worker-scheduler Cloudflare Worker.
  *
  * Emits newline-delimited JSON to stdout/stderr, captured by
  * Cloudflare Workers Logs (Real-time Logs / Workers Trace Events).
@@ -19,7 +19,7 @@ export interface Logger {
   error(msg: string, extra?: Record<string, unknown>): void
 }
 
-const APP = "upstash-schedule-weekly-outfits"
+const APP = "worker-scheduler"
 
 function emit(level: Level, msg: string, ctx: Record<string, unknown>): void {
   const entry = JSON.stringify({

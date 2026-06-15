@@ -1,4 +1,4 @@
-name = "weekly-outfits-scheduler"
+name = "worker-scheduler"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
@@ -23,4 +23,4 @@ invocation_logs = true
 #
 # ── Staging / preview environment ─────────────────────────────────────────────
 [env.staging]
-name = "weekly-outfits-scheduler-staging"
+name = "worker-scheduler-staging"
