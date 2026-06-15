@@ -1,5 +1,6 @@
 import { serveMany } from "@upstash/workflow/cloudflare"
 import { generateWeeklyOutfitsWorkflow } from "./generate-weekly-outfits/workflow"
+import { generateWardrobePanoramaWorkflow } from "./generate-wardrobe-panorama/workflow"
 
 /**
  * Workflow registry for the worker-ai-workflows worker.
@@ -18,6 +19,7 @@ import { generateWeeklyOutfitsWorkflow } from "./generate-weekly-outfits/workflo
  */
 const { fetch: serveManyFetch } = serveMany({
   "generate-weekly-outfits": generateWeeklyOutfitsWorkflow,
+  "generate-wardrobe-panorama": generateWardrobePanoramaWorkflow,
 })
 
 /**
