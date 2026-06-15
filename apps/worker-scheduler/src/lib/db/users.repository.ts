@@ -37,4 +37,19 @@ export class SqlUsersRepository implements UsersRepository {
 
     return rows.map((row) => ({ userId: row.user_id }))
   }
+
+  /**
+   * Finds users that have at least `minCount` clothing items in their wardrobe.
+   * Returns an array of EligibleUser objects ({ userId }).
+   */
+  async findUsersWithWardrobeSizeAtLeast(minCount: number): Promise<EligibleUser[]> {
+    const rows = await this.db<{ user_id: string; cnt: number }[]>`
+      SELECT ci.user_id, COUNT(*) AS cnt
+      FROM clothing_items ci
+      GROUP BY ci.user_id
+      HAVING COUNT(*) >= ${minCount}
+    `
+
+    return rows.map((r) => ({ userId: r.user_id }))
+  }
 }

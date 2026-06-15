@@ -1,5 +1,6 @@
 import type { ScheduleFlow, Weekday } from "./types"
 import { weeklyOutfitsFlow } from "./weekly-outfits.flow"
+import { generateWardrobePanoramaFlow } from "./generate-wardrobe-panorama.flow"
 
 /**
  * Maps each weekday to the list of flows it triggers.
@@ -13,6 +14,7 @@ import { weeklyOutfitsFlow } from "./weekly-outfits.flow"
  */
 export const flowRegistry: Partial<Record<Weekday, ScheduleFlow[]>> = {
   sunday: [weeklyOutfitsFlow],
+  thursday: [generateWardrobePanoramaFlow],
 }
 
 export function getFlowsForDay(day: Weekday): ScheduleFlow[] {

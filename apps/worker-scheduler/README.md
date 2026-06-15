@@ -17,7 +17,7 @@ by writing a flow and registering it, with no infrastructure changes.
 | `POST /schedule/every-monday` | Monday | _(none yet)_ |
 | `POST /schedule/every-tuesday` | Tuesday | _(none yet)_ |
 | `POST /schedule/every-wednesday` | Wednesday | _(none yet)_ |
-| `POST /schedule/every-thursday` | Thursday | _(none yet)_ |
+| `POST /schedule/every-thursday` | Thursday | `generate-wardrobe-panorama` |
 | `POST /schedule/every-friday` | Friday | _(none yet)_ |
 | `POST /schedule/every-saturday` | Saturday | _(none yet)_ |
 | `POST /schedule/every-sunday` | Sunday | `weekly-outfits` |
@@ -139,6 +139,7 @@ Copy `.env.example` to `.dev.vars` for local development.
 | `QSTASH_TOKEN` | ✅ | flows that publish | Upstash QStash API token (for publishing messages) |
 | `DATABASE_URL` | ✅ | weekly-outfits flow | Neon PostgreSQL pooled connection string |
 | `WEEKLY_OUTFITS_WORKER_URL` | ✅ | weekly-outfits flow | Full endpoint URL of the `worker-ai-workflows` `generate-weekly-outfits` workflow (path included) |
+| `WARDROBE_PANORAMA_WORKER_URL` | ✅ | generate-wardrobe-panorama flow | Full endpoint URL of the `worker-ai-workflows` `generate-wardrobe-panorama` workflow (path included) |
 
 ### Setting secrets in Cloudflare
 
