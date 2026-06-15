@@ -1,6 +1,7 @@
 name: Deploy — Worker Scheduler
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
