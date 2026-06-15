@@ -6,7 +6,6 @@ import {
   deleteRedisKey,
 } from "../../src/lib/cache/redis"
 import { deleteCachedWeeklyOutfits } from "../../src/lib/cache/weekly-outfits-cache"
-import { hasWardrobeUpdateCheck, clearWardrobeUpdateCheck } from "../../src/lib/cache/wardrobe-update-check-cache"
 
 describe("parseUpstashRestFromRedisUrl", () => {
   it("parses a standard Upstash Redis URL", () => {
@@ -176,72 +175,6 @@ describe("deleteRedisKey", () => {
     fetchMock.mockResolvedValue({ ok: false, status: 503 })
 
     await expect(deleteRedisKey("some-key")).rejects.toThrow("Redis DEL failed (503)")
-  })
-})
-
-describe("hasWardrobeUpdateCheck", () => {
-  const originalEnv = { ...process.env }
-  const fetchMock = vi.fn()
-
-  beforeEach(() => {
-    vi.stubGlobal("fetch", fetchMock)
-    process.env = {
-      ...originalEnv,
-      UPSTASH_REDIS_REST_URL: "https://us1-example.upstash.io",
-      UPSTASH_REDIS_REST_TOKEN: "rest-token",
-    }
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ result: 1 }),
-    })
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    process.env = { ...originalEnv }
-    fetchMock.mockReset()
-  })
-
-  it("checks the same cache key used by the skydiiv web app", async () => {
-    await hasWardrobeUpdateCheck("user-123")
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://us1-example.upstash.io/exists/wardrobe-update-check%3Auser-123--wardrobe-panorama",
-      expect.any(Object),
-    )
-  })
-})
-
-describe("clearWardrobeUpdateCheck", () => {
-  const originalEnv = { ...process.env }
-  const fetchMock = vi.fn()
-
-  beforeEach(() => {
-    vi.stubGlobal("fetch", fetchMock)
-    process.env = {
-      ...originalEnv,
-      UPSTASH_REDIS_REST_URL: "https://us1-example.upstash.io",
-      UPSTASH_REDIS_REST_TOKEN: "rest-token",
-    }
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ result: 1 }),
-    })
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    process.env = { ...originalEnv }
-    fetchMock.mockReset()
-  })
-
-  it("deletes the same cache key used by the skydiiv web app", async () => {
-    await clearWardrobeUpdateCheck("user-123")
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://us1-example.upstash.io/del/wardrobe-update-check%3Auser-123--wardrobe-panorama",
-      expect.objectContaining({ method: "POST" }),
-    )
   })
 })
 

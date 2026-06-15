@@ -3,7 +3,7 @@ import { checkWardrobeUpdateStep } from "./steps/check-wardrobe-update"
 import { buildPromptStep } from "./steps/build-prompt"
 import { executePromptStep } from "./steps/execute-prompt"
 import { savePanoramaStep } from "./steps/save-panorama"
-import { clearWardrobeUpdateCheckStep } from "./steps/clear-wardrobe-update-check"
+import { invalidateWardrobePanoramaCacheStep } from "./steps/invalidate-wardrobe-panorama-cache"
 import { resetDbClients } from "../../lib/db/client"
 import { createLogger } from "../../lib/logger"
 
@@ -66,12 +66,12 @@ export const generateWardrobePanoramaWorkflow = createWorkflow<GenerateWardrobeP
     })
     log.info("Step completed: save-panorama")
 
-    // ── Step 5: Clear wardrobe update marker ────────────────────────────────
-    log.info("Starting step: clear-wardrobe-update-check")
-    await context.run("clear-wardrobe-update-check", async () => {
-      return clearWardrobeUpdateCheckStep(promptData.userId)
+    // ── Step 5: Invalidate wardrobe panorama cache ──────────────────────────
+    log.info("Starting step: invalidate-wardrobe-panorama-cache")
+    await context.run("invalidate-wardrobe-panorama-cache", async () => {
+      return invalidateWardrobePanoramaCacheStep(promptData.userId)
     })
-    log.info("Step completed: clear-wardrobe-update-check")
+    log.info("Step completed: invalidate-wardrobe-panorama-cache")
 
     log.info("Workflow completed")
   },

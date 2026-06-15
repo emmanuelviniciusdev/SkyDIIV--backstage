@@ -1,4 +1,4 @@
-import { hasWardrobeUpdateCheck } from "../../../lib/cache/wardrobe-update-check-cache"
+import { hasWardrobeUpdateCheck } from "../../../lib/cache/wardrobe-panorama-cache"
 import { createLogger } from "../../../lib/logger"
 
 /**

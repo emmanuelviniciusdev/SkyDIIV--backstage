@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   hasWardrobeUpdateCheck: vi.fn(),
 }))
 
-vi.mock("../../src/lib/cache/wardrobe-update-check-cache", () => ({
+vi.mock("../../src/lib/cache/wardrobe-panorama-cache", () => ({
   hasWardrobeUpdateCheck: mocks.hasWardrobeUpdateCheck,
 }))
 

@@ -29,7 +29,7 @@ Given a `userId`, the workflow runs only when the Skydiiv web app has set the Re
 2. **build-prompt** — loads preferences and wardrobe from PostgreSQL, builds the LLM prompt
 3. **execute-prompt** — calls the LLM and logs the interaction
 4. **save-panorama** — persists the markdown panorama to `wardrobe_panorama` (idempotent per user)
-5. **clear-wardrobe-update-check** — removes the Redis marker after a successful run
+5. **invalidate-wardrobe-panorama-cache** — clears all wardrobe-panorama-related Redis keys after a successful run (`wardrobe-update-check:{userId}--wardrobe-panorama`, `wardrobe-panorama:{userId}`)
 
 Triggered on Thursdays by `worker-scheduler` via QStash (`WARDROBE_PANORAMA_WORKER_URL`).
 
@@ -98,7 +98,7 @@ graph TD
 │   │           ├── build-prompt.ts                 # Step 2: load data + build LLM prompt
 │   │           ├── execute-prompt.ts             # Step 3: call LLM
 │   │           ├── save-panorama.ts              # Step 4: persist panorama to DB
-│   │           └── clear-wardrobe-update-check.ts  # Step 5: remove Redis marker
+│   │           └── invalidate-wardrobe-panorama-cache.ts  # Step 5: clear web app Redis cache
 │   └── lib/                                # Shared infrastructure across workflows
 │       ├── db/
 │       │   ├── client.ts                   # Read/write Postgres pool singletons
@@ -180,7 +180,7 @@ The `generate-wardrobe-panorama` workflow reads from and writes to the following
 
 **Key behaviors:**
 - Runs only when Redis key `wardrobe-update-check:{userId}--wardrobe-panorama` exists
-- Step 5 removes that Redis key after a successful save (non-fatal if Redis is unavailable)
+- Step 5 invalidates all wardrobe-panorama Redis keys (`wardrobe-update-check:{userId}--wardrobe-panorama`, `wardrobe-panorama:{userId}`) after a successful save (non-fatal if Redis is unavailable)
 - Re-running for the same `userId` updates the existing `wardrobe_panorama` record
 
 ---
