@@ -43,7 +43,7 @@ export async function dispatchUsersToPanoramaWorkflow(users: { userId: string }[
 }
 
 /**
- * Wardrobe panorama flow — scheduled on Thursday.
+ * Wardrobe panorama flow.
  *
  * 1. Query clothing_items to find users with >= 10 pieces.
  * 2. Batch-publish { userId } to the worker-ai-workflows generate-wardrobe-panorama

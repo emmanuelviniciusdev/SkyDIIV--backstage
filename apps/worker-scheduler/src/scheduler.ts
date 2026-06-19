@@ -4,7 +4,7 @@ import type { FlowRunResult, Weekday } from "./flows/types"
 import { createLogger } from "./lib/logger"
 
 /**
- * Central schedule handler — triggered by Upstash QStash CRONs, one per weekday.
+ * Central schedule handler — invoked via signed POST to a weekday endpoint.
  *
  * Each weekday endpoint (/schedule/every-monday … /schedule/every-sunday) maps
  * to a `Weekday` and funnels through here.

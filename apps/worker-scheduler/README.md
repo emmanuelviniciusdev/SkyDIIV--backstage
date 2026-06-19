@@ -25,14 +25,14 @@ by writing a flow and registering it, with no infrastructure changes.
 
 A day with no registered flow still verifies the QStash signature and responds
 `200 { "day": "...", "flow": null, "message": "No flow configured for ..." }`.
-This lets you provision the CRON ahead of implementing the flow.
+This lets you provision the external schedule ahead of implementing the flow.
 
 ---
 
 ## Architecture
 
 ```
-Upstash QStash CRON (one schedule per day)
+External QStash schedule
   │  POST /schedule/every-<day>  (QStash-signed)
   ▼
 worker-scheduler                  (this worker — Cloudflare)
@@ -43,10 +43,10 @@ worker-scheduler                  (this worker — Cloudflare)
 <flow-specific downstream>
 ```
 
-### Weekly outfits flow (every-sunday)
+### Weekly outfits flow
 
 ```
-every-sunday → weekly-outfits flow
+/schedule/every-<day> → weekly-outfits flow
   │  1. SELECT user_id FROM weekly_outfit_preferences
   │  2. QStash batchJSON → { userId } × N
   ▼
@@ -61,7 +61,7 @@ worker-ai-workflows               (Cloudflare — @upstash/workflow)
 | Layer | Technology |
 |---|---|
 | Runtime | Cloudflare Workers (Wrangler 4) |
-| Scheduling | Upstash QStash CRON (one per day) |
+| Scheduling | Upstash QStash (configured externally) |
 | Message queue | Upstash QStash (`@upstash/qstash`) |
 | Database | Neon PostgreSQL (pooled, read-only) via `postgres.js` |
 | Language | TypeScript 5, strict |
@@ -78,7 +78,7 @@ src/
 ├── flows/
 │   ├── types.ts          Weekday, ScheduleFlow, FlowResult abstractions
 │   ├── registry.ts       Maps each weekday → its flow
-│   └── weekly-outfits.flow.ts  Sunday flow: query users + QStash dispatch
+│   └── weekly-outfits.flow.ts  Query users + QStash dispatch
 └── lib/
     ├── logger.ts         Structured JSON logger
     ├── qstash.ts         QStash client + receiver singletons
@@ -122,7 +122,7 @@ export const flowRegistry: Partial<Record<Weekday, ScheduleFlow[]>> = {
 }
 ```
 
-3. Point a QStash CRON at `https://worker-scheduler.<subdomain>.workers.dev/schedule/every-monday`.
+3. Point a QStash schedule at `https://worker-scheduler.<subdomain>.workers.dev/schedule/every-monday`.
 
 No changes to routing (`index.ts`) are required.
 
@@ -134,7 +134,7 @@ Copy `.env.example` to `.dev.vars` for local development.
 
 | Variable | Required | Used by | Description |
 |---|---|---|---|
-| `QSTASH_CURRENT_SIGNING_KEY` | ✅ | all endpoints | QStash signing key for verifying incoming CRON requests |
+| `QSTASH_CURRENT_SIGNING_KEY` | ✅ | all endpoints | QStash signing key for verifying incoming schedule requests |
 | `QSTASH_NEXT_SIGNING_KEY` | ✅ | all endpoints | QStash next signing key (key rotation) |
 | `QSTASH_TOKEN` | ✅ | flows that publish | Upstash QStash API token (for publishing messages) |
 | `DATABASE_URL` | ✅ | weekly-outfits flow | Neon PostgreSQL pooled connection string |
@@ -172,27 +172,22 @@ The worker will be available at `http://localhost:8787`.
 
 ---
 
-## Setting up the Upstash QStash CRONs
+## Setting up external triggers
 
-After deploying the worker, configure one CRON per active day in the
-[Upstash Console](https://console.upstash.com/qstash). Currently only Sunday has
-a flow:
+After deploying the worker, configure one QStash schedule per weekday endpoint
+you want active in the [Upstash Console](https://console.upstash.com/qstash).
+Point each schedule at the matching destination URL:
 
-| Field | Value |
-|---|---|
-| **Destination URL** | `https://worker-scheduler.<subdomain>.workers.dev/schedule/every-sunday` |
-| **CRON expression** | `0 21 * * 0` |
-| **Schedule** | Every Sunday at 21:00 UTC (= 18:00 BRT / Brasília) |
+`https://worker-scheduler.<subdomain>.workers.dev/schedule/every-<day>`
 
-> **Why 21:00 UTC?**
-> Brasília follows BRT (UTC-3) for most of the year. 18:00 BRT = 21:00 UTC.
-> During Brazilian summer time (BRST, UTC-2, ~Nov–Feb), the job fires at 19:00 local time.
-> Adjust to `0 20 * * 0` during those months if strict 18:00 local time is required.
+When and how often each endpoint is invoked (CRON expression, timezone, etc.)
+is configured entirely in Upstash — this worker only verifies the QStash
+signature and runs whatever flow is registered for that weekday.
 
-To activate another day, register a flow for it (see *Adding a new scheduled
-job*) and point a CRON at the matching `/schedule/every-<day>` endpoint.
+To activate a day, register a flow for it (see *Adding a new scheduled job*)
+and create a QStash schedule for the matching `/schedule/every-<day>` endpoint.
 
-QStash will sign each request with its signing keys, which the worker verifies before proceeding.
+QStash signs each request with its signing keys, which the worker verifies before proceeding.
 
 ---
 

@@ -25,7 +25,7 @@ const DAY_ROUTES: Readonly<Record<string, Weekday>> = {
  * read process.env work without modification.
  *
  * GET  /                       → health-check (useful for uptime monitors).
- * POST /schedule/every-<day>   → QStash CRON endpoint; runs the day's flow.
+ * POST /schedule/every-<day>   → signed trigger endpoint; runs the day's flow.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

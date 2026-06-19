@@ -31,7 +31,7 @@ Given a `userId`, the workflow runs only when the Skydiiv web app has set the Re
 4. **save-panorama** — persists the markdown panorama to `wardrobe_panorama` (idempotent per user)
 5. **invalidate-wardrobe-panorama-cache** — clears all wardrobe-panorama-related Redis keys after a successful run (`wardrobe-update-check:{userId}--wardrobe-panorama`, `wardrobe-panorama:{userId}`)
 
-Triggered on Thursdays by `worker-scheduler` via QStash (`WARDROBE_PANORAMA_WORKER_URL`).
+Dispatched by `worker-scheduler` via QStash (`WARDROBE_PANORAMA_WORKER_URL`).
 
 ## Architecture
 

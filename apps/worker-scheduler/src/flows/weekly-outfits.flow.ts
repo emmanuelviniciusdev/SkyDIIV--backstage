@@ -44,7 +44,7 @@ export async function dispatchUsersToWorkflow(users: EligibleUser[]): Promise<nu
 }
 
 /**
- * Weekly outfits flow — registered on Sunday.
+ * Weekly outfits flow.
  *
  * 1. Query weekly_outfit_preferences for all users with preferences defined.
  * 2. Batch-publish { userId } to the worker-ai-workflows generate-weekly-outfits
