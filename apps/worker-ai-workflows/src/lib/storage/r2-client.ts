@@ -58,8 +58,16 @@ export async function deleteImageFromR2(key: string): Promise<void> {
 /**
  * Uploads a JPEG buffer to Cloudflare R2 using the S3-compatible API.
  * Returns the public URL for the uploaded object.
+ *
+ * `metadata` is stored as R2 custom metadata (x-amz-meta-*). Outfit thumbnails
+ * must include `userid` so the shared bucket stays consistent with the SkyDIIV
+ * web app.
  */
-export async function uploadImageToR2(buffer: Buffer, key: string): Promise<string> {
+export async function uploadImageToR2(
+  buffer: Buffer,
+  key: string,
+  metadata?: Record<string, string>,
+): Promise<string> {
   const bucket = process.env.R2_BUCKET
   if (!bucket) throw new Error("R2_BUCKET environment variable is not set")
 
@@ -71,6 +79,7 @@ export async function uploadImageToR2(buffer: Buffer, key: string): Promise<stri
       Key: key,
       Body: buffer,
       ContentType: "image/jpeg",
+      ...(metadata ? { Metadata: metadata } : {}),
     }),
   )
 

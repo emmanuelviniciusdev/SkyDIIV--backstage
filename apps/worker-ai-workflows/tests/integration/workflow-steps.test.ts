@@ -333,6 +333,11 @@ describe("Step 4 — generateImageStep()", () => {
     expect(mocks.mockInput).toHaveBeenCalled()
     expect(mocks.mockOutput).toHaveBeenCalledWith({ format: "image/jpeg", quality: 85 })
     expect(mocks.mockUploadImageToR2).toHaveBeenCalledTimes(1)
+    expect(mocks.mockUploadImageToR2).toHaveBeenCalledWith(
+      expect.any(Buffer),
+      expect.stringContaining("o1"),
+      { userid: mocks.USER_ID },
+    )
   })
 
   it("returns false without calling the binding when outfit has no images", async () => {

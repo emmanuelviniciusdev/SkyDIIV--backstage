@@ -84,7 +84,7 @@ export async function generateImageStep(input: GenerateImageInput): Promise<bool
   const composited = await buildComposite(validUrls, streams, log)
 
   const key = `outfits/${outfit.outfitId}.jpg`
-  const imageUrl = await uploadImageToR2(composited, key)
+  const imageUrl = await uploadImageToR2(composited, key, { userid: userId })
 
   await repo.updateOutfitImageUrl(outfit.outfitId, imageUrl)
 

@@ -145,11 +145,12 @@ describe("generateImageStep()", () => {
     expect(mocks.mockOutput.mock.calls.length).toBeGreaterThan(1)
   })
 
-  it("uploads the output to R2 and returns true", async () => {
+  it("uploads the output to R2 with userid metadata and returns true", async () => {
     const result = await generateImageStep({ userId: USER_ID, outfit: OUTFIT_1, wardrobeImageMap: WARDROBE_IMAGE_MAP })
     expect(mocks.mockUploadImageToR2).toHaveBeenCalledTimes(1)
-    const [, key] = mocks.mockUploadImageToR2.mock.calls[0]
+    const [, key, metadata] = mocks.mockUploadImageToR2.mock.calls[0]
     expect(key).toContain("outfit-1")
+    expect(metadata).toEqual({ userid: USER_ID })
     expect(result).toBe(true)
   })
 
