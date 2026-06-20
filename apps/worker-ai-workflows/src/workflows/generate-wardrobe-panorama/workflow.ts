@@ -4,6 +4,7 @@ import { buildPromptStep } from "./steps/build-prompt"
 import { executePromptStep } from "./steps/execute-prompt"
 import { savePanoramaStep } from "./steps/save-panorama"
 import { invalidateWardrobePanoramaCacheStep } from "./steps/invalidate-wardrobe-panorama-cache"
+import { setWardrobePanoramaNotificationStep } from "./steps/set-wardrobe-panorama-notification"
 import { resetDbClients } from "../../lib/db/client"
 import { createLogger } from "../../lib/logger"
 
@@ -72,6 +73,13 @@ export const generateWardrobePanoramaWorkflow = createWorkflow<GenerateWardrobeP
       return invalidateWardrobePanoramaCacheStep(promptData.userId)
     })
     log.info("Step completed: invalidate-wardrobe-panorama-cache")
+
+    // ── Step 6: Set unread notification ───────────────────────────────────────
+    log.info("Starting step: set-wardrobe-panorama-notification")
+    await context.run("set-wardrobe-panorama-notification", async () => {
+      return setWardrobePanoramaNotificationStep(promptData.userId)
+    })
+    log.info("Step completed: set-wardrobe-panorama-notification")
 
     log.info("Workflow completed")
   },

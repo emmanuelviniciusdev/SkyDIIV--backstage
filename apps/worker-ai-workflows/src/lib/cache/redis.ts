@@ -83,3 +83,27 @@ export async function deleteRedisKey(key: string): Promise<boolean> {
   const body: { result?: number } = await response.json()
   return body.result === 1
 }
+
+/**
+ * Sets a Redis key via the Upstash REST API (works in Cloudflare Workers).
+ * Returns true when the key was set, false when Redis is not configured.
+ */
+export async function setRedisKey(key: string, value: string): Promise<boolean> {
+  const credentials = getUpstashRestCredentials()
+  if (!credentials) return false
+
+  const response = await fetch(`${credentials.url}/set/${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${credentials.token}`,
+    },
+    body: value,
+  })
+
+  if (!response.ok) {
+    throw new Error(`Redis SET failed (${response.status})`)
+  }
+
+  const body: { result?: string } = await response.json()
+  return body.result === "OK"
+}

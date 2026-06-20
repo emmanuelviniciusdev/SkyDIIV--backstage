@@ -3,6 +3,7 @@ import { buildPromptStep } from "./steps/build-prompt"
 import { executePromptStep } from "./steps/execute-prompt"
 import { saveOutfitsStep } from "./steps/save-outfits"
 import { invalidateWeeklyOutfitsCacheStep } from "./steps/invalidate-weekly-outfits-cache"
+import { setWeeklyOutfitsNotificationStep } from "./steps/set-weekly-outfits-notification"
 import { generateImageStep } from "./steps/generate-images"
 import { resetDbClients } from "../../lib/db/client"
 import { createLogger } from "../../lib/logger"
@@ -29,6 +30,7 @@ function getCurrentWeekStartDate(): string {
  *   2. execute-prompt — calls the LLM; validates and parses JSON suggestions.
  *   3. save-outfits   — persists generated outfits to the DB (idempotent).
  *   3b. invalidate-weekly-outfits-cache — clears the skydiiv web app Redis cache.
+ *   3c. set-weekly-outfits-notification — marks new weekly outfits as unread.
  *   4. generate-image — one step per outfit; composites a thumbnail via the
  *                       Cloudflare Images binding (env.IMAGES). All pixel work
  *                       is done by Cloudflare's backend
@@ -91,6 +93,13 @@ export const generateWeeklyOutfitsWorkflow = createWorkflow<GenerateWeeklyOutfit
       })
     })
     log.info("Step completed: invalidate-weekly-outfits-cache")
+
+    // ── Step 3c: Set unread notification ──────────────────────────────────────
+    log.info("Starting step: set-weekly-outfits-notification")
+    await context.run("set-weekly-outfits-notification", async () => {
+      await setWeeklyOutfitsNotificationStep(promptData.userId)
+    })
+    log.info("Step completed: set-weekly-outfits-notification")
 
     // ── Step 4: Generate thumbnails (one CF Images call per outfit) ──────────
     // Each outfit runs in its own workflow step so it gets a fresh Worker

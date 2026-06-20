@@ -4,6 +4,7 @@ import {
   getUpstashRestCredentials,
   existsRedisKey,
   deleteRedisKey,
+  setRedisKey,
 } from "../../src/lib/cache/redis"
 import { deleteCachedWeeklyOutfits } from "../../src/lib/cache/weekly-outfits-cache"
 
@@ -175,6 +176,59 @@ describe("deleteRedisKey", () => {
     fetchMock.mockResolvedValue({ ok: false, status: 503 })
 
     await expect(deleteRedisKey("some-key")).rejects.toThrow("Redis DEL failed (503)")
+  })
+})
+
+describe("setRedisKey", () => {
+  const originalEnv = { ...process.env }
+  const fetchMock = vi.fn()
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+    process.env = {
+      ...originalEnv,
+      UPSTASH_REDIS_REST_URL: "https://us1-example.upstash.io",
+      UPSTASH_REDIS_REST_TOKEN: "rest-token",
+    }
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    process.env = { ...originalEnv }
+    fetchMock.mockReset()
+  })
+
+  it("returns true when Redis sets the key", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ result: "OK" }),
+    })
+
+    await expect(setRedisKey("some-key", "value")).resolves.toBe(true)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://us1-example.upstash.io/set/some-key",
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer rest-token" },
+        body: "value",
+      },
+    )
+  })
+
+  it("returns false when Redis is not configured", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL
+    delete process.env.UPSTASH_REDIS_REST_TOKEN
+    delete process.env.REDIS_URL
+
+    await expect(setRedisKey("some-key", "value")).resolves.toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("throws when the REST API returns an error status", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 503 })
+
+    await expect(setRedisKey("some-key", "value")).rejects.toThrow("Redis SET failed (503)")
   })
 })
 
