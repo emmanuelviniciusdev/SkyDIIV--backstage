@@ -1,105 +1,125 @@
 # worker-scheduler
 
-Cloudflare Worker that acts as the **central scheduler** for SkyDIIV workflows.
+Cloudflare Worker that acts as the **central scheduler** for SkyDIIV workflows. It exposes one signed HTTP endpoint per weekday; an external QStash schedule calls the endpoint, and the worker runs whatever flows are registered for that day.
 
-It exposes one HTTP endpoint per weekday. Each endpoint is meant to be wired to
-an Upstash QStash CRON; when triggered (and after verifying the QStash
-signature) it runs whatever **flow** is registered for that day. This makes it
-the single entry point for any recurring, day-based job — new schedules are added
-by writing a flow and registering it, with no infrastructure changes.
+Downstream work is delegated to [`worker-ai-workflows`](../worker-ai-workflows/README.md), which hosts the durable AI workflows. See each workflow's doc for full execution details:
+
+- [generate-weekly-outfits](../worker-ai-workflows/docs/WEEKLY_OUTFITS_WORKFLOW.md)
+- [generate-wardrobe-panorama](../worker-ai-workflows/docs/WARDROBE_PANORAMA_WORKFLOW.md)
 
 ---
 
 ## Endpoints
 
-| Endpoint | Day | Flow |
+| Endpoint | Day | Registered flows |
 |---|---|---|
-| `POST /schedule/every-monday` | Monday | _(none yet)_ |
-| `POST /schedule/every-tuesday` | Tuesday | _(none yet)_ |
-| `POST /schedule/every-wednesday` | Wednesday | _(none yet)_ |
+| `POST /schedule/every-monday` | Monday | _(none)_ |
+| `POST /schedule/every-tuesday` | Tuesday | _(none)_ |
+| `POST /schedule/every-wednesday` | Wednesday | _(none)_ |
 | `POST /schedule/every-thursday` | Thursday | `generate-wardrobe-panorama` |
-| `POST /schedule/every-friday` | Friday | _(none yet)_ |
-| `POST /schedule/every-saturday` | Saturday | _(none yet)_ |
+| `POST /schedule/every-friday` | Friday | _(none)_ |
+| `POST /schedule/every-saturday` | Saturday | _(none)_ |
 | `POST /schedule/every-sunday` | Sunday | `weekly-outfits` |
-| `GET /` | — | health check |
+| `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
-A day with no registered flow still verifies the QStash signature and responds
-`200 { "day": "...", "flow": null, "message": "No flow configured for ..." }`.
-This lets you provision the external schedule ahead of implementing the flow.
+Flow assignments come from `src/flows/registry.ts` and may change independently of this table.
 
----
+### Request handling
 
-## Architecture
+Every `POST /schedule/every-<day>` request:
 
-```
-External QStash schedule
-  │  POST /schedule/every-<day>  (QStash-signed)
-  ▼
-worker-scheduler                  (this worker — Cloudflare)
-  │  1. Verify QStash signature
-  │  2. Resolve the flow registered for <day>
-  │  3. Run it (or no-op if none) and return the result
-  ▼
-<flow-specific downstream>
-```
+1. Verifies the QStash signature (`upstash-signature` header) — unsigned requests get `401`
+2. Resolves all flows registered for that weekday
+3. Runs them **in parallel** — one flow failing does not stop the others
+4. Returns a JSON summary
 
-### Weekly outfits flow
+| Situation | HTTP status | Response shape |
+|---|---|---|
+| No flows registered | `200` | `{ "day": "<weekday>", "flows": [] }` |
+| All flows succeeded | `200` | `{ "day": "<weekday>", "flows": [{ "status": "ok", "flow": "...", ... }] }` |
+| Some flows failed | `207` | Mix of `status: "ok"` and `status: "error"` entries |
+| All flows failed | `500` | All entries have `status: "error"` |
 
-```
-/schedule/every-<day> → weekly-outfits flow
-  │  1. SELECT user_id FROM weekly_outfit_preferences
-  │  2. QStash batchJSON → { userId } × N
-  ▼
-worker-ai-workflows               (Cloudflare — @upstash/workflow)
-  POST /generate-weekly-outfits
-```
+The CRON expression, timezone, and which weekday endpoint QStash calls are configured entirely in Upstash — this worker only verifies the signature and runs the registered flows.
 
 ---
 
-## Tech stack
+## Registered Flows
 
-| Layer | Technology |
-|---|---|
-| Runtime | Cloudflare Workers (Wrangler 4) |
-| Scheduling | Upstash QStash (configured externally) |
-| Message queue | Upstash QStash (`@upstash/qstash`) |
-| Database | Neon PostgreSQL (pooled, read-only) via `postgres.js` |
-| Language | TypeScript 5, strict |
-| Testing | Vitest 4 |
+### `weekly-outfits`
 
----
+**Registry:** `sunday` (at time of writing)  
+**Source:** `src/flows/weekly-outfits.flow.ts`  
+**Downstream:** `POST /generate-weekly-outfits` on `worker-ai-workflows`  
+**Workflow doc:** [WEEKLY_OUTFITS_WORKFLOW.md](../worker-ai-workflows/docs/WEEKLY_OUTFITS_WORKFLOW.md)
 
-## Project structure
+1. Queries `weekly_outfit_preferences` for users with non-empty `location` and `routine_description`
+2. Publishes one signed queue message per eligible user (`{ userId }`) to `WEEKLY_OUTFITS_WORKER_URL`
+3. Messages are batched in groups of 100
 
-```
-src/
-├── index.ts              Worker entry; health check + day-endpoint routing
-├── scheduler.ts          Central handler: verify → resolve flow → run
-├── flows/
-│   ├── types.ts          Weekday, ScheduleFlow, FlowResult abstractions
-│   ├── registry.ts       Maps each weekday → its flow
-│   └── weekly-outfits.flow.ts  Query users + QStash dispatch
-└── lib/
-    ├── logger.ts         Structured JSON logger
-    ├── qstash.ts         QStash client + receiver singletons
-    └── db/
-        ├── client.ts     postgres.js singleton
-        └── users.repository.ts  Query users with outfit preferences
-tests/
-└── unit/
-    ├── index.test.ts
-    ├── scheduler.test.ts
-    ├── registry.test.ts
-    ├── weekly-outfits-flow.test.ts
-    ├── dispatch.test.ts
-    └── users-repository.test.ts
-```
+Returns `{ flow: "weekly-outfits", dispatched: <count> }`.
+
+### `generate-wardrobe-panorama`
+
+**Registry:** `thursday` (at time of writing)  
+**Source:** `src/flows/generate-wardrobe-panorama.flow.ts`  
+**Downstream:** `POST /generate-wardrobe-panorama` on `worker-ai-workflows`  
+**Workflow doc:** [WARDROBE_PANORAMA_WORKFLOW.md](../worker-ai-workflows/docs/WARDROBE_PANORAMA_WORKFLOW.md)
+
+1. Queries users with at least **10** clothing items in `clothing_items`
+2. Publishes one signed queue message per eligible user (`{ userId }`) to `WARDROBE_PANORAMA_WORKER_URL`
+3. Messages are batched in groups of 100
+
+Returns `{ flow: "generate-wardrobe-panorama", dispatched: <count> }`.
+
+> Dispatch does not guarantee execution for wardrobe panorama — the downstream workflow exits early unless the web app has set a cache marker. See the workflow doc.
 
 ---
 
-## Adding a new scheduled job
+## Services & Technologies
 
-1. Create a flow that implements `ScheduleFlow` (see `src/flows/types.ts`):
+| Layer | Technology | Role |
+|---|---|---|
+| Runtime | [Cloudflare Workers](https://developers.cloudflare.com/workers/) (`nodejs_compat`) | Hosts this worker |
+| Language | TypeScript 5 (strict) | Implementation |
+| Scheduling trigger | [Upstash QStash](https://upstash.com/docs/qstash) (external CRON) | Fires weekday endpoints on a configured schedule |
+| Message publishing | [Upstash QStash](https://upstash.com/docs/qstash) (`@upstash/qstash`) | Dispatches per-user messages to `worker-ai-workflows` |
+| Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Read-only queries for eligible users |
+| Dev / deploy | Wrangler 4 | Local dev and Cloudflare deployment |
+| Testing | Vitest 4 | Unit tests |
+| Linting | ESLint 10 + typescript-eslint | Code quality |
+| CI/CD | GitHub Actions | Lint, test, deploy on push to `main` / `staging` |
+
+---
+
+## Project Structure
+
+```
+├── src/
+│   ├── index.ts                            # Worker entry; health check + weekday routing
+│   ├── scheduler.ts                        # Verify signature → resolve flows → run in parallel
+│   ├── flows/
+│   │   ├── types.ts                        # Weekday, ScheduleFlow, FlowResult
+│   │   ├── registry.ts                     # Maps weekday → flows
+│   │   ├── weekly-outfits.flow.ts
+│   │   └── generate-wardrobe-panorama.flow.ts
+│   └── lib/
+│       ├── logger.ts
+│       ├── qstash.ts                       # QStash client + receiver
+│       └── db/
+│           ├── client.ts
+│           └── users.repository.ts
+├── tests/unit/
+├── wrangler.toml
+├── .env.example                            # Copy to .dev.vars for local dev
+└── package.json
+```
+
+---
+
+## Adding a New Scheduled Job
+
+1. Create a flow implementing `ScheduleFlow` in `src/flows/`:
 
 ```ts
 import type { FlowResult, ScheduleFlow } from "./types"
@@ -107,13 +127,13 @@ import type { FlowResult, ScheduleFlow } from "./types"
 export const myFlow: ScheduleFlow = {
   name: "my-flow",
   async run(): Promise<FlowResult> {
-    // ... do the work ...
-    return { flow: "my-flow", processed: 0 }
+    // query DB, publish messages, etc.
+    return { flow: "my-flow", dispatched: 0 }
   },
 }
 ```
 
-2. Register it for a day in `src/flows/registry.ts`:
+2. Register it for a weekday in `src/flows/registry.ts`:
 
 ```ts
 export const flowRegistry: Partial<Record<Weekday, ScheduleFlow[]>> = {
@@ -122,134 +142,117 @@ export const flowRegistry: Partial<Record<Weekday, ScheduleFlow[]>> = {
 }
 ```
 
-3. Point a QStash schedule at `https://worker-scheduler.<subdomain>.workers.dev/schedule/every-monday`.
+Multiple flows can share a day — they run in parallel.
 
-No changes to routing (`index.ts`) are required.
+3. Create a QStash schedule pointing at `https://worker-scheduler.<subdomain>.workers.dev/schedule/every-<day>`.
 
----
-
-## Environment variables / secrets
-
-Copy `.env.example` to `.dev.vars` for local development.
-
-| Variable | Required | Used by | Description |
-|---|---|---|---|
-| `QSTASH_CURRENT_SIGNING_KEY` | ✅ | all endpoints | QStash signing key for verifying incoming schedule requests |
-| `QSTASH_NEXT_SIGNING_KEY` | ✅ | all endpoints | QStash next signing key (key rotation) |
-| `QSTASH_TOKEN` | ✅ | flows that publish | Upstash QStash API token (for publishing messages) |
-| `DATABASE_URL` | ✅ | weekly-outfits flow | Neon PostgreSQL pooled connection string |
-| `WEEKLY_OUTFITS_WORKER_URL` | ✅ | weekly-outfits flow | Full endpoint URL of the `worker-ai-workflows` `generate-weekly-outfits` workflow (path included) |
-| `WARDROBE_PANORAMA_WORKER_URL` | ✅ | generate-wardrobe-panorama flow | Full endpoint URL of the `worker-ai-workflows` `generate-wardrobe-panorama` workflow (path included) |
-
-### Setting secrets in Cloudflare
-
-```bash
-wrangler secret put DATABASE_URL
-wrangler secret put QSTASH_TOKEN
-wrangler secret put QSTASH_CURRENT_SIGNING_KEY
-wrangler secret put QSTASH_NEXT_SIGNING_KEY
-wrangler secret put WEEKLY_OUTFITS_WORKER_URL
-```
+No changes to `src/index.ts` are required.
 
 ---
 
-## Local development
+## Security
 
-**Prerequisites:** Node.js 22+, a Cloudflare account, and a working `.dev.vars`.
+- No end-user authentication — internal automation only
+- All schedule requests must be signed by QStash; unsigned or invalid signatures get `401`
+- `GET /` is the only unsigned endpoint (health check)
+- Secrets (`DATABASE_URL`, `QSTASH_*`, worker URLs) are Cloudflare Worker secrets — never in source control
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 22+
+- Wrangler 4
+- Cloudflare Workers account
+- Upstash QStash account (signing keys + publish token)
+- Neon PostgreSQL database (shared with the SkyDIIV web app)
+- Deployed `worker-ai-workflows` endpoints for any active flows
+
+### Local Development
 
 ```bash
-# Install dependencies
 npm install
-
-# Start the local dev server
-npm run dev
+cp .env.example .dev.vars   # fill in secrets
+npm run dev                 # http://localhost:8787
 ```
 
-The worker will be available at `http://localhost:8787`.
+Schedule endpoints require a valid QStash signature. For end-to-end testing, use `wrangler dev` with a tunnel and trigger from the Upstash console or CLI.
 
-- `GET /` — health check
-- `POST /schedule/every-<day>` — schedule endpoints (require a QStash signature; use `wrangler dev` + a local tunnel for end-to-end testing)
-
----
-
-## Setting up external triggers
-
-After deploying the worker, configure one QStash schedule per weekday endpoint
-you want active in the [Upstash Console](https://console.upstash.com/qstash).
-Point each schedule at the matching destination URL:
-
-`https://worker-scheduler.<subdomain>.workers.dev/schedule/every-<day>`
-
-When and how often each endpoint is invoked (CRON expression, timezone, etc.)
-is configured entirely in Upstash — this worker only verifies the QStash
-signature and runs whatever flow is registered for that weekday.
-
-To activate a day, register a flow for it (see *Adding a new scheduled job*)
-and create a QStash schedule for the matching `/schedule/every-<day>` endpoint.
-
-QStash signs each request with its signing keys, which the worker verifies before proceeding.
-
----
-
-## Deployment
-
-### Manual
+### Tests & Lint
 
 ```bash
-# Production
-npm run deploy
-
-# Staging
-npm run deploy -- --env staging
-```
-
-### CI/CD (GitHub Actions)
-
-Defined in `.github/workflows/deploy-worker-scheduler.yml`.
-
-- Push to `staging` → deploy to `worker-scheduler-staging`
-- Push to `main`    → deploy to `worker-scheduler`
-
-Required GitHub secrets (same account-level secrets as the workflow worker):
-
-| Secret | Description |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | Token with Worker deploy permissions |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
-| `DATABASE_URL` | Neon pooled connection string |
-| `QSTASH_TOKEN` | Upstash QStash API token |
-| `QSTASH_CURRENT_SIGNING_KEY` | QStash current signing key |
-| `QSTASH_NEXT_SIGNING_KEY` | QStash next signing key |
-| `WEEKLY_OUTFITS_WORKER_URL` | worker-ai-workflows `/generate-weekly-outfits` endpoint URL |
-
----
-
-## Testing
-
-```bash
-# Run all unit tests
 npm test
-
-# Watch mode
 npm run test:watch
-
-# Coverage report
 npm run test:coverage
-```
-
----
-
-## Linting
-
-```bash
 npm run lint
 npm run lint:fix
 ```
 
 ---
 
-## Security
+## Configuration
 
-- All incoming schedule requests **must be signed by QStash** (`upstash-signature` header). Requests without a valid signature are rejected with `401 Unauthorized`.
-- The worker has no user-facing authentication — it is an internal automation endpoint.
-- `DATABASE_URL`, `QSTASH_TOKEN`, and signing keys are stored as encrypted Cloudflare Worker secrets, never in `wrangler.toml` or source code.
+### `wrangler.toml`
+
+| Setting | Value |
+|---|---|
+| Worker name (production) | `worker-scheduler` |
+| Worker name (staging) | `worker-scheduler-staging` |
+| Entry point | `src/index.ts` |
+| Compatibility date | `2025-01-01` |
+| Compatibility flags | `nodejs_compat` |
+
+### Secrets
+
+Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `.env.example` for the full list.
+
+| Secret | Used by |
+|---|---|
+| `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY` | All schedule endpoints (signature verification) |
+| `QSTASH_URL`, `QSTASH_TOKEN` | Flows that publish messages |
+| `DATABASE_URL` | All flows (eligible-user queries) |
+| `WEEKLY_OUTFITS_WORKER_URL` | `weekly-outfits` flow |
+| `WARDROBE_PANORAMA_WORKER_URL` | `generate-wardrobe-panorama` flow |
+
+Worker URL secrets must include the **full path** to the downstream workflow endpoint, e.g.:
+
+```
+https://worker-ai-workflows.<subdomain>.workers.dev/generate-weekly-outfits
+https://worker-ai-workflows.<subdomain>.workers.dev/generate-wardrobe-panorama
+```
+
+### External schedules
+
+After deploying, create one QStash schedule per active weekday endpoint in the [Upstash Console](https://console.upstash.com/qstash):
+
+```
+https://worker-scheduler.<subdomain>.workers.dev/schedule/every-<day>
+```
+
+When and how often each endpoint fires is configured in Upstash, not in this repository.
+
+---
+
+## Deployment
+
+CI runs lint + test on PRs; deploys on push to `staging` or `main` when files under `apps/worker-scheduler/` change (`.github/workflows/deploy-worker-scheduler.yml`).
+
+```bash
+npm run deploy                  # production
+npm run deploy -- --env staging # staging
+```
+
+### GitHub Secrets (deploy)
+
+| Secret | Description |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Workers deploy permissions |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `DATABASE_URL` | Neon pooled connection string |
+| `QSTASH_TOKEN` | QStash API token |
+| `QSTASH_CURRENT_SIGNING_KEY` | QStash current signing key |
+| `QSTASH_NEXT_SIGNING_KEY` | QStash next signing key |
+| `WEEKLY_OUTFITS_WORKER_URL` | Full `generate-weekly-outfits` endpoint URL |
+| `WARDROBE_PANORAMA_WORKER_URL` | Full `generate-wardrobe-panorama` endpoint URL |
