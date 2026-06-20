@@ -1,3 +1,4 @@
+import { filterUsersWithWardrobeUpdateCheck } from "../lib/cache/wardrobe-panorama-cache"
 import { getDb } from "../lib/db/client"
 import { SqlUsersRepository } from "../lib/db/users.repository"
 import { getQStashClient } from "../lib/qstash"
@@ -46,9 +47,10 @@ export async function dispatchUsersToPanoramaWorkflow(users: { userId: string }[
  * Wardrobe panorama flow.
  *
  * 1. Query clothing_items to find users with >= 10 pieces.
- * 2. Batch-publish { userId } to the worker-ai-workflows generate-wardrobe-panorama
+ * 2. Keep only users whose wardrobe-update-check cache marker is present.
+ * 3. Batch-publish { userId } to the worker-ai-workflows generate-wardrobe-panorama
  *    endpoint via QStash.
- * 3. Report how many messages were dispatched.
+ * 4. Report how many messages were dispatched.
  */
 export const generateWardrobePanoramaFlow: ScheduleFlow = {
   name: "generate-wardrobe-panorama",
@@ -66,7 +68,18 @@ export const generateWardrobePanoramaFlow: ScheduleFlow = {
       return { flow: this.name, dispatched: 0 }
     }
 
-    const dispatched = await dispatchUsersToPanoramaWorkflow(users)
+    const usersWithUpdateMarker = await filterUsersWithWardrobeUpdateCheck(users)
+    log.info("Users with wardrobe update marker", {
+      count: usersWithUpdateMarker.length,
+      skipped: users.length - usersWithUpdateMarker.length,
+    })
+
+    if (usersWithUpdateMarker.length === 0) {
+      log.warn("No users with pending wardrobe update — nothing to dispatch")
+      return { flow: this.name, dispatched: 0 }
+    }
+
+    const dispatched = await dispatchUsersToPanoramaWorkflow(usersWithUpdateMarker)
     log.info("Workflow dispatch complete", { dispatched })
 
     return { flow: this.name, dispatched }

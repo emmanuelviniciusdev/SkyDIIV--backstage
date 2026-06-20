@@ -18,7 +18,7 @@ The **generate-wardrobe-panorama** workflow produces a personalized **markdown p
 **Endpoint:** `POST /generate-wardrobe-panorama`  
 **Payload:** `{ "userId": "<uuid>" }`
 
-The workflow operates on **one user at a time**. A dispatched message does **not** guarantee execution: step 1 exits early unless the web app has set a cache marker indicating the wardrobe changed. In production, messages are typically published by `worker-scheduler` on a configured schedule, but the workflow can also be triggered ad hoc (see [Triggering and Scheduling](#triggering-and-scheduling)).
+The workflow operates on **one user at a time**. A dispatched message does **not** guarantee execution: step 1 exits early unless the web app has set a cache marker indicating the wardrobe changed. In production, the scheduler publishes messages only for users with that marker; ad-hoc triggers are still gated at step 1.
 
 ---
 
@@ -38,6 +38,7 @@ graph TD
     WEB --> CACHE0
     CRON --> SCHED
     SCHED --> DB0
+    SCHED --> CACHE0
     SCHED --> MQ
     MQ --> WORKER
     WORKER --> WF
@@ -68,7 +69,7 @@ graph TD
 | Component | Repository path | Role |
 |---|---|---|
 | SkyDIIV web app | _(separate repo)_ | Sets the wardrobe-update marker when the user changes their wardrobe; reads the panorama from the database (via cached API); consumes notification keys |
-| `worker-scheduler` | `apps/worker-scheduler/` | Optional upstream dispatcher; queries users with large enough wardrobes and publishes messages to the queue |
+| `worker-scheduler` | `apps/worker-scheduler/` | Optional upstream dispatcher; queries users with large enough wardrobes, filters by update marker, and publishes messages to the queue |
 | `worker-ai-workflows` | `apps/worker-ai-workflows/` | Hosts the durable workflow and all step implementations |
 
 ---
@@ -85,7 +86,7 @@ Before any generation happens, the SkyDIIV web app must set a cache marker when 
 wardrobe-update-check:{userId}--wardrobe-panorama
 ```
 
-Step 1 checks for this key. If it is absent, the workflow **exits successfully without doing any work**. This means the scheduler may dispatch messages for many users, but only those with a pending wardrobe update will actually generate a new panorama.
+Step 1 checks for this key. If it is absent, the workflow **exits successfully without doing any work**. The scheduler applies the same filter before dispatching, so scheduled runs do not publish messages for users without a pending update. Ad-hoc triggers are still gated here.
 
 ### Scheduled dispatch (via worker-scheduler)
 
@@ -93,15 +94,17 @@ In the current setup, `worker-scheduler` acts as the bulk entry point:
 
 1. An external **scheduled job** calls a weekday endpoint on the scheduler worker (today: `POST /schedule/every-thursday`).
 2. The scheduler verifies the request signature, resolves the flow registered for that weekday, and runs `generateWardrobePanoramaFlow`.
-3. The flow queries users with at least **10 clothing items** and publishes one queue message per user to the workflow endpoint.
+3. The flow queries users with at least **10 clothing items**, keeps only those with the wardrobe-update cache marker, and publishes one queue message per filtered user to the workflow endpoint.
 
 The weekday, schedule expression, and endpoint are configured in the external scheduler and the scheduler's flow registry — not in this workflow. Changing the schedule does not require changes to `generate-wardrobe-panorama`.
 
 ### Eligible users (scheduler)
 
-The scheduler selects users who have at least **10** rows in `clothing_items`. This is a throughput filter — it avoids dispatching messages for wardrobes too small to produce a meaningful panorama.
+The scheduler selects users who have at least **10** rows in `clothing_items`. This is a throughput filter — it avoids considering wardrobes too small to produce a meaningful panorama.
 
-This does **not** replace the cache marker gate. A dispatched user still no-ops at step 1 unless the web app has marked their wardrobe as updated.
+It then filters that set to users whose `wardrobe-update-check:{userId}--wardrobe-panorama` cache marker is present (set by the web app when the wardrobe changes). Only those users receive a queue message.
+
+The workflow still re-checks the marker at step 1 as a safety gate (e.g. for ad-hoc triggers or races between dispatch and execution).
 
 ### Message dispatch
 
@@ -394,6 +397,7 @@ This workflow does **not** use object storage or the image service binding.
 | `WARDROBE_PANORAMA_WORKER_URL` | Full URL to `POST /generate-wardrobe-panorama` |
 | `QSTASH_TOKEN` | Publishing batch messages |
 | `DATABASE_URL` | Query users with sufficient wardrobe size |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` (or `REDIS_URL`) | Filter users by wardrobe-update cache marker |
 
 ---
 
@@ -462,9 +466,12 @@ apps/worker-ai-workflows/
 │           └── notification-cache.ts
 
 apps/worker-scheduler/
-└── src/flows/
-    ├── registry.ts                                           # weekday → generateWardrobePanoramaFlow
-    └── generate-wardrobe-panorama.flow.ts                    # User query + message dispatch
+└── src/
+    ├── flows/
+    │   ├── registry.ts                                           # weekday → generateWardrobePanoramaFlow
+    │   └── generate-wardrobe-panorama.flow.ts                    # User query + cache filter + dispatch
+    └── lib/cache/
+        └── wardrobe-panorama-cache.ts                              # Update-marker filter
 ```
 
 ---
@@ -480,7 +487,8 @@ Unit and integration tests cover the workflow's critical paths:
 | `tests/unit/wardrobe-panorama-cache.test.ts` | Cache key helpers |
 | `tests/unit/invalidate-wardrobe-panorama-cache-step.test.ts` | Step 5 behavior |
 | `tests/unit/set-wardrobe-panorama-notification-step.test.ts` | Step 6 behavior |
-| `apps/worker-scheduler/tests/unit/generate-wardrobe-panorama-flow.test.ts` | Scheduler fan-out |
+| `apps/worker-scheduler/tests/unit/generate-wardrobe-panorama-flow.test.ts` | Scheduler fan-out + cache filter |
+| `apps/worker-scheduler/tests/unit/wardrobe-panorama-cache.test.ts` | Scheduler update-marker filter |
 
 Run from `apps/worker-ai-workflows/`:
 
@@ -508,7 +516,8 @@ sequenceDiagram
 
     CRON->>SCH: POST /schedule/every-<day>
     SCH->>DB: SELECT users with >= 10 pieces
-    SCH->>MQ: publish [{userId}, …]
+    SCH->>CACHE: EXISTS wardrobe-update-check:… (filter)
+    SCH->>MQ: publish [{userId}, …] (marker present only)
     MQ->>WF: POST /generate-wardrobe-panorama {userId}
 
     WF->>CACHE: EXISTS wardrobe-update-check:…
