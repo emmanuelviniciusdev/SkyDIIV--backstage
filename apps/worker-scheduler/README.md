@@ -67,12 +67,13 @@ Returns `{ flow: "weekly-outfits", dispatched: <count> }`.
 **Workflow doc:** [WARDROBE_PANORAMA_WORKFLOW.md](../worker-ai-workflows/docs/WARDROBE_PANORAMA_WORKFLOW.md)
 
 1. Queries users with at least **10** clothing items in `clothing_items`
-2. Publishes one signed queue message per eligible user (`{ userId }`) to `WARDROBE_PANORAMA_WORKER_URL`
-3. Messages are batched in groups of 100
+2. Keeps only users whose `wardrobe-update-check:{userId}--wardrobe-panorama` cache marker is present (set by the web app when the wardrobe changes)
+3. Publishes one signed queue message per filtered user (`{ userId }`) to `WARDROBE_PANORAMA_WORKER_URL`
+4. Messages are batched in groups of 100
 
 Returns `{ flow: "generate-wardrobe-panorama", dispatched: <count> }`.
 
-> Dispatch does not guarantee execution for wardrobe panorama — the downstream workflow exits early unless the web app has set a cache marker. See the workflow doc.
+> The downstream workflow still re-checks the cache marker at step 1 as a safety gate. Ad-hoc triggers that bypass the scheduler are also gated there.
 
 ---
 
@@ -85,6 +86,7 @@ Returns `{ flow: "generate-wardrobe-panorama", dispatched: <count> }`.
 | Scheduling trigger | [Upstash QStash](https://upstash.com/docs/qstash) (external CRON) | Fires weekday endpoints on a configured schedule |
 | Message publishing | [Upstash QStash](https://upstash.com/docs/qstash) (`@upstash/qstash`) | Dispatches per-user messages to `worker-ai-workflows` |
 | Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Read-only queries for eligible users |
+| Cache | [Upstash Redis](https://upstash.com/docs/redis) (REST API) | Wardrobe panorama flow — filter users by update marker |
 | Dev / deploy | Wrangler 4 | Local dev and Cloudflare deployment |
 | Testing | Vitest 4 | Unit tests |
 | Linting | ESLint 10 + typescript-eslint | Code quality |
@@ -106,6 +108,9 @@ Returns `{ flow: "generate-wardrobe-panorama", dispatched: <count> }`.
 │   └── lib/
 │       ├── logger.ts
 │       ├── qstash.ts                       # QStash client + receiver
+│       ├── cache/
+│       │   ├── redis.ts                    # Upstash Redis REST helpers
+│       │   └── wardrobe-panorama-cache.ts  # Update-marker filter for panorama flow
 │       └── db/
 │           ├── client.ts
 │           └── users.repository.ts
@@ -167,6 +172,7 @@ No changes to `src/index.ts` are required.
 - Wrangler 4
 - Cloudflare Workers account
 - Upstash QStash account (signing keys + publish token)
+- Upstash Redis (shared with the SkyDIIV web app; required for the wardrobe panorama flow)
 - Neon PostgreSQL database (shared with the SkyDIIV web app)
 - Deployed `worker-ai-workflows` endpoints for any active flows
 
@@ -213,6 +219,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY` | All schedule endpoints (signature verification) |
 | `QSTASH_URL`, `QSTASH_TOKEN` | Flows that publish messages |
 | `DATABASE_URL` | All flows (eligible-user queries) |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` (or `REDIS_URL`) | `generate-wardrobe-panorama` flow (update-marker filter) |
 | `WEEKLY_OUTFITS_WORKER_URL` | `weekly-outfits` flow |
 | `WARDROBE_PANORAMA_WORKER_URL` | `generate-wardrobe-panorama` flow |
 
@@ -256,3 +263,5 @@ npm run deploy -- --env staging # staging
 | `QSTASH_NEXT_SIGNING_KEY` | QStash next signing key |
 | `WEEKLY_OUTFITS_WORKER_URL` | Full `generate-weekly-outfits` endpoint URL |
 | `WARDROBE_PANORAMA_WORKER_URL` | Full `generate-wardrobe-panorama` endpoint URL |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (wardrobe panorama cache filter) |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
