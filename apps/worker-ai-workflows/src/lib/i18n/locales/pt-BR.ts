@@ -1,0 +1,72 @@
+import type { LocaleMessages } from "../types"
+import { createWeatherCodeDescription } from "../weather/weather-codes"
+
+const weatherCodeDescription = createWeatherCodeDescription("Tempo variável", {
+  0: "Céu limpo",
+  1: "Predominantemente limpo",
+  2: "Parcialmente nublado",
+  3: "Nublado",
+  45: "Neblina",
+  48: "Neblina",
+  51: "Garoa",
+  52: "Garoa",
+  53: "Garoa",
+  54: "Garoa",
+  55: "Garoa",
+  56: "Garoa congelante",
+  57: "Garoa congelante",
+  61: "Chuva",
+  62: "Chuva",
+  63: "Chuva",
+  64: "Chuva",
+  65: "Chuva",
+  66: "Chuva congelante",
+  67: "Chuva congelante",
+  71: "Neve",
+  72: "Neve",
+  73: "Neve",
+  74: "Neve",
+  75: "Neve",
+  77: "Granizo",
+  80: "Pancadas de chuva",
+  81: "Pancadas de chuva",
+  82: "Pancadas de chuva",
+  85: "Pancadas de neve",
+  86: "Pancadas de neve",
+  95: "Trovoada",
+  96: "Trovoada com granizo",
+  99: "Trovoada com granizo",
+})
+
+export const ptBR: LocaleMessages = {
+  weather: {
+    locationLabel: "Localização",
+    forecastHeader: "Previsão para a semana",
+    maxLabel: "máx.",
+    minLabel: "mín.",
+    rainLabel: "chuva",
+    fallbackDescription: "Tempo variável",
+    weatherCodeDescription,
+  },
+  fallbacks: {
+    noWardrobe: "Nenhuma peça disponível no guarda-roupa.",
+    noPreferences: "Nenhuma preferência específica informada.",
+    noTitle: "sem título",
+    noTags: "sem tags",
+    userNameUnknown: "não informado",
+    locationUndefined: "não definida",
+    routineUndefined: "não definida",
+    preferencesUndefined: "não definidas",
+    noPieces: "Nenhuma peça cadastrada.",
+    noTitlePanorama: "sem título",
+    noTagsPanorama: "sem tags",
+  },
+  weeklyOutfits: {
+    wardrobeLine: (id, title, tags) => `ID:${id} | TÍTULO:${title} | TAGS:${tags}`,
+  },
+  wardrobePanorama: {
+    wardrobeLine: (id, title, tags) => `ID: ${id} Título: ${title}; Tags: ${tags}`,
+    preferencesSection: (location, routine) =>
+      `Localização: ${location}\nDescrição da rotina/estilo: ${routine}`,
+  },
+}

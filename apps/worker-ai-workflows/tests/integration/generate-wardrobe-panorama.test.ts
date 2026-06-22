@@ -23,8 +23,13 @@ const mocks = vi.hoisted(() => {
     last_name: "Costa",
   }
 
+  const fakeLanguageRow = {
+    name: "Português (BR)",
+  }
+
   const readDb = vi.fn().mockImplementation((strings: TemplateStringsArray | string[]) => {
     const query = Array.isArray(strings) ? strings.join("") : String(strings)
+    if (query.includes("app_preferences")) return Promise.resolve([fakeLanguageRow])
     if (query.includes("weekly_outfit_preferences")) return Promise.resolve([fakePreferencesRow])
     if (query.includes("clothing_items")) return Promise.resolve(fakeWardrobeRows)
     if (query.includes("users")) return Promise.resolve([fakeUserRow])
@@ -78,6 +83,7 @@ describe("generate-wardrobe-panorama workflow steps", () => {
     const result = await buildPromptStep(mocks.USER_ID)
 
     expect(result.userId).toBe(mocks.USER_ID)
+    expect(result.locale).toBe("pt-BR")
     expect(typeof result.prompt).toBe("string")
     expect(result.prompt).toContain("DADOS DO USUÁRIO:")
     expect(result.prompt).toContain("Nome: Ana")

@@ -1,0 +1,72 @@
+import type { LocaleMessages } from "../types"
+import { createWeatherCodeDescription } from "../weather/weather-codes"
+
+const weatherCodeDescription = createWeatherCodeDescription("Variable conditions", {
+  0: "Clear sky",
+  1: "Mainly clear",
+  2: "Partly cloudy",
+  3: "Overcast",
+  45: "Fog",
+  48: "Fog",
+  51: "Drizzle",
+  52: "Drizzle",
+  53: "Drizzle",
+  54: "Drizzle",
+  55: "Drizzle",
+  56: "Freezing drizzle",
+  57: "Freezing drizzle",
+  61: "Rain",
+  62: "Rain",
+  63: "Rain",
+  64: "Rain",
+  65: "Rain",
+  66: "Freezing rain",
+  67: "Freezing rain",
+  71: "Snow",
+  72: "Snow",
+  73: "Snow",
+  74: "Snow",
+  75: "Snow",
+  77: "Hail",
+  80: "Rain showers",
+  81: "Rain showers",
+  82: "Rain showers",
+  85: "Snow showers",
+  86: "Snow showers",
+  95: "Thunderstorm",
+  96: "Thunderstorm with hail",
+  99: "Thunderstorm with hail",
+})
+
+export const enUS: LocaleMessages = {
+  weather: {
+    locationLabel: "Location",
+    forecastHeader: "Weekly forecast",
+    maxLabel: "high",
+    minLabel: "low",
+    rainLabel: "rain",
+    fallbackDescription: "Variable conditions",
+    weatherCodeDescription,
+  },
+  fallbacks: {
+    noWardrobe: "No wardrobe items available.",
+    noPreferences: "No specific preferences provided.",
+    noTitle: "no title",
+    noTags: "no tags",
+    userNameUnknown: "not provided",
+    locationUndefined: "not set",
+    routineUndefined: "not set",
+    preferencesUndefined: "not set",
+    noPieces: "No items registered.",
+    noTitlePanorama: "no title",
+    noTagsPanorama: "no tags",
+  },
+  weeklyOutfits: {
+    wardrobeLine: (id, title, tags) => `ID:${id} | TITLE:${title} | TAGS:${tags}`,
+  },
+  wardrobePanorama: {
+    wardrobeLine: (id, title, tags) => `ID: ${id} Title: ${title}; Tags: ${tags}`,
+    preferencesSection: (location, routine) =>
+      `Location: ${location}\nRoutine/style description: ${routine}`,
+  },
+}
