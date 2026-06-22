@@ -3,6 +3,7 @@ import { SqlPreferencesRepository } from "../../../lib/db/preferences.repository
 import { SqlWardrobeRepository } from "../../../lib/db/wardrobe.repository"
 import { getWeatherProvider } from "../../../lib/weather"
 import { buildPrompt, formatDayWeatherSummary } from "../../../lib/prompt/builder"
+import { resolveUserLocale, type Locale } from "../../../lib/i18n"
 import { createLogger } from "../../../lib/logger"
 import type { DailyWeather } from "../../../lib/weather/types"
 
@@ -12,6 +13,7 @@ export interface BuildPromptResult {
   userId: string
   weeklyOutfitPreferencesId: string
   weekStartDate: string
+  locale: Locale
   prompt: string
   dayWeatherSummaries: Record<string, string>
   /** Maps clothing item ID → public image URL for every wardrobe piece that has an image. */
@@ -24,18 +26,19 @@ export interface BuildPromptResult {
   validClothingItemIds: string[]
 }
 
-function buildDayWeatherSummaries(days: DailyWeather[]): Record<string, string> {
+function buildDayWeatherSummaries(days: DailyWeather[], locale: Locale): Record<string, string> {
   const summaries: Record<string, string> = {}
   for (const day of days) {
     const date = new Date(day.date + "T12:00:00Z")
     const weekdayEn = ENGLISH_WEEKDAYS[date.getUTCDay()]
-    if (weekdayEn) summaries[weekdayEn] = formatDayWeatherSummary(day)
+    if (weekdayEn) summaries[weekdayEn] = formatDayWeatherSummary(day, locale)
   }
   return summaries
 }
 
 /**
  * Step 1 — Gathers all data needed to build the LLM prompt:
+ *   - user locale (from app_preferences.language_id)
  *   - user preferences (location, routine description)
  *   - wardrobe items with tags
  *   - 7-day weather forecast for the user's location
@@ -54,8 +57,9 @@ export async function buildPromptStep(
   const prefsRepo = new SqlPreferencesRepository(readDb)
   const wardrobeRepo = new SqlWardrobeRepository(readDb)
 
-  log.debug("Fetching preferences and wardrobe in parallel")
-  const [preferences, wardrobeItems] = await Promise.all([
+  log.debug("Fetching locale, preferences and wardrobe in parallel")
+  const [locale, preferences, wardrobeItems] = await Promise.all([
+    resolveUserLocale(userId),
     prefsRepo.findByUserId(userId),
     wardrobeRepo.findByUserId(userId),
   ])
@@ -69,6 +73,7 @@ export async function buildPromptStep(
   log.info("Preferences loaded", {
     preferencesId: preferences.id,
     location: preferences.location,
+    locale,
   })
 
   if (wardrobeItems.length === 0) {
@@ -91,12 +96,13 @@ export async function buildPromptStep(
   }
 
   const prompt = buildPrompt({
+    locale,
     wardrobe: wardrobeItems,
     preferences: preferences.routineDescription,
     forecast: forecast ?? { location: preferences.location, days: [] },
   })
 
-  const dayWeatherSummaries = buildDayWeatherSummaries(forecast?.days ?? [])
+  const dayWeatherSummaries = buildDayWeatherSummaries(forecast?.days ?? [], locale)
 
   const wardrobeImageMap: Record<string, string> = {}
   for (const item of wardrobeItems) {
@@ -105,6 +111,7 @@ export async function buildPromptStep(
 
   log.info("Prompt built", {
     promptLength: prompt.length,
+    locale,
     weatherDays: Object.keys(dayWeatherSummaries).length,
     wardrobeItemsWithImages: Object.keys(wardrobeImageMap).length,
   })
@@ -113,6 +120,7 @@ export async function buildPromptStep(
     userId,
     weeklyOutfitPreferencesId: preferences.id,
     weekStartDate,
+    locale,
     prompt,
     dayWeatherSummaries,
     wardrobeImageMap,

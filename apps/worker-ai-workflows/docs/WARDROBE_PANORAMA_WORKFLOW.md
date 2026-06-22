@@ -10,7 +10,7 @@ The **generate-wardrobe-panorama** workflow produces a personalized **markdown p
 
 1. Verifies the web app has marked the wardrobe as needing a refresh
 2. Loads the user's profile, preferences, and wardrobe from the database
-3. Calls a language model to generate the panorama text in Brazilian Portuguese
+3. Calls a language model to generate the panorama text in the user's preferred language
 4. Persists the result to the database (one record per user, updated on re-run)
 5. Invalidates related cache entries and sets an unread notification
 
@@ -180,23 +180,25 @@ This step is the **execution gate** between "message received" and "work perform
 
 **Source:** `src/workflows/generate-wardrobe-panorama/steps/build-prompt.ts`
 
-Loads data and assembles the language model prompt inline (no separate template file).
+Loads data and assembles the language model prompt via `buildWardrobePanoramaPrompt()` (see [I18N.md](./I18N.md)).
 
 | Input | Source | Notes |
 |---|---|---|
-| User name | `users` | `first_name`; falls back to `"não informado"` |
+| User locale | `app_preferences` + `domains` | Resolved via `resolveUserLocale()` |
+| User name | `users` | `first_name`; locale-specific fallback when missing |
 | Preferences | `weekly_outfit_preferences` | Optional — location and routine description |
 | Wardrobe items | `clothing_items` + `tags` | ID, title, tags per piece |
 
-**Parallel fetches:** user profile, preferences, and wardrobe are loaded concurrently.
+**Parallel fetches:** locale, user profile, preferences, and wardrobe are loaded concurrently.
 
-**Soft handling:** Missing preferences are noted as `"não definidas"` in the prompt. An empty wardrobe is represented as `"Nenhuma peça cadastrada."` — the step does not throw. (In practice, the scheduler only dispatches users with ≥10 pieces.)
+**Soft handling:** Missing preferences use locale-specific fallback text in the prompt. An empty wardrobe is represented with a localized "no items" string — the step does not throw. (In practice, the scheduler only dispatches users with ≥10 pieces.)
 
 **Outputs passed to later steps:**
 
 | Field | Purpose |
 |---|---|
-| `prompt` | Full pt-BR prompt string for the language model |
+| `locale` | Resolved user locale (`pt-BR`, `es-PE`, `en-US`) |
+| `prompt` | Full localized prompt string for the language model |
 | `wardrobeItems` | Summary list for logging |
 | `validClothingItemIds` | All wardrobe IDs (reserved for future validation) |
 
@@ -332,13 +334,23 @@ The prompt instructs the model to act as a SkyDIIV personal fashion consultant. 
 
 ### Entity relationship (simplified)
 
-```
-users
-  └── wardrobe_panorama (content, generated_at, llm_interaction_id)
-        └── llm_interactions (prompt, response, model, latency)
+```mermaid
+erDiagram
+    users ||--o| wardrobe_panorama : ""
+    users ||--o| weekly_outfit_preferences : "read-only input"
+    users ||--o{ clothing_items : "read-only input"
+    wardrobe_panorama }o--o| llm_interactions : ""
 
-clothing_items (+ tags)  →  read-only input for prompt building
-weekly_outfit_preferences  →  read-only input for prompt building
+    wardrobe_panorama {
+        text content "localized markdown"
+        uuid llm_interaction_id FK
+        timestamp generated_at
+    }
+
+    clothing_items {
+        string title
+        string tags "via join"
+    }
 ```
 
 ---
@@ -356,10 +368,19 @@ These cache key formats **must stay in sync** with the SkyDIIV web app.
 
 ### Dispatch vs. execution
 
-```
-Web app sets marker  →  Scheduler dispatches message  →  Step 1 finds marker  →  Panorama generated
-Web app sets marker  →  (no dispatch yet)             →  Marker waits until next scheduled run
-(no marker)          →  Scheduler dispatches message  →  Step 1 exits (no-op)
+```mermaid
+flowchart LR
+    subgraph run["Panorama generated"]
+        A1["Web app sets marker"] --> A2["Scheduler dispatches message"] --> A3["Step 1 finds marker"] --> A4["Panorama generated"]
+    end
+
+    subgraph wait["Marker waits"]
+        B1["Web app sets marker"] --> B2["No dispatch yet"] --> B3["Marker waits until next scheduled run"]
+    end
+
+    subgraph noop["No-op exit"]
+        C1["No marker"] --> C2["Scheduler dispatches message"] --> C3["Step 1 exits (no-op)"]
+    end
 ```
 
 ---
@@ -523,7 +544,8 @@ sequenceDiagram
     WF->>CACHE: EXISTS wardrobe-update-check:…
     Note over WF: Step 1 — marker found
 
-    WF->>DB: read user, preferences, wardrobe
+    WF->>DB: read app_preferences + user + preferences + wardrobe
+    WF->>WF: resolveUserLocale
     Note over WF: Step 2 complete
 
     WF->>LLM: generate(prompt)

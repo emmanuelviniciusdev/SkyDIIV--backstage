@@ -12,6 +12,18 @@ Workflows are registered with `serveMany`, which routes requests by the **last p
 
 Upstream dispatch is handled by [`worker-scheduler`](../worker-scheduler/README.md), which publishes signed messages to these endpoints on a configured schedule.
 
+```mermaid
+flowchart LR
+    SCHED["worker-scheduler"] -->|POST signed payload| WO["POST /generate-weekly-outfits"]
+    SCHED -->|POST signed payload| WP["POST /generate-wardrobe-panorama"]
+    WO --> WFW["generate-weekly-outfits workflow"]
+    WP --> PFW["generate-wardrobe-panorama workflow"]
+    WFW --> DB[("Neon PostgreSQL")]
+    PFW --> DB
+    WFW --> LLM["Gemini"]
+    PFW --> LLM
+```
+
 ---
 
 ## Services & Technologies
@@ -39,6 +51,7 @@ Upstream dispatch is handled by [`worker-scheduler`](../worker-scheduler/README.
 
 ```
 ├── docs/
+│   ├── I18N.md                             # Multi-language support (locales, resolution, module map)
 │   ├── WEEKLY_OUTFITS_WORKFLOW.md          # generate-weekly-outfits — full workflow reference
 │   └── WARDROBE_PANORAMA_WORKFLOW.md       # generate-wardrobe-panorama — full workflow reference
 ├── src/
@@ -47,7 +60,7 @@ Upstream dispatch is handled by [`worker-scheduler`](../worker-scheduler/README.
 │   │   ├── index.ts                        # Endpoint registry
 │   │   ├── generate-weekly-outfits/
 │   │   └── generate-wardrobe-panorama/
-│   └── lib/                                # Shared DB, LLM, weather, cache, storage, logging
+│   └── lib/                                # Shared DB, i18n, LLM, weather, cache, storage, logging
 ├── tests/
 ├── wrangler.toml
 ├── .env.example                            # Copy to .dev.vars for local dev

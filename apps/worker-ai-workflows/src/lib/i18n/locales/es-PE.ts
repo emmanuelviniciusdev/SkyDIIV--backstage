@@ -1,0 +1,72 @@
+import type { LocaleMessages } from "../types"
+import { createWeatherCodeDescription } from "../weather/weather-codes"
+
+const weatherCodeDescription = createWeatherCodeDescription("Tiempo variable", {
+  0: "Cielo despejado",
+  1: "Mayormente despejado",
+  2: "Parcialmente nublado",
+  3: "Nublado",
+  45: "Niebla",
+  48: "Niebla",
+  51: "Llovizna",
+  52: "Llovizna",
+  53: "Llovizna",
+  54: "Llovizna",
+  55: "Llovizna",
+  56: "Llovizna helada",
+  57: "Llovizna helada",
+  61: "Lluvia",
+  62: "Lluvia",
+  63: "Lluvia",
+  64: "Lluvia",
+  65: "Lluvia",
+  66: "Lluvia helada",
+  67: "Lluvia helada",
+  71: "Nieve",
+  72: "Nieve",
+  73: "Nieve",
+  74: "Nieve",
+  75: "Nieve",
+  77: "Granizo",
+  80: "Chubascos",
+  81: "Chubascos",
+  82: "Chubascos",
+  85: "Chubascos de nieve",
+  86: "Chubascos de nieve",
+  95: "Tormenta",
+  96: "Tormenta con granizo",
+  99: "Tormenta con granizo",
+})
+
+export const esPE: LocaleMessages = {
+  weather: {
+    locationLabel: "Ubicación",
+    forecastHeader: "Pronóstico de la semana",
+    maxLabel: "máx.",
+    minLabel: "mín.",
+    rainLabel: "lluvia",
+    fallbackDescription: "Tiempo variable",
+    weatherCodeDescription,
+  },
+  fallbacks: {
+    noWardrobe: "No hay prendas disponibles en el guardarropa.",
+    noPreferences: "No se indicaron preferencias específicas.",
+    noTitle: "sin título",
+    noTags: "sin etiquetas",
+    userNameUnknown: "no informado",
+    locationUndefined: "no definida",
+    routineUndefined: "no definida",
+    preferencesUndefined: "no definidas",
+    noPieces: "No hay prendas registradas.",
+    noTitlePanorama: "sin título",
+    noTagsPanorama: "sin etiquetas",
+  },
+  weeklyOutfits: {
+    wardrobeLine: (id, title, tags) => `ID:${id} | TÍTULO:${title} | ETIQUETAS:${tags}`,
+  },
+  wardrobePanorama: {
+    wardrobeLine: (id, title, tags) => `ID: ${id} Título: ${title}; Etiquetas: ${tags}`,
+    preferencesSection: (location, routine) =>
+      `Ubicación: ${location}\nDescripción de rutina/estilo: ${routine}`,
+  },
+}

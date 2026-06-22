@@ -113,12 +113,12 @@ describe("buildPrompt()", () => {
 
   it("falls back gracefully when wardrobe is empty", () => {
     const prompt = buildPrompt({ wardrobe: [], preferences: "Any", forecast: FORECAST })
-    expect(prompt).toContain("No wardrobe items available.")
+    expect(prompt).toContain("Nenhuma peça disponível no guarda-roupa.")
   })
 
   it("falls back gracefully when preferences is empty", () => {
     const prompt = buildPrompt({ wardrobe: WARDROBE, preferences: "", forecast: FORECAST })
-    expect(prompt).toContain("No specific preferences provided.")
+    expect(prompt).toContain("Nenhuma preferência específica informada.")
   })
 
   it("falls back gracefully when forecast days list is empty", () => {
@@ -127,10 +127,16 @@ describe("buildPrompt()", () => {
     expect(prompt).toContain("Localização: Somewhere")
   })
 
-  it("uses 'no tags' placeholder when a wardrobe item has no tags", () => {
+  it("uses 'sem tags' placeholder when a wardrobe item has no tags", () => {
     const items: WardrobeItem[] = [{ id: "x1", title: "Mystery Item", imageUrl: null, tags: [] }]
     const prompt = buildPrompt({ wardrobe: items, preferences: "Any", forecast: FORECAST })
-    expect(prompt).toContain("ID:x1 | TÍTULO:Mystery Item | TAGS:no tags")
+    expect(prompt).toContain("ID:x1 | TÍTULO:Mystery Item | TAGS:sem tags")
+  })
+
+  it("builds en-US prompt when locale is en-US", () => {
+    const prompt = buildPrompt({ locale: "en-US", wardrobe: WARDROBE, preferences: "Casual", forecast: FORECAST })
+    expect(prompt).toContain("SkyDIIV fashion assistant")
+    expect(prompt).toContain("ID:item-1 | TITLE:White T-Shirt | TAGS:")
   })
 })
 

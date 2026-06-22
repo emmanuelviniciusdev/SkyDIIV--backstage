@@ -160,11 +160,12 @@ Loads all inputs needed for the language model call:
 
 | Input | Source | Notes |
 |---|---|---|
+| User locale | `app_preferences` + `domains` | Resolved via `resolveUserLocale()`; see [I18N.md](./I18N.md) |
 | User preferences | `weekly_outfit_preferences` | `location`, `routine_description` |
 | Wardrobe items | `clothing_items` + `tags` | ID, title, tags, optional `image_url` |
 | Weather forecast | Weather API | 7 days from week start; geocoded from `location` |
 
-**Parallel fetches:** preferences and wardrobe are loaded concurrently.
+**Parallel fetches:** locale, preferences, and wardrobe are loaded concurrently.
 
 **Hard failures (workflow aborts):**
 - No preferences row for the user
@@ -177,10 +178,11 @@ Loads all inputs needed for the language model call:
 
 | Field | Purpose |
 |---|---|
-| `prompt` | Full pt-BR prompt string for the language model |
+| `locale` | Resolved user locale (`pt-BR`, `es-PE`, `en-US`) |
+| `prompt` | Full localized prompt string for the language model |
 | `weeklyOutfitPreferencesId` | FK for `weekly_outfits` inserts |
 | `weekStartDate` | Sunday ISO date (`YYYY-MM-DD`) |
-| `dayWeatherSummaries` | Map of English weekday → pt-BR weather string for the database |
+| `dayWeatherSummaries` | Map of English weekday → localized weather string for the database |
 | `wardrobeImageMap` | `clothing_item_id → image_url` for thumbnail generation |
 | `validClothingItemIds` | All wardrobe IDs; used to filter invalid model output in step 3 |
 
@@ -312,10 +314,11 @@ Each saved outfit gets its own durable workflow step so every image compositing 
 
 ## LLM Prompt Design
 
-**Template:** `src/lib/prompt/template.ts` (`WEEKLY_OUTFIT_PROMPT_TEMPLATE`)  
-**Builder:** `src/lib/prompt/builder.ts`
+**Templates:** `src/lib/i18n/prompts/weekly-outfits.ts` (per locale)  
+**Builder:** `src/lib/prompt/builder.ts` → delegates to i18n  
+**Locale resolution:** `src/lib/i18n/resolve-user-locale.ts` (reads `app_preferences.language_id`)
 
-The prompt is entirely in **Brazilian Portuguese (`pt-BR`)** and instructs the model to act as a SkyDIIV fashion assistant.
+The prompt language matches the user's locale (`pt-BR`, `es-PE`, or `en-US`). See [I18N.md](./I18N.md) for the full i18n module reference.
 
 ### Input sections
 
@@ -324,7 +327,7 @@ The prompt is entirely in **Brazilian Portuguese (`pt-BR`)** and instructs the m
    ID:{id} | TÍTULO:{title} | TAGS:{tag1, tag2, …}
    ```
 2. **Preferências do usuário** — free-text `routine_description`
-3. **Previsão meteorológica** — 7-day forecast with pt-BR weekday names and standard weather code descriptions
+3. **Previsão meteorológica / weather forecast** — 7-day forecast with locale-specific weekday names and weather code descriptions
 
 ### Selection rules (highlights)
 
@@ -344,6 +347,8 @@ The prompt is entirely in **Brazilian Portuguese (`pt-BR`)** and instructs the m
 
 | Table | Operation | Purpose |
 |---|---|---|
+| `app_preferences` | Read | User language preference (`language_id`) |
+| `domains` | Read (join) | Language domain (`name`; `source` is always null for languages) |
 | `weekly_outfit_preferences` | Read | User location and style/routine description |
 | `clothing_items` | Read | Wardrobe items with titles and image URLs |
 | `clothing_item_tags` / `tags` | Read (join) | Tags describing each piece |
@@ -360,16 +365,27 @@ The prompt is entirely in **Brazilian Portuguese (`pt-BR`)** and instructs the m
 | `weekly_outfits.day_of_week` | `0` (Sunday) through `6` (Saturday) |
 | `outfits.type` | `'AI_GENERATED'` |
 | `outfits.created_by` / `updated_by` | `'worker-ai-workflows'` |
-| `weekly_outfits.weather_summary` | pt-BR string, e.g. `"Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%"` |
+| `weekly_outfits.weather_summary` | Localized string in the user's locale, e.g. `"Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%"` (pt-BR) |
 
 ### Entity relationship (simplified)
 
-```
-weekly_outfit_preferences
-  └── weekly_outfits (week_start_date, day_of_week, weather_summary)
-        └── outfits (type, title, image_url)
-              └── outfit_items
-                    └── clothing_items
+```mermaid
+erDiagram
+    weekly_outfit_preferences ||--o{ weekly_outfits : ""
+    weekly_outfits ||--|| outfits : ""
+    outfits ||--o{ outfit_items : ""
+    outfit_items }o--|| clothing_items : ""
+
+    weekly_outfits {
+        date week_start_date
+        int day_of_week
+        string weather_summary "localized"
+    }
+
+    outfits {
+        string type "AI_GENERATED"
+        string image_url
+    }
 ```
 
 ---
@@ -488,7 +504,8 @@ apps/worker-ai-workflows/
 │   │           └── generate-images.ts                    # Step 4
 │   └── lib/
 │       ├── db/                                           # Database repositories
-│       ├── prompt/                                       # pt-BR prompt template + parser
+│       ├── i18n/                                         # Locale resolution, prompts, weather labels
+│       ├── prompt/                                       # Weekly-outfits builder + JSON parser
 │       ├── llm/                                          # Language model provider
 │       ├── weather/                                      # Weather API provider
 │       ├── cache/                                        # Cache client + key helpers
@@ -547,8 +564,8 @@ sequenceDiagram
     SCH->>MQ: publish [{userId}, …]
     MQ->>WF: POST /generate-weekly-outfits {userId}
 
-    WF->>DB: read preferences + wardrobe
-    WF->>WF: fetch weather forecast
+    WF->>DB: read app_preferences + preferences + wardrobe
+    WF->>WF: resolveUserLocale + fetch weather forecast
     Note over WF: Step 1 complete
 
     WF->>LLM: generate(prompt)

@@ -6,7 +6,7 @@
  * calls or database connections.
  * The goal is to verify the end-to-end data flow through all four steps.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 // ---------------------------------------------------------------------------
 // All fixtures and mock objects that need to be referenced inside vi.mock()
@@ -57,17 +57,24 @@ const mocks = vi.hoisted(() => {
 
   // ── Fake SQL client ────────────────────────────────────────────────────────
 
+  const fakeLanguageRow = {
+    name: "Português (BR)",
+  }
+
   // Read DB: returns different rows depending on which query was issued.
-  // We use a simple call-counter to cycle through the expected results.
-  let readCallCount = 0
-  const readDb = vi.fn().mockImplementation(() => {
-    readCallCount++
-    if (readCallCount % 2 === 1) {
-      // First call per step pair: preferences
-      return Promise.resolve([fakePreferencesRow])
+  let scenario: "default" | "no-preferences" | "no-wardrobe" = "default"
+  const readDb = vi.fn().mockImplementation((strings: TemplateStringsArray | string[]) => {
+    const query = Array.isArray(strings) ? strings.join("") : String(strings)
+    if (scenario === "no-preferences" && query.includes("weekly_outfit_preferences")) {
+      return Promise.resolve([])
     }
-    // Second call: wardrobe
-    return Promise.resolve(fakeWardrobeRows)
+    if (scenario === "no-wardrobe" && query.includes("clothing_items")) {
+      return Promise.resolve([])
+    }
+    if (query.includes("app_preferences")) return Promise.resolve([fakeLanguageRow])
+    if (query.includes("weekly_outfit_preferences")) return Promise.resolve([fakePreferencesRow])
+    if (query.includes("clothing_items")) return Promise.resolve(fakeWardrobeRows)
+    return Promise.resolve([])
   })
 
   const txMock = vi.fn().mockResolvedValue([])
@@ -100,6 +107,8 @@ const mocks = vi.hoisted(() => {
     USER_ID,
     WEEK_START,
     PREFERENCES_ID,
+    fakePreferencesRow,
+    fakeWardrobeRows,
     fakeForecast,
     readDb,
     writeDb,
@@ -112,7 +121,12 @@ const mocks = vi.hoisted(() => {
     mockDraw,
     mockOutput,
     cfPipeline,
-    resetReadCallCount: () => { readCallCount = 0 },
+    setScenario: (value: typeof scenario) => {
+      scenario = value
+    },
+    resetScenario: () => {
+      scenario = "default"
+    },
   }
 })
 
@@ -168,19 +182,22 @@ import { generateImageStep } from "../../src/workflows/generate-weekly-outfits/s
 // ---------------------------------------------------------------------------
 
 describe("Step 1 — buildPromptStep()", () => {
+  afterEach(() => {
+    mocks.resetScenario()
+  })
+
   it("returns the expected shape", async () => {
-    mocks.resetReadCallCount()
     const result = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
 
     expect(result.userId).toBe(mocks.USER_ID)
     expect(result.weeklyOutfitPreferencesId).toBe(mocks.PREFERENCES_ID)
     expect(result.weekStartDate).toBe(mocks.WEEK_START)
+    expect(result.locale).toBe("pt-BR")
     expect(typeof result.prompt).toBe("string")
     expect(result.prompt.length).toBeGreaterThan(100)
   })
 
   it("includes wardrobe item IDs in the prompt", async () => {
-    mocks.resetReadCallCount()
     const result = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
 
     expect(result.prompt).toContain("ID:item-1")
@@ -189,19 +206,17 @@ describe("Step 1 — buildPromptStep()", () => {
   })
 
   it("includes the user's routine description in the prompt", async () => {
-    mocks.resetReadCallCount()
     const result = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
     expect(result.prompt).toContain("Casual everyday wear")
   })
 
   it("includes the weather location in the prompt", async () => {
-    mocks.resetReadCallCount()
     const result = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
     expect(result.prompt).toContain("Rio de Janeiro")
   })
 
   it("throws when the user has no preferences", async () => {
-    mocks.readDb.mockResolvedValueOnce([])
+    mocks.setScenario("no-preferences")
 
     await expect(buildPromptStep("unknown-user", mocks.WEEK_START)).rejects.toThrow(
       "No weekly outfit preferences found",
@@ -209,15 +224,7 @@ describe("Step 1 — buildPromptStep()", () => {
   })
 
   it("throws when the user has no wardrobe items", async () => {
-    // Preferences found → empty wardrobe
-    mocks.readDb
-      .mockResolvedValueOnce([{
-        id: mocks.PREFERENCES_ID,
-        user_id: mocks.USER_ID,
-        location: "Rio de Janeiro, RJ, Brasil",
-        routine_description: "casual",
-      }])
-      .mockResolvedValueOnce([])
+    mocks.setScenario("no-wardrobe")
 
     await expect(buildPromptStep(mocks.USER_ID, mocks.WEEK_START)).rejects.toThrow(
       "has no wardrobe items",
@@ -350,8 +357,6 @@ describe("Step 4 — generateImageStep()", () => {
 
 describe("Full pipeline (Step 1 → 2 → 3 → 4)", () => {
   it("produces saved outfit data without errors", async () => {
-    mocks.resetReadCallCount()
-
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       body: new ReadableStream(),
