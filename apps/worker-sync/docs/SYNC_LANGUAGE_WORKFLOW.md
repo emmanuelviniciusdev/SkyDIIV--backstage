@@ -73,8 +73,10 @@ flowchart TD
     WP_BUILD --> WP_EXEC["wardrobe-panorama-execute-prompt"]
     WP_EXEC --> WP_SAVE["wardrobe-panorama-save-translation"]
 
-    WO_SAVE --> DONE["Workflow completed"]
-    WP_SAVE --> DONE
+    WO_SAVE --> INVALIDATE["invalidate-sync-language-cache"]
+    WP_SAVE --> INVALIDATE
+
+    INVALIDATE --> DONE["Workflow completed"]
 ```
 
 | Step | File | Description |
@@ -88,6 +90,7 @@ flowchart TD
 | `wardrobe-panorama-build-prompt` | `steps/wardrobe-panorama/build-prompt.ts` | Builds the single translation prompt for `wardrobe_panorama` |
 | `wardrobe-panorama-execute-prompt` | `lib/llm/execute-prompt.ts` | Sends that prompt to the LLM (one call) |
 | `wardrobe-panorama-save-translation` | `steps/wardrobe-panorama/save-translation.ts` | Parses response and UPDATE `wardrobe_panorama.content` |
+| `invalidate-sync-language-cache` | `steps/invalidate-sync-language-cache.ts` | Clears `running-sync-language:{userid}` in Redis |
 
 Flows with no matching records skip all three steps.
 
@@ -153,6 +156,7 @@ The web app's `WORKER_SYNC_URL` controls the initial QStash delivery; this worke
 | `GEMINI_API_KEY` | yes | Translation steps |
 | `LLM_PROVIDER` | no (default: `gemini_flash`) | Translation steps |
 | `GEMINI_MODEL` | no (default: `gemini-2.5-flash`) | Translation steps |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | yes | `invalidate-sync-language-cache` |
 
 ---
 
@@ -167,6 +171,8 @@ The web app's `WORKER_SYNC_URL` controls the initial QStash delivery; this worke
 | `tests/unit/merge-weekly-outfit-translations.test.ts` | LLM response merge logic |
 | `tests/unit/weekly-outfits-sync-repository.test.ts` | DB read/update for `weekly_outfits` |
 | `tests/unit/wardrobe-panorama-sync-repository.test.ts` | DB read/update for `wardrobe_panorama` |
+| `tests/unit/invalidate-sync-language-cache-step.test.ts` | Cache invalidation step |
+| `tests/unit/sync-language-cache.test.ts` | Redis key for `running-sync-language` |
 | `tests/integration/sync-language.test.ts` | End-to-end step flow with fakes |
 
 Run from `apps/worker-sync/`:
