@@ -42,10 +42,6 @@ export async function invalidateCache(
         key: `running-sync-language:${userId}`,
         deleted: await clearLanguageSyncRunning(userId),
       }
-    default: {
-      const exhaustive: never = target
-      throw new Error(`Unknown cache target: ${exhaustive}`)
-    }
   }
 }
 
