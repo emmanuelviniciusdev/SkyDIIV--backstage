@@ -17,7 +17,9 @@ compatibility_flags = ["nodejs_compat"]
 #   wrangler secret put QSTASH_TOKEN
 #   wrangler secret put QSTASH_CURRENT_SIGNING_KEY
 #   wrangler secret put QSTASH_NEXT_SIGNING_KEY
-#   wrangler secret put UPSTASH_WORKFLOW_URL
+#
+# Worker-specific Upstash Workflow callback origin.
+#   wrangler secret put WORKER_SYNC_URL
 #
 # ── Redis ─────────────────────────────────────────────────────────────────────
 #   wrangler secret put UPSTASH_REDIS_REST_URL
@@ -27,7 +29,6 @@ compatibility_flags = ["nodejs_compat"]
 #
 # ── LLM ───────────────────────────────────────────────────────────────────────
 #   wrangler secret put GEMINI_API_KEY
-#   wrangler secret put UPSTASH_WORKFLOW_URL
 
 [vars]
 LLM_PROVIDER = "gemini_flash"

@@ -54,7 +54,7 @@ The CRON expression, timezone, and which weekday endpoint QStash calls are confi
 **Workflow doc:** [WEEKLY_OUTFITS_WORKFLOW.md](../worker-ai-workflows/docs/WEEKLY_OUTFITS_WORKFLOW.md)
 
 1. Queries `weekly_outfit_preferences` for users with non-empty `location` and `routine_description`
-2. Publishes one signed queue message per eligible user (`{ userId }`) to `WEEKLY_OUTFITS_WORKER_URL`
+2. Publishes one signed queue message per eligible user (`{ userId }`) to `{WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits`
 3. Messages are batched in groups of 100
 
 Returns `{ flow: "weekly-outfits", dispatched: <count> }`.
@@ -68,7 +68,7 @@ Returns `{ flow: "weekly-outfits", dispatched: <count> }`.
 
 1. Queries users with at least **10** clothing items in `clothing_items`
 2. Keeps only users whose `wardrobe-update-check:{userId}--wardrobe-panorama` cache marker is present (set by the web app when the wardrobe changes)
-3. Publishes one signed queue message per filtered user (`{ userId }`) to `WARDROBE_PANORAMA_WORKER_URL`
+3. Publishes one signed queue message per filtered user (`{ userId }`) to `{WORKER_AI_WORKFLOWS_URL}/generate-wardrobe-panorama`
 4. Messages are batched in groups of 100
 
 Returns `{ flow: "generate-wardrobe-panorama", dispatched: <count> }`.
@@ -219,15 +219,14 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY` | All schedule endpoints (signature verification) |
 | `QSTASH_URL`, `QSTASH_TOKEN` | Flows that publish messages |
 | `DATABASE_URL` | All flows (eligible-user queries) |
+| `WORKER_AI_WORKFLOWS_URL` | `weekly-outfits` and `generate-wardrobe-panorama` flows |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` (or `REDIS_URL`) | `generate-wardrobe-panorama` flow (update-marker filter) |
-| `WEEKLY_OUTFITS_WORKER_URL` | `weekly-outfits` flow |
-| `WARDROBE_PANORAMA_WORKER_URL` | `generate-wardrobe-panorama` flow |
 
-Worker URL secrets must include the **full path** to the downstream workflow endpoint, e.g.:
+`WORKER_AI_WORKFLOWS_URL` is the worker-ai-workflows origin only (no path). Each flow appends its endpoint:
 
 ```
-https://worker-ai-workflows.<subdomain>.workers.dev/generate-weekly-outfits
-https://worker-ai-workflows.<subdomain>.workers.dev/generate-wardrobe-panorama
+{WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits
+{WORKER_AI_WORKFLOWS_URL}/generate-wardrobe-panorama
 ```
 
 ### External schedules
@@ -261,7 +260,6 @@ npm run deploy -- --env staging # staging
 | `QSTASH_TOKEN` | QStash API token |
 | `QSTASH_CURRENT_SIGNING_KEY` | QStash current signing key |
 | `QSTASH_NEXT_SIGNING_KEY` | QStash next signing key |
-| `WEEKLY_OUTFITS_WORKER_URL` | Full `generate-weekly-outfits` endpoint URL |
-| `WARDROBE_PANORAMA_WORKER_URL` | Full `generate-wardrobe-panorama` endpoint URL |
+| `WORKER_AI_WORKFLOWS_URL` | worker-ai-workflows origin (no path) |
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (wardrobe panorama cache filter) |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |

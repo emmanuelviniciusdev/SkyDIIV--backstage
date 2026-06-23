@@ -1,4 +1,5 @@
 import { serveMany } from "@upstash/workflow/cloudflare"
+import { resolveWorkflowBaseUrl } from "../lib/workflow-base-url"
 import { generateWeeklyOutfitsWorkflow } from "./generate-weekly-outfits/workflow"
 import { generateWardrobePanoramaWorkflow } from "./generate-wardrobe-panorama/workflow"
 
@@ -11,16 +12,17 @@ import { generateWardrobePanoramaWorkflow } from "./generate-wardrobe-panorama/w
  *
  *   key "generate-weekly-outfits"  →  POST /generate-weekly-outfits
  *
- * To add a new AI workflow: implement it with `createWorkflow(...)` under
- * src/workflows/<name>/ and register it here under its endpoint key. No routing
- * changes are needed in src/index.ts.
+ * Callback base URL comes from WORKER_AI_WORKFLOWS_URL (passed as serveMany `baseUrl`).
  *
  * Note: workflow keys cannot contain "/".
  */
-const { fetch: serveManyFetch } = serveMany({
+export const workflowRegistry = {
   "generate-weekly-outfits": generateWeeklyOutfitsWorkflow,
   "generate-wardrobe-panorama": generateWardrobePanoramaWorkflow,
-})
+} as const
+
+let cachedBaseUrl: string | undefined
+let cachedFetch: ReturnType<typeof serveMany>["fetch"] | undefined
 
 /**
  * Dispatches a request to the matching workflow. `serveMany` types its handler
@@ -30,5 +32,12 @@ export function workflowsFetch(
   request: Request,
   env: Record<string, string | undefined>,
 ): Promise<Response> {
-  return serveManyFetch(request, env) as Promise<Response>
+  const baseUrl = resolveWorkflowBaseUrl(env)
+
+  if (cachedBaseUrl !== baseUrl || !cachedFetch) {
+    cachedBaseUrl = baseUrl
+    cachedFetch = serveMany(workflowRegistry, { baseUrl }).fetch
+  }
+
+  return cachedFetch(request, env) as Promise<Response>
 }

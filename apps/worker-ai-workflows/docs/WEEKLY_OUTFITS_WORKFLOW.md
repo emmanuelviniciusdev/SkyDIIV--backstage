@@ -110,11 +110,11 @@ export async function dispatchUsersToWorkflow(users: EligibleUser[]): Promise<nu
 ```
 
 - Messages are batched in groups of **100** (queue provider limit)
-- `WEEKLY_OUTFITS_WORKER_URL` must include the full path to the workflow endpoint
+- `WORKER_AI_WORKFLOWS_URL` on `worker-scheduler` must be this worker's origin (no path); the scheduler appends `/generate-weekly-outfits`
 
 ### Manual / ad-hoc trigger
 
-For local development or debugging, POST directly to the workflow endpoint (requires signed requests in production; expose the local worker via a tunnel and set `UPSTASH_WORKFLOW_URL` for callback routing):
+For local development or debugging, POST directly to the workflow endpoint (requires signed requests in production; expose the local worker via a tunnel and set `WORKER_AI_WORKFLOWS_URL` for callback routing):
 
 ```bash
 curl -X POST https://<worker-origin>/generate-weekly-outfits \
@@ -427,7 +427,7 @@ Set via `wrangler secret put <KEY>` (production) or `.dev.vars` (local):
 | `QSTASH_TOKEN` | ✅ | Workflow orchestration |
 | `QSTASH_CURRENT_SIGNING_KEY` | ✅ | Request verification |
 | `QSTASH_NEXT_SIGNING_KEY` | ✅ | Key rotation |
-| `UPSTASH_WORKFLOW_URL` | ✅ | Public worker origin (no path) |
+| `WORKER_AI_WORKFLOWS_URL` | ✅ | Public worker origin (no path) |
 | `GEMINI_API_KEY` | ✅ | Language model calls |
 | `GEMINI_MODEL` | — | Model name override |
 | `UPSTASH_REDIS_REST_URL` | ✅* | Cache + notifications |
@@ -453,7 +453,7 @@ binding = "IMAGES"
 
 | Variable | Purpose |
 |---|---|
-| `WEEKLY_OUTFITS_WORKER_URL` | Full URL to `POST /generate-weekly-outfits` |
+| `WORKER_AI_WORKFLOWS_URL` | worker-scheduler origin → `{origin}/generate-weekly-outfits` |
 | `QSTASH_TOKEN` | Publishing batch messages |
 | `DATABASE_URL` | Query eligible users |
 

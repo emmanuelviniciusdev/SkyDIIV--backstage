@@ -121,7 +121,7 @@ Expose the local worker for Upstash callbacks:
 cloudflared tunnel --url http://localhost:8787
 ```
 
-Set the tunnel origin (no path) as `UPSTASH_WORKFLOW_URL` in `.dev.vars` and restart `npm run dev`.
+Set the tunnel origin (no path) as `WORKER_SYNC_URL` in `.dev.vars` and restart `npm run dev`.
 
 Trigger the sync-language workflow:
 
@@ -163,9 +163,11 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 |---|---|
 | `DATABASE_URL` / `DATABASE_URL_UNPOOLED` | All workflows |
 | `QSTASH_URL`, `QSTASH_TOKEN`, `QSTASH_*_SIGNING_KEY` | All workflows |
-| `UPSTASH_WORKFLOW_URL` | All workflows |
+| `WORKER_SYNC_URL` | All workflows + web app — worker origin (no path); web app appends `/sync/language` for QStash delivery |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | `sync-language` (LLM translation) |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Future cache invalidation steps |
+
+`WORKER_SYNC_URL` is shared between the web app (initial QStash delivery) and this worker (Upstash Workflow step callbacks via `serveMany` `baseUrl`).
 
 ---
 
@@ -178,16 +180,15 @@ npm run deploy                  # production
 npm run deploy -- --env staging # staging
 ```
 
-After the first deploy, set `UPSTASH_WORKFLOW_URL` to the deployed worker origin:
+After the first deploy, set `WORKER_SYNC_URL` to the deployed worker origin:
 
 ```bash
 wrangler deployments list
-wrangler secret put UPSTASH_WORKFLOW_URL
+wrangler secret put WORKER_SYNC_URL
+# e.g. https://worker-sync.<subdomain>.workers.dev
 ```
 
-Configure upstream callers with the full workflow endpoint URL:
-
-- `SYNC_LANGUAGE_WORKER_URL` → `https://worker-sync.<subdomain>.workers.dev/sync/language`
+The web app uses the same `WORKER_SYNC_URL` origin and targets `{WORKER_SYNC_URL}/sync/language` for the initial QStash message.
 
 ### GitHub Secrets (deploy)
 

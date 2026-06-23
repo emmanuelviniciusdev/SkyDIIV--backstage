@@ -32,7 +32,7 @@ import { weeklyOutfitsFlow } from "../../src/flows/weekly-outfits.flow"
 describe("weeklyOutfitsFlow", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.WEEKLY_OUTFITS_WORKER_URL = "https://worker-ai-workflows.example.workers.dev/generate-weekly-outfits"
+    process.env.WORKER_AI_WORKFLOWS_URL = "https://worker-ai-workflows.example.workers.dev"
   })
 
   it("is named weekly-outfits", () => {

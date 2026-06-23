@@ -1,4 +1,5 @@
 import { serveMany } from "@upstash/workflow/cloudflare"
+import { resolveWorkflowBaseUrl } from "../lib/workflow-base-url"
 import { syncLanguageWorkflow } from "./sync-language/workflow"
 
 /**
@@ -10,15 +11,16 @@ import { syncLanguageWorkflow } from "./sync-language/workflow"
  *
  *   key "language"  →  POST /sync/language
  *
- * To add a new sync workflow: implement it with `createWorkflow(...)` under
- * src/workflows/<name>/ and register it here under its last path segment key.
- * No routing changes are needed in src/index.ts.
+ * Callback base URL comes from WORKER_SYNC_URL (passed as serveMany `baseUrl`).
  *
  * Note: workflow keys cannot contain "/".
  */
-const { fetch: serveManyFetch } = serveMany({
+export const workflowRegistry = {
   language: syncLanguageWorkflow,
-})
+} as const
+
+let cachedBaseUrl: string | undefined
+let cachedFetch: ReturnType<typeof serveMany>["fetch"] | undefined
 
 /**
  * Dispatches a request to the matching workflow. `serveMany` types its handler
@@ -28,5 +30,12 @@ export function workflowsFetch(
   request: Request,
   env: Record<string, string | undefined>,
 ): Promise<Response> {
-  return serveManyFetch(request, env) as Promise<Response>
+  const baseUrl = resolveWorkflowBaseUrl(env)
+
+  if (cachedBaseUrl !== baseUrl || !cachedFetch) {
+    cachedBaseUrl = baseUrl
+    cachedFetch = serveMany(workflowRegistry, { baseUrl }).fetch
+  }
+
+  return cachedFetch(request, env) as Promise<Response>
 }

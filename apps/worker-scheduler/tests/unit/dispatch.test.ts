@@ -22,12 +22,12 @@ describe("dispatchUsersToWorkflow", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetQStashClients()
-    process.env.WEEKLY_OUTFITS_WORKER_URL = "https://worker.example.com"
+    process.env.WORKER_AI_WORKFLOWS_URL = "https://worker.example.com"
     process.env.QSTASH_TOKEN = "test-token"
   })
 
   afterEach(() => {
-    delete process.env.WEEKLY_OUTFITS_WORKER_URL
+    delete process.env.WORKER_AI_WORKFLOWS_URL
     delete process.env.QSTASH_TOKEN
   })
 
@@ -49,14 +49,14 @@ describe("dispatchUsersToWorkflow", () => {
     const [messages] = mockBatchJSON.mock.calls[0] as [Array<{ url: string; body: { userId: string } }>]
     expect(messages).toHaveLength(2)
     expect(messages[0]!.body).toEqual({ userId: "a" })
-    expect(messages[0]!.url).toBe("https://worker.example.com")
+    expect(messages[0]!.url).toBe("https://worker.example.com/generate-weekly-outfits")
   })
 
-  it("throws when WEEKLY_OUTFITS_WORKER_URL is not set", async () => {
-    delete process.env.WEEKLY_OUTFITS_WORKER_URL
+  it("throws when WORKER_AI_WORKFLOWS_URL is not set", async () => {
+    delete process.env.WORKER_AI_WORKFLOWS_URL
     const users: EligibleUser[] = [{ userId: "a" }]
 
-    await expect(dispatchUsersToWorkflow(users)).rejects.toThrow("WEEKLY_OUTFITS_WORKER_URL")
+    await expect(dispatchUsersToWorkflow(users)).rejects.toThrow("WORKER_AI_WORKFLOWS_URL")
   })
 
   it("sends correct Content-Type header for each message", async () => {

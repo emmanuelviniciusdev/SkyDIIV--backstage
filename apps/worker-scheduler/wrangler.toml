@@ -19,7 +19,7 @@ invocation_logs = true
 #   wrangler secret put QSTASH_TOKEN
 #   wrangler secret put QSTASH_CURRENT_SIGNING_KEY
 #   wrangler secret put QSTASH_NEXT_SIGNING_KEY
-#   wrangler secret put WEEKLY_OUTFITS_WORKER_URL
+#   wrangler secret put WORKER_AI_WORKFLOWS_URL
 #
 # ── Staging / preview environment ─────────────────────────────────────────────
 [env.staging]

@@ -3,6 +3,7 @@ import { SqlUsersRepository } from "../lib/db/users.repository"
 import type { EligibleUser } from "../lib/db/users.repository"
 import { getQStashClient } from "../lib/qstash"
 import { createLogger } from "../lib/logger"
+import { resolveGenerateWeeklyOutfitsUrl } from "../lib/worker-ai-workflows-url"
 import type { FlowResult, ScheduleFlow } from "./types"
 
 /** Maximum number of messages in a single QStash batch call. */
@@ -14,7 +15,7 @@ export interface GenerateWeeklyOutfitsPayload {
 
 /**
  * Publishes one QStash message per eligible user to the worker-ai-workflows
- * generate-weekly-outfits endpoint (WEEKLY_OUTFITS_WORKER_URL, path included),
+ * generate-weekly-outfits endpoint ({WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits),
  * batching requests in groups of BATCH_SIZE (QStash limit: 100/call).
  *
  * Returns the total number of messages dispatched.
@@ -22,8 +23,7 @@ export interface GenerateWeeklyOutfitsPayload {
 export async function dispatchUsersToWorkflow(users: EligibleUser[]): Promise<number> {
   if (users.length === 0) return 0
 
-  const workerUrl = process.env.WEEKLY_OUTFITS_WORKER_URL
-  if (!workerUrl) throw new Error("WEEKLY_OUTFITS_WORKER_URL environment variable is not set")
+  const workerUrl = resolveGenerateWeeklyOutfitsUrl()
 
   const client = getQStashClient()
   let dispatched = 0

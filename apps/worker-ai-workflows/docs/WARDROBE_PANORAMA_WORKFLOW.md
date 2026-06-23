@@ -122,11 +122,11 @@ export async function dispatchUsersToPanoramaWorkflow(users: { userId: string }[
 ```
 
 - Messages are batched in groups of **100** (queue provider limit)
-- `WARDROBE_PANORAMA_WORKER_URL` must include the full path to the workflow endpoint
+- `WORKER_AI_WORKFLOWS_URL` on `worker-scheduler` must be this worker's origin (no path); the scheduler appends `/generate-wardrobe-panorama`
 
 ### Manual / ad-hoc trigger
 
-For local development or debugging, POST directly to the workflow endpoint (requires signed requests in production; expose the local worker via a tunnel and set `UPSTASH_WORKFLOW_URL` for callback routing):
+For local development or debugging, POST directly to the workflow endpoint (requires signed requests in production; expose the local worker via a tunnel and set `WORKER_AI_WORKFLOWS_URL` for callback routing):
 
 ```bash
 curl -X POST https://<worker-origin>/generate-wardrobe-panorama \
@@ -401,7 +401,7 @@ Set via `wrangler secret put <KEY>` (production) or `.dev.vars` (local):
 | `QSTASH_TOKEN` | ✅ | Workflow orchestration |
 | `QSTASH_CURRENT_SIGNING_KEY` | ✅ | Request verification |
 | `QSTASH_NEXT_SIGNING_KEY` | ✅ | Key rotation |
-| `UPSTASH_WORKFLOW_URL` | ✅ | Public worker origin (no path) |
+| `WORKER_AI_WORKFLOWS_URL` | ✅ | Public worker origin (no path) |
 | `GEMINI_API_KEY` | ✅ | Language model calls |
 | `GEMINI_MODEL` | — | Model name override |
 | `UPSTASH_REDIS_REST_URL` | ✅* | Cache gate, invalidation, notifications |
@@ -415,7 +415,7 @@ This workflow does **not** use object storage or the image service binding.
 
 | Variable | Purpose |
 |---|---|
-| `WARDROBE_PANORAMA_WORKER_URL` | Full URL to `POST /generate-wardrobe-panorama` |
+| `WORKER_AI_WORKFLOWS_URL` | worker-scheduler origin → `{origin}/generate-wardrobe-panorama` |
 | `QSTASH_TOKEN` | Publishing batch messages |
 | `DATABASE_URL` | Query users with sufficient wardrobe size |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` (or `REDIS_URL`) | Filter users by wardrobe-update cache marker |

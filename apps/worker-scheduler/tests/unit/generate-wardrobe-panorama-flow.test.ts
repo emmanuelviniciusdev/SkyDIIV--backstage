@@ -31,7 +31,7 @@ import { generateWardrobePanoramaFlow } from "../../src/flows/generate-wardrobe-
 describe("generateWardrobePanoramaFlow", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.WARDROBE_PANORAMA_WORKER_URL = "https://worker-ai-workflows.example.workers.dev/generate-wardrobe-panorama"
+    process.env.WORKER_AI_WORKFLOWS_URL = "https://worker-ai-workflows.example.workers.dev"
     mockFilterUsers.mockImplementation(async (users) => users)
   })
 

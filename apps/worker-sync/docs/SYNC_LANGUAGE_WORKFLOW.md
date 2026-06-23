@@ -137,7 +137,7 @@ curl -X POST https://worker-sync.<subdomain>.workers.dev/sync/language \
   -d '{"userid":"<USER_ID>","old_language":"en-US","new_language":"pt-BR"}'
 ```
 
-For local development, expose the worker with `cloudflared` and set `UPSTASH_WORKFLOW_URL` to the tunnel origin. See [README.md](../README.md).
+For local development, expose the worker with `cloudflared` and set `WORKER_SYNC_URL` to the tunnel origin. See [README.md](../README.md).
 
 ---
 
@@ -146,7 +146,10 @@ For local development, expose the worker with `cloudflared` and set `UPSTASH_WOR
 | Variable / secret | Required | Used by |
 |---|---|---|
 | `DATABASE_URL` / `DATABASE_URL_UNPOOLED` | yes | All steps |
-| `QSTASH_*`, `UPSTASH_WORKFLOW_URL` | yes | Workflow orchestration |
+| `QSTASH_*` | yes | Workflow orchestration |
+| `WORKER_SYNC_URL` | yes | Step callbacks — this worker's origin |
+
+The web app's `WORKER_SYNC_URL` controls the initial QStash delivery; this worker uses the same env as `serveMany` `baseUrl` for step callbacks.
 | `GEMINI_API_KEY` | yes | Translation steps |
 | `LLM_PROVIDER` | no (default: `gemini_flash`) | Translation steps |
 | `GEMINI_MODEL` | no (default: `gemini-2.5-flash`) | Translation steps |

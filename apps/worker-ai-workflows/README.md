@@ -133,7 +133,7 @@ Expose the local worker for Upstash callbacks:
 cloudflared tunnel --url http://localhost:8787
 ```
 
-Set the tunnel origin (no path) as `UPSTASH_WORKFLOW_URL` in `.dev.vars` and restart `npm run dev`.
+Set the tunnel origin (no path) as `WORKER_AI_WORKFLOWS_URL` in `.dev.vars` and restart `npm run dev`.
 
 Trigger a workflow (see each workflow doc for payload details and prerequisites):
 
@@ -176,7 +176,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 |---|---|
 | `DATABASE_URL` / `DATABASE_URL_UNPOOLED` | All workflows |
 | `QSTASH_URL`, `QSTASH_TOKEN`, `QSTASH_*_SIGNING_KEY` | All workflows |
-| `UPSTASH_WORKFLOW_URL` | All workflows |
+| `WORKER_AI_WORKFLOWS_URL` | All workflows — this worker's public origin (no path) |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | All workflows |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | All workflows |
 | `R2_*` | `generate-weekly-outfits` only |
@@ -196,17 +196,17 @@ npm run deploy                  # production
 npm run deploy -- --env staging # staging
 ```
 
-After the first deploy, set `UPSTASH_WORKFLOW_URL` to the deployed worker origin:
+After the first deploy, set `WORKER_AI_WORKFLOWS_URL` to the deployed worker origin:
 
 ```bash
 wrangler deployments list
-wrangler secret put UPSTASH_WORKFLOW_URL
+wrangler secret put WORKER_AI_WORKFLOWS_URL
 ```
 
-Configure `worker-scheduler` with the full workflow endpoint URLs:
+Configure `worker-scheduler` with `WORKER_AI_WORKFLOWS_URL` (origin only). Flows append their paths automatically:
 
-- `WEEKLY_OUTFITS_WORKER_URL` → `https://worker-ai-workflows.<subdomain>.workers.dev/generate-weekly-outfits`
-- `WARDROBE_PANORAMA_WORKER_URL` → `https://worker-ai-workflows.<subdomain>.workers.dev/generate-wardrobe-panorama`
+- `{WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits`
+- `{WORKER_AI_WORKFLOWS_URL}/generate-wardrobe-panorama`
 
 ### GitHub Secrets (deploy)
 
