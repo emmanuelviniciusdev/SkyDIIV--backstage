@@ -52,6 +52,7 @@ const BASE_INPUT = {
   dayWeatherByWeekday: {
     sunday: {
       weatherSummary: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%",
+      weatherCode: 0,
       minTemperature: 22.1,
       maxTemperature: 28.4,
       unityTemperature: "°C",
@@ -59,6 +60,7 @@ const BASE_INPUT = {
     },
     monday: {
       weatherSummary: "Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%",
+      weatherCode: 2,
       minTemperature: 21,
       maxTemperature: 27,
       unityTemperature: "°C",
@@ -117,6 +119,7 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
 
     const values = getInterpolatedValues(tx)
     expect(values).toContain("Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%")
+    expect(values).toContain(0)
     expect(values).toContain(22.1)
     expect(values).toContain(28.4)
     expect(values).toContain("°C")
@@ -171,6 +174,7 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
         dayWeatherByWeekday: {
           [name]: {
             weatherSummary: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%",
+            weatherCode: 0,
             minTemperature: 22,
             maxTemperature: 28,
             unityTemperature: "°C",

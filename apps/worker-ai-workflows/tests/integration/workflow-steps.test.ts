@@ -220,6 +220,7 @@ describe("Step 1 — buildPromptStep()", () => {
 
     expect(result.dayWeatherByWeekday.sunday).toEqual({
       weatherSummary: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 0%",
+      weatherCode: 0,
       minTemperature: 22,
       maxTemperature: 28,
       unityTemperature: "°C",
@@ -310,6 +311,7 @@ describe("Step 3 — saveOutfitsStep()", () => {
       dayWeatherByWeekday: {
         sunday: {
           weatherSummary: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%",
+          weatherCode: 0,
           minTemperature: 22,
           maxTemperature: 28,
           unityTemperature: "°C",
@@ -317,6 +319,7 @@ describe("Step 3 — saveOutfitsStep()", () => {
         },
         monday: {
           weatherSummary: "Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%",
+          weatherCode: 2,
           minTemperature: 21,
           maxTemperature: 27,
           unityTemperature: "°C",

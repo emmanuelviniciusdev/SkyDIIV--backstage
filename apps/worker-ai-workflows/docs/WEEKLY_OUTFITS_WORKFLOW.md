@@ -366,6 +366,7 @@ The prompt language matches the user's locale (`pt-BR`, `es-PE`, or `en-US`). Se
 | `outfits.type` | `'AI_GENERATED'` |
 | `outfits.created_by` / `updated_by` | `'worker-ai-workflows'` |
 | `weekly_outfits.weather_summary` | Localized string in the user's locale, e.g. `"Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%"` (pt-BR) |
+| `weekly_outfits.weather_code` | WMO weather interpretation code from Open-Meteo (e.g. `0` = clear sky) |
 | `weekly_outfits.min_temperature` | Minimum daily temperature from the forecast (°C, raw float from Open-Meteo) |
 | `weekly_outfits.max_temperature` | Maximum daily temperature from the forecast (°C, raw float from Open-Meteo) |
 | `weekly_outfits.unity_temperature` | Temperature unit symbol (`°C`) |
@@ -384,6 +385,7 @@ erDiagram
         date week_start_date
         int day_of_week
         string weather_summary "localized"
+        int weather_code "WMO code"
         float min_temperature
         float max_temperature
         string unity_temperature

@@ -56,6 +56,7 @@ describe("i18n weather formatters", () => {
     it("returns structured weather fields for database storage", () => {
       expect(buildDayWeatherInfo(DAY, "pt-BR")).toEqual({
         weatherSummary: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%",
+        weatherCode: 0,
         minTemperature: 22.1,
         maxTemperature: 28.4,
         unityTemperature: "°C",

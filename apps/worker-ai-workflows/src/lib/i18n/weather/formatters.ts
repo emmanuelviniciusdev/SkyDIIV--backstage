@@ -8,6 +8,7 @@ export const TEMPERATURE_UNIT = "°C"
 /** Structured weather data stored per day in `weekly_outfits`. */
 export interface DayWeatherInfo {
   weatherSummary: string
+  weatherCode: number
   minTemperature: number
   maxTemperature: number
   unityTemperature: string
@@ -36,6 +37,7 @@ export function formatDayWeatherSummary(day: DailyWeather, locale: Locale): stri
 export function buildDayWeatherInfo(day: DailyWeather, locale: Locale): DayWeatherInfo {
   return {
     weatherSummary: formatDayWeatherSummary(day, locale),
+    weatherCode: day.weatherCode,
     minTemperature: day.minTempC,
     maxTemperature: day.maxTempC,
     unityTemperature: TEMPERATURE_UNIT,

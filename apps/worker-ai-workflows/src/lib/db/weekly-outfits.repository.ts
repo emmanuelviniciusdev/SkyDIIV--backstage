@@ -133,12 +133,12 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
         await tx`
           INSERT INTO weekly_outfits (
             id, weekly_outfit_preferences_id, outfit_id,
-            week_start_date, day_of_week, weather_summary,
+            week_start_date, day_of_week, weather_summary, weather_code,
             min_temperature, max_temperature, unity_temperature, description_temperature,
             created_by, updated_by, created_at, updated_at
           ) VALUES (
             ${randomUUID()}, ${weeklyOutfitPreferencesId}, ${outfitId},
-            ${weekStartDate}::date, ${dayOfWeek}, ${weatherSummary},
+            ${weekStartDate}::date, ${dayOfWeek}, ${weatherSummary}, ${dayWeather?.weatherCode ?? null},
             ${dayWeather?.minTemperature ?? null}, ${dayWeather?.maxTemperature ?? null},
             ${dayWeather?.unityTemperature ?? null}, ${dayWeather?.descriptionTemperature ?? null},
             ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
