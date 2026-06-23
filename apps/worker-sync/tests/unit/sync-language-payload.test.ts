@@ -1,10 +1,7 @@
 import { describe, it, expect } from "vitest"
-import {
-  syncLanguagePayloadSchema,
-  syncUserLanguageStep,
-} from "../../src/workflows/sync-language/steps/sync-user-language"
+import { syncLanguagePayloadSchema } from "../../src/workflows/sync-language/types"
 
-describe("sync-language step", () => {
+describe("syncLanguagePayloadSchema", () => {
   const validPayload = {
     userid: "user-123",
     old_language: "en-US",
@@ -19,10 +16,5 @@ describe("sync-language step", () => {
   it("rejects payloads missing required fields", () => {
     const parsed = syncLanguagePayloadSchema.safeParse({ userid: "user-123" })
     expect(parsed.success).toBe(false)
-  })
-
-  it("returns the payload fields from the boilerplate step", () => {
-    const result = syncUserLanguageStep(validPayload)
-    expect(result).toEqual(validPayload)
   })
 })

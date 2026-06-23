@@ -14,6 +14,7 @@ flowchart LR
     APP["SkyDIIV app / services"] -->|POST signed payload| SL["POST /sync/language"]
     SL --> SFW["sync-language workflow"]
     SFW --> DB[("Neon PostgreSQL")]
+    SFW --> LLM["Gemini"]
 ```
 
 ---
@@ -26,9 +27,10 @@ flowchart LR
 | Language | TypeScript 5 (strict) | Implementation |
 | Workflow orchestration | [Upstash Workflow](https://upstash.com/docs/workflow) + [QStash](https://upstash.com/docs/qstash) | Durable steps, retries, signed delivery |
 | Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Shared schema with the SkyDIIV web app |
-| Validation | [Zod](https://zod.dev/) | Payload validation |
+| Language model | [Google Gemini](https://ai.google.dev/) (`gemini-2.5-flash` default) | Translates AI-generated content on language change |
+| Validation | [Zod](https://zod.dev/) | Payload and LLM response validation |
 | Dev / deploy | Wrangler 4 | Local dev and Cloudflare deployment |
-| Testing | Vitest 4 | Unit tests |
+| Testing | Vitest 4 | Unit + integration tests |
 | Linting | ESLint 10 + typescript-eslint | Code quality |
 | CI/CD | GitHub Actions | Lint, test, deploy on push to `main` / `staging` |
 
@@ -44,8 +46,10 @@ flowchart LR
 │   ├── workflows/
 │   │   ├── index.ts                        # Endpoint registry
 │   │   └── sync-language/
-│   └── lib/                                # Shared DB and logging
+│   └── lib/                                # Shared DB, LLM, prompts, logging
 ├── tests/
+│   ├── unit/
+│   └── integration/
 ├── wrangler.toml
 ├── .env.example                            # Copy to .dev.vars for local dev
 └── package.json
@@ -160,6 +164,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `DATABASE_URL` / `DATABASE_URL_UNPOOLED` | All workflows |
 | `QSTASH_URL`, `QSTASH_TOKEN`, `QSTASH_*_SIGNING_KEY` | All workflows |
 | `UPSTASH_WORKFLOW_URL` | All workflows |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | `sync-language` (LLM translation) |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Future cache invalidation steps |
 
 ---

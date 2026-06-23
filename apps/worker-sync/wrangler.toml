@@ -24,6 +24,14 @@ compatibility_flags = ["nodejs_compat"]
 #   wrangler secret put UPSTASH_REDIS_REST_TOKEN
 #   # or:
 #   wrangler secret put REDIS_URL
+#
+# ── LLM ───────────────────────────────────────────────────────────────────────
+#   wrangler secret put GEMINI_API_KEY
+#   wrangler secret put UPSTASH_WORKFLOW_URL
+
+[vars]
+LLM_PROVIDER = "gemini_flash"
+# GEMINI_MODEL = "gemini-2.5-flash"
 
 [observability.logs]
 enabled = true
@@ -32,3 +40,6 @@ invocation_logs = true
 # ── Staging / preview environment ─────────────────────────────────────────────
 [env.staging]
 name = "worker-sync-staging"
+
+[env.staging.vars]
+LLM_PROVIDER = "gemini_flash"
