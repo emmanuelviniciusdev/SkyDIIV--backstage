@@ -1,0 +1,34 @@
+name = "worker-sync"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# nodejs_compat enables:
+#   - crypto.randomUUID()
+#   - process.env (populated from Worker bindings below)
+#   - other Node.js built-ins used by dependencies
+compatibility_flags = ["nodejs_compat"]
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+# Set each secret once with: wrangler secret put <KEY>
+#
+#   wrangler secret put DATABASE_URL
+#   wrangler secret put DATABASE_URL_UNPOOLED
+#   wrangler secret put QSTASH_URL
+#   wrangler secret put QSTASH_TOKEN
+#   wrangler secret put QSTASH_CURRENT_SIGNING_KEY
+#   wrangler secret put QSTASH_NEXT_SIGNING_KEY
+#   wrangler secret put UPSTASH_WORKFLOW_URL
+#
+# ── Redis ─────────────────────────────────────────────────────────────────────
+#   wrangler secret put UPSTASH_REDIS_REST_URL
+#   wrangler secret put UPSTASH_REDIS_REST_TOKEN
+#   # or:
+#   wrangler secret put REDIS_URL
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+# ── Staging / preview environment ─────────────────────────────────────────────
+[env.staging]
+name = "worker-sync-staging"
