@@ -2,8 +2,8 @@ import { getReadDb } from "../../../lib/db/client"
 import { SqlPreferencesRepository } from "../../../lib/db/preferences.repository"
 import { SqlWardrobeRepository } from "../../../lib/db/wardrobe.repository"
 import { getWeatherProvider } from "../../../lib/weather"
-import { buildPrompt, formatDayWeatherSummary } from "../../../lib/prompt/builder"
-import { resolveUserLocale, type Locale } from "../../../lib/i18n"
+import { buildPrompt, type DayWeatherInfo } from "../../../lib/prompt/builder"
+import { buildDayWeatherInfo, resolveUserLocale, type Locale } from "../../../lib/i18n"
 import { createLogger } from "../../../lib/logger"
 import type { DailyWeather } from "../../../lib/weather/types"
 
@@ -15,7 +15,7 @@ export interface BuildPromptResult {
   weekStartDate: string
   locale: Locale
   prompt: string
-  dayWeatherSummaries: Record<string, string>
+  dayWeatherByWeekday: Record<string, DayWeatherInfo>
   /** Maps clothing item ID → public image URL for every wardrobe piece that has an image. */
   wardrobeImageMap: Record<string, string>
   /**
@@ -26,14 +26,14 @@ export interface BuildPromptResult {
   validClothingItemIds: string[]
 }
 
-function buildDayWeatherSummaries(days: DailyWeather[], locale: Locale): Record<string, string> {
-  const summaries: Record<string, string> = {}
+function buildDayWeatherByWeekday(days: DailyWeather[], locale: Locale): Record<string, DayWeatherInfo> {
+  const byWeekday: Record<string, DayWeatherInfo> = {}
   for (const day of days) {
     const date = new Date(day.date + "T12:00:00Z")
     const weekdayEn = ENGLISH_WEEKDAYS[date.getUTCDay()]
-    if (weekdayEn) summaries[weekdayEn] = formatDayWeatherSummary(day, locale)
+    if (weekdayEn) byWeekday[weekdayEn] = buildDayWeatherInfo(day, locale)
   }
-  return summaries
+  return byWeekday
 }
 
 /**
@@ -102,7 +102,7 @@ export async function buildPromptStep(
     forecast: forecast ?? { location: preferences.location, days: [] },
   })
 
-  const dayWeatherSummaries = buildDayWeatherSummaries(forecast?.days ?? [], locale)
+  const dayWeatherByWeekday = buildDayWeatherByWeekday(forecast?.days ?? [], locale)
 
   const wardrobeImageMap: Record<string, string> = {}
   for (const item of wardrobeItems) {
@@ -112,7 +112,7 @@ export async function buildPromptStep(
   log.info("Prompt built", {
     promptLength: prompt.length,
     locale,
-    weatherDays: Object.keys(dayWeatherSummaries).length,
+    weatherDays: Object.keys(dayWeatherByWeekday).length,
     wardrobeItemsWithImages: Object.keys(wardrobeImageMap).length,
   })
 
@@ -122,7 +122,7 @@ export async function buildPromptStep(
     weekStartDate,
     locale,
     prompt,
-    dayWeatherSummaries,
+    dayWeatherByWeekday,
     wardrobeImageMap,
     validClothingItemIds: wardrobeItems.map((item) => item.id),
   }

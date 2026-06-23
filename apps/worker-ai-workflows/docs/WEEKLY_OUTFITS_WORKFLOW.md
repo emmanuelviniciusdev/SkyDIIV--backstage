@@ -182,7 +182,7 @@ Loads all inputs needed for the language model call:
 | `prompt` | Full localized prompt string for the language model |
 | `weeklyOutfitPreferencesId` | FK for `weekly_outfits` inserts |
 | `weekStartDate` | Sunday ISO date (`YYYY-MM-DD`) |
-| `dayWeatherSummaries` | Map of English weekday → localized weather string for the database |
+| `dayWeatherByWeekday` | Map of English weekday → structured weather data for the database (summary + temperature fields) |
 | `wardrobeImageMap` | `clothing_item_id → image_url` for thumbnail generation |
 | `validClothingItemIds` | All wardrobe IDs; used to filter invalid model output in step 3 |
 
@@ -242,7 +242,7 @@ Persists outfit suggestions atomically and idempotently.
 |---|---|
 | `outfits` | `type = 'AI_GENERATED'`, title `Weekly AI Outfit — {Weekday}`, `created_by = 'worker-ai-workflows'` |
 | `outfit_items` | One row per selected clothing item |
-| `weekly_outfits` | Links outfit to preferences, week, day (`0`=Sun … `6`=Sat), and optional `weather_summary` |
+| `weekly_outfits` | Links outfit to preferences, week, day (`0`=Sun … `6`=Sat), weather summary, and temperature fields |
 
 Suggestions with unknown weekdays or zero clothing pieces after sanitization are skipped with a warning.
 
@@ -366,6 +366,10 @@ The prompt language matches the user's locale (`pt-BR`, `es-PE`, or `en-US`). Se
 | `outfits.type` | `'AI_GENERATED'` |
 | `outfits.created_by` / `updated_by` | `'worker-ai-workflows'` |
 | `weekly_outfits.weather_summary` | Localized string in the user's locale, e.g. `"Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%"` (pt-BR) |
+| `weekly_outfits.min_temperature` | Minimum daily temperature from the forecast (°C, raw float from Open-Meteo) |
+| `weekly_outfits.max_temperature` | Maximum daily temperature from the forecast (°C, raw float from Open-Meteo) |
+| `weekly_outfits.unity_temperature` | Temperature unit symbol (`°C`) |
+| `weekly_outfits.description_temperature` | Localized WMO weather code description, e.g. `"Céu limpo"` (pt-BR) |
 
 ### Entity relationship (simplified)
 
@@ -380,6 +384,10 @@ erDiagram
         date week_start_date
         int day_of_week
         string weather_summary "localized"
+        float min_temperature
+        float max_temperature
+        string unity_temperature
+        string description_temperature "localized"
     }
 
     outfits {

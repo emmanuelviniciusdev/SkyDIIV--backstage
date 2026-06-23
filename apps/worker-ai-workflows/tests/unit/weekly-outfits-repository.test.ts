@@ -49,9 +49,21 @@ const BASE_INPUT = {
     { weekday: "sunday", clothingPieceIds: ["item-1", "item-2"] },
     { weekday: "monday", clothingPieceIds: ["item-3"] },
   ],
-  dayWeatherSummaries: {
-    sunday: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%",
-    monday: "Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%",
+  dayWeatherByWeekday: {
+    sunday: {
+      weatherSummary: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%",
+      minTemperature: 22.1,
+      maxTemperature: 28.4,
+      unityTemperature: "°C",
+      descriptionTemperature: "Céu limpo",
+    },
+    monday: {
+      weatherSummary: "Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%",
+      minTemperature: 21,
+      maxTemperature: 27,
+      unityTemperature: "°C",
+      descriptionTemperature: "Parcialmente nublado",
+    },
   },
 }
 
@@ -96,7 +108,7 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     expect((writeDb as unknown as SqlMock).begin).toHaveBeenCalledOnce()
   })
 
-  it("stores the weather summary in the weekly_outfits insert", async () => {
+  it("stores weather fields in the weekly_outfits insert", async () => {
     const readDb = makeReadDb([])
     const { db: writeDb, tx } = makeWriteDb()
     const repo = new SqlWeeklyOutfitsRepository(readDb, writeDb)
@@ -105,6 +117,10 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
 
     const values = getInterpolatedValues(tx)
     expect(values).toContain("Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%")
+    expect(values).toContain(22.1)
+    expect(values).toContain(28.4)
+    expect(values).toContain("°C")
+    expect(values).toContain("Céu limpo")
   })
 
   it("skips suggestions with an unknown weekday", async () => {
@@ -152,7 +168,15 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
       await repo.saveWeeklyOutfits({
         ...BASE_INPUT,
         suggestions: [{ weekday: name, clothingPieceIds: ["item-1"] }],
-        dayWeatherSummaries: { [name]: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%" },
+        dayWeatherByWeekday: {
+          [name]: {
+            weatherSummary: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%",
+            minTemperature: 22,
+            maxTemperature: 28,
+            unityTemperature: "°C",
+            descriptionTemperature: "Céu limpo",
+          },
+        },
       })
 
       expect(getInterpolatedValues(tx)).toContain(expected)

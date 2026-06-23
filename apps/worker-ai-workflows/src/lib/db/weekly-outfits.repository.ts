@@ -2,6 +2,7 @@ import { randomUUID } from "crypto"
 import type postgres from "postgres"
 import { createLogger } from "../logger"
 import { deleteImageFromR2 } from "../storage/r2-client"
+import type { DayWeatherInfo } from "../i18n/weather/formatters"
 
 export interface OutfitSuggestion {
   weekday: string
@@ -14,8 +15,8 @@ export interface SaveWeeklyOutfitsInput {
   /** Sunday of the target week in ISO format: "YYYY-MM-DD". */
   weekStartDate: string
   suggestions: OutfitSuggestion[]
-  /** Maps English weekday name (e.g. "sunday") → pt-BR weather summary stored in weekly_outfits.weather_summary. */
-  dayWeatherSummaries: Record<string, string>
+  /** Maps English weekday name (e.g. "sunday") → weather data stored in weekly_outfits. */
+  dayWeatherByWeekday: Record<string, DayWeatherInfo>
 }
 
 /** A reference to an outfit that was successfully saved to the database. */
@@ -57,7 +58,7 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
    * subsequent step can generate and attach composite images.
    */
   async saveWeeklyOutfits(input: SaveWeeklyOutfitsInput): Promise<SavedOutfitRef[]> {
-    const { userId, weeklyOutfitPreferencesId, weekStartDate, suggestions, dayWeatherSummaries } = input
+    const { userId, weeklyOutfitPreferencesId, weekStartDate, suggestions, dayWeatherByWeekday } = input
     const log = createLogger("weekly-outfits-repo", userId)
 
     const existing = await this.readDb<{ outfit_id: string }[]>`
@@ -98,7 +99,8 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
 
         const outfitId = randomUUID()
         const title = `Weekly AI Outfit — ${capitalise(suggestion.weekday)}`
-        const weatherSummary = dayWeatherSummaries[suggestion.weekday.toLowerCase()] ?? null
+        const dayWeather = dayWeatherByWeekday[suggestion.weekday.toLowerCase()] ?? null
+        const weatherSummary = dayWeather?.weatherSummary ?? null
 
         log.debug("Inserting outfit", {
           weekday: suggestion.weekday,
@@ -132,10 +134,13 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
           INSERT INTO weekly_outfits (
             id, weekly_outfit_preferences_id, outfit_id,
             week_start_date, day_of_week, weather_summary,
+            min_temperature, max_temperature, unity_temperature, description_temperature,
             created_by, updated_by, created_at, updated_at
           ) VALUES (
             ${randomUUID()}, ${weeklyOutfitPreferencesId}, ${outfitId},
             ${weekStartDate}::date, ${dayOfWeek}, ${weatherSummary},
+            ${dayWeather?.minTemperature ?? null}, ${dayWeather?.maxTemperature ?? null},
+            ${dayWeather?.unityTemperature ?? null}, ${dayWeather?.descriptionTemperature ?? null},
             ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
           )
         `

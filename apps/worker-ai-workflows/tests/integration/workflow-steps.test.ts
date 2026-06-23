@@ -215,6 +215,18 @@ describe("Step 1 — buildPromptStep()", () => {
     expect(result.prompt).toContain("Rio de Janeiro")
   })
 
+  it("builds dayWeatherByWeekday from the forecast", async () => {
+    const result = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
+
+    expect(result.dayWeatherByWeekday.sunday).toEqual({
+      weatherSummary: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 0%",
+      minTemperature: 22,
+      maxTemperature: 28,
+      unityTemperature: "°C",
+      descriptionTemperature: "Céu limpo",
+    })
+  })
+
   it("throws when the user has no preferences", async () => {
     mocks.setScenario("no-preferences")
 
@@ -295,10 +307,23 @@ describe("Step 3 — saveOutfitsStep()", () => {
       weeklyOutfitPreferencesId: mocks.PREFERENCES_ID,
       weekStartDate: mocks.WEEK_START,
       suggestions,
-      dayWeatherSummaries: {
-        sunday: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%",
-        monday: "Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%",
+      dayWeatherByWeekday: {
+        sunday: {
+          weatherSummary: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%",
+          minTemperature: 22,
+          maxTemperature: 28,
+          unityTemperature: "°C",
+          descriptionTemperature: "Céu limpo",
+        },
+        monday: {
+          weatherSummary: "Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%",
+          minTemperature: 21,
+          maxTemperature: 27,
+          unityTemperature: "°C",
+          descriptionTemperature: "Parcialmente nublado",
+        },
       },
+      validClothingItemIds: ["item-1", "item-2", "item-3"],
     })
 
     expect(Array.isArray(result)).toBe(true)
@@ -380,7 +405,8 @@ describe("Full pipeline (Step 1 → 2 → 3 → 4)", () => {
       weeklyOutfitPreferencesId: promptData.weeklyOutfitPreferencesId,
       weekStartDate: promptData.weekStartDate,
       suggestions,
-      dayWeatherSummaries: promptData.dayWeatherSummaries,
+      dayWeatherByWeekday: promptData.dayWeatherByWeekday,
+      validClothingItemIds: promptData.validClothingItemIds,
     })
     for (const outfit of savedOutfits) {
       await generateImageStep({ userId: promptData.userId, outfit, wardrobeImageMap: promptData.wardrobeImageMap })

@@ -60,7 +60,7 @@ export const generateWeeklyOutfitsWorkflow = createWorkflow<GenerateWeeklyOutfit
     log.info("Step completed: build-prompt", {
       weekStartDate: promptData.weekStartDate,
       promptLength: promptData.prompt.length,
-      weatherDays: Object.keys(promptData.dayWeatherSummaries).length,
+      weatherDays: Object.keys(promptData.dayWeatherByWeekday).length,
     })
 
     // ── Step 2: Execute prompt ──────────────────────────────────────────────
@@ -78,7 +78,7 @@ export const generateWeeklyOutfitsWorkflow = createWorkflow<GenerateWeeklyOutfit
         weeklyOutfitPreferencesId: promptData.weeklyOutfitPreferencesId,
         weekStartDate: promptData.weekStartDate,
         suggestions,
-        dayWeatherSummaries: promptData.dayWeatherSummaries,
+        dayWeatherByWeekday: promptData.dayWeatherByWeekday,
         validClothingItemIds: promptData.validClothingItemIds,
       })
     })

@@ -2,12 +2,17 @@ import { z } from "zod"
 import { DEFAULT_LOCALE, type Locale } from "../i18n/config"
 import {
   buildWeeklyOutfitsPrompt,
+  buildDayWeatherInfo,
   formatDayWeatherSummary as formatDayWeatherSummaryI18n,
   formatWeatherForecast as formatWeatherForecastI18n,
   weatherCodeDescription as weatherCodeDescriptionI18n,
+  type DayWeatherInfo,
 } from "../i18n"
 import type { WardrobeItem } from "../db/wardrobe.repository"
 import type { DailyWeather, WeeklyForecast } from "../weather/types"
+
+export type { DayWeatherInfo }
+export { buildDayWeatherInfo }
 
 // ---------------------------------------------------------------------------
 // Prompt construction

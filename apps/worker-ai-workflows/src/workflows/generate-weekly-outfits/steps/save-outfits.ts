@@ -2,6 +2,7 @@ import { getReadDb, getWriteDb } from "../../../lib/db/client"
 import { SqlWeeklyOutfitsRepository } from "../../../lib/db/weekly-outfits.repository"
 import { createLogger } from "../../../lib/logger"
 import type { ParsedOutfitSuggestion } from "../../../lib/prompt/builder"
+import type { DayWeatherInfo } from "../../../lib/i18n/weather/formatters"
 import type { SavedOutfitRef } from "../../../lib/db/weekly-outfits.repository"
 
 export type { SavedOutfitRef }
@@ -11,7 +12,7 @@ export interface SaveOutfitsInput {
   weeklyOutfitPreferencesId: string
   weekStartDate: string
   suggestions: ParsedOutfitSuggestion[]
-  dayWeatherSummaries: Record<string, string>
+  dayWeatherByWeekday: Record<string, DayWeatherInfo>
   /**
    * IDs of every clothing item that actually belongs to this user's wardrobe
    * (sourced from step 1). Any ID the LLM returns that is not in this set is
@@ -61,7 +62,7 @@ export async function saveOutfitsStep(input: SaveOutfitsInput): Promise<SavedOut
     weeklyOutfitPreferencesId: input.weeklyOutfitPreferencesId,
     weekStartDate: input.weekStartDate,
     suggestions: sanitisedSuggestions,
-    dayWeatherSummaries: input.dayWeatherSummaries,
+    dayWeatherByWeekday: input.dayWeatherByWeekday,
   })
 
   log.info("Step completed — outfits saved", {

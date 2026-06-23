@@ -13,7 +13,10 @@ export { getLocaleMessages } from "./locales"
 export { buildWeeklyOutfitsPrompt, getWeeklyOutfitsPromptTemplate } from "./prompts/weekly-outfits"
 export { buildWardrobePanoramaPrompt } from "./prompts/wardrobe-panorama"
 export {
+  buildDayWeatherInfo,
   formatDayWeatherSummary,
   formatWeatherForecast,
+  TEMPERATURE_UNIT,
   weatherCodeDescription,
+  type DayWeatherInfo,
 } from "./weather/formatters"

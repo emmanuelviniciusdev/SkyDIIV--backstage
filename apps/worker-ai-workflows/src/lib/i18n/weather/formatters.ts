@@ -2,6 +2,18 @@ import { localeToBcp47, type Locale } from "../config"
 import { getLocaleMessages } from "../locales"
 import type { DailyWeather, WeeklyForecast } from "../../weather/types"
 
+/** Temperature unit used by the weather provider (Open-Meteo returns Celsius). */
+export const TEMPERATURE_UNIT = "°C"
+
+/** Structured weather data stored per day in `weekly_outfits`. */
+export interface DayWeatherInfo {
+  weatherSummary: string
+  minTemperature: number
+  maxTemperature: number
+  unityTemperature: string
+  descriptionTemperature: string
+}
+
 export function weatherCodeDescription(code: number, locale: Locale): string {
   return getLocaleMessages(locale).weather.weatherCodeDescription(code)
 }
@@ -15,7 +27,20 @@ export function formatDayWeatherSummary(day: DailyWeather, locale: Locale): stri
   const desc = messages.weatherCodeDescription(day.weatherCode)
   const max = Math.round(day.maxTempC)
   const min = Math.round(day.minTempC)
-  return `${desc}, ${messages.maxLabel} ${max}°C / ${messages.minLabel} ${min}°C, ${messages.rainLabel}: ${day.precipitationProbability}%`
+  return `${desc}, ${messages.maxLabel} ${max}${TEMPERATURE_UNIT} / ${messages.minLabel} ${min}${TEMPERATURE_UNIT}, ${messages.rainLabel}: ${day.precipitationProbability}%`
+}
+
+/**
+ * Extracts structured weather fields for a single day to persist in `weekly_outfits`.
+ */
+export function buildDayWeatherInfo(day: DailyWeather, locale: Locale): DayWeatherInfo {
+  return {
+    weatherSummary: formatDayWeatherSummary(day, locale),
+    minTemperature: day.minTempC,
+    maxTemperature: day.maxTempC,
+    unityTemperature: TEMPERATURE_UNIT,
+    descriptionTemperature: weatherCodeDescription(day.weatherCode, locale),
+  }
 }
 
 /**

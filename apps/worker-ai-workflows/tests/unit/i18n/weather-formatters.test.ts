@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
+  buildDayWeatherInfo,
   formatDayWeatherSummary,
   formatWeatherForecast,
   weatherCodeDescription,
@@ -48,6 +49,22 @@ describe("i18n weather formatters", () => {
       expect(formatDayWeatherSummary(DAY, "en-US")).toBe(
         "Clear sky, high 28°C / low 22°C, rain: 10%",
       )
+    })
+  })
+
+  describe("buildDayWeatherInfo()", () => {
+    it("returns structured weather fields for database storage", () => {
+      expect(buildDayWeatherInfo(DAY, "pt-BR")).toEqual({
+        weatherSummary: "Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%",
+        minTemperature: 22.1,
+        maxTemperature: 28.4,
+        unityTemperature: "°C",
+        descriptionTemperature: "Céu limpo",
+      })
+    })
+
+    it("localizes descriptionTemperature by locale", () => {
+      expect(buildDayWeatherInfo(DAY, "en-US").descriptionTemperature).toBe("Clear sky")
     })
   })
 
