@@ -73,7 +73,7 @@ flowchart TD
     WP_BUILD --> WP_EXEC["wardrobe-panorama-execute-prompt"]
     WP_EXEC --> WP_SAVE["wardrobe-panorama-save-translation"]
 
-    WO_SAVE --> INVALIDATE["invalidate-sync-language-cache"]
+    WO_SAVE --> INVALIDATE["invalidate-cache"]
     WP_SAVE --> INVALIDATE
 
     INVALIDATE --> DONE["Workflow completed"]
@@ -90,7 +90,15 @@ flowchart TD
 | `wardrobe-panorama-build-prompt` | `steps/wardrobe-panorama/build-prompt.ts` | Builds the single translation prompt for `wardrobe_panorama` |
 | `wardrobe-panorama-execute-prompt` | `lib/llm/execute-prompt.ts` | Sends that prompt to the LLM (one call) |
 | `wardrobe-panorama-save-translation` | `steps/wardrobe-panorama/save-translation.ts` | Parses response and UPDATE `wardrobe_panorama.content` |
-| `invalidate-sync-language-cache` | `steps/invalidate-sync-language-cache.ts` | Clears `running-sync-language:{userid}` in Redis |
+| `invalidate-cache` | `src/steps/invalidate-cache.ts` | Clears affected web app Redis entries via `CACHE_TARGETS` |
+
+**Cache targets invalidated** (see `src/lib/cache/invalidation.ts`):
+
+| Target | Redis key |
+|---|---|
+| `language-sync-running` | `running-sync-language:{userid}` |
+| `weekly-outfits` | `weekly-outfits:{userid}:{weekStart}` (current week, Sunday UTC) |
+| `wardrobe-panorama` | `wardrobe-panorama:{userid}` |
 
 Flows with no matching records skip all three steps.
 
@@ -156,7 +164,7 @@ The web app's `WORKER_SYNC_URL` controls the initial QStash delivery; this worke
 | `GEMINI_API_KEY` | yes | Translation steps |
 | `LLM_PROVIDER` | no (default: `gemini_flash`) | Translation steps |
 | `GEMINI_MODEL` | no (default: `gemini-2.5-flash`) | Translation steps |
-| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | yes | `invalidate-sync-language-cache` |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | yes | `invalidate-cache` |
 
 ---
 
@@ -171,8 +179,11 @@ The web app's `WORKER_SYNC_URL` controls the initial QStash delivery; this worke
 | `tests/unit/merge-weekly-outfit-translations.test.ts` | LLM response merge logic |
 | `tests/unit/weekly-outfits-sync-repository.test.ts` | DB read/update for `weekly_outfits` |
 | `tests/unit/wardrobe-panorama-sync-repository.test.ts` | DB read/update for `wardrobe_panorama` |
-| `tests/unit/invalidate-sync-language-cache-step.test.ts` | Cache invalidation step |
-| `tests/unit/sync-language-cache.test.ts` | Redis key for `running-sync-language` |
+| `tests/unit/invalidate-cache-step.test.ts` | Generic cache invalidation step |
+| `tests/unit/cache-invalidation.test.ts` | `CACHE_TARGETS` and `invalidateCaches` |
+| `tests/unit/language-sync-cache.test.ts` | Language sync running marker |
+| `tests/unit/weekly-outfits-cache.test.ts` | Weekly outfits cache key |
+| `tests/unit/wardrobe-panorama-cache.test.ts` | Wardrobe panorama cache key |
 | `tests/integration/sync-language.test.ts` | End-to-end step flow with fakes |
 
 Run from `apps/worker-sync/`:

@@ -7,7 +7,8 @@ import { buildWeeklyOutfitsPromptStep } from "./steps/weekly-outfits/build-promp
 import { saveWeeklyOutfitsTranslationsStep } from "./steps/weekly-outfits/save-translations"
 import { buildWardrobePanoramaPromptStep } from "./steps/wardrobe-panorama/build-prompt"
 import { saveWardrobePanoramaTranslationStep } from "./steps/wardrobe-panorama/save-translation"
-import { invalidateSyncLanguageCacheStep } from "./steps/invalidate-sync-language-cache"
+import { CACHE_TARGETS } from "../../lib/cache/invalidation"
+import { invalidateCacheStep } from "../../steps/invalidate-cache"
 import { syncLanguagePayloadSchema, type SyncLanguagePayload, type SyncLanguageResult } from "./types"
 
 export type { SyncLanguagePayload } from "./types"
@@ -17,7 +18,7 @@ export type { SyncLanguagePayload } from "./types"
  *
  * Each translation target (weekly_outfits, wardrobe_panorama) runs its own
  * three-step flow: build-prompt → execute-prompt → save.
- * A final step clears the web app's running-sync-language Redis marker.
+ * A final step invalidates affected web app Redis caches.
  */
 export const syncLanguageWorkflow = createWorkflow<SyncLanguagePayload, void>(
   async (context) => {
@@ -132,11 +133,18 @@ export const syncLanguageWorkflow = createWorkflow<SyncLanguagePayload, void>(
       log.info("Skipping wardrobe_panorama flow (no record)")
     }
 
-    log.info("Starting step: invalidate-sync-language-cache")
-    await context.run("invalidate-sync-language-cache", async () => {
-      return invalidateSyncLanguageCacheStep(payload.userid)
+    log.info("Starting step: invalidate-cache")
+    await context.run("invalidate-cache", async () => {
+      return invalidateCacheStep({
+        userId: payload.userid,
+        targets: [
+          CACHE_TARGETS.LANGUAGE_SYNC_RUNNING,
+          CACHE_TARGETS.WEEKLY_OUTFITS,
+          CACHE_TARGETS.WARDROBE_PANORAMA,
+        ],
+      })
     })
-    log.info("Step completed: invalidate-sync-language-cache")
+    log.info("Step completed: invalidate-cache")
 
     const result: SyncLanguageResult = {
       userid: payload.userid,

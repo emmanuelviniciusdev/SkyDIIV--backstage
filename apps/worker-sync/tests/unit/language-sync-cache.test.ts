@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, vi, afterEach } from "vitest"
 
 const mocks = vi.hoisted(() => ({
   deleteRedisKey: vi.fn(),
@@ -8,13 +8,9 @@ vi.mock("../../src/lib/cache/redis", () => ({
   deleteRedisKey: mocks.deleteRedisKey,
 }))
 
-import { deleteCachedRunningSyncLanguage } from "../../src/lib/cache/sync-language-cache"
+import { clearLanguageSyncRunning } from "../../src/lib/cache/language-sync-cache"
 
-describe("deleteCachedRunningSyncLanguage", () => {
-  beforeEach(() => {
-    mocks.deleteRedisKey.mockReset()
-  })
-
+describe("clearLanguageSyncRunning", () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
@@ -22,7 +18,7 @@ describe("deleteCachedRunningSyncLanguage", () => {
   it("deletes the running-sync-language key for the user", async () => {
     mocks.deleteRedisKey.mockResolvedValue(true)
 
-    const deleted = await deleteCachedRunningSyncLanguage("user-123")
+    const deleted = await clearLanguageSyncRunning("user-123")
 
     expect(mocks.deleteRedisKey).toHaveBeenCalledWith("running-sync-language:user-123")
     expect(deleted).toBe(true)
