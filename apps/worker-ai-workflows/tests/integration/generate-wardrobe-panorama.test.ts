@@ -14,8 +14,8 @@ const mocks = vi.hoisted(() => {
   }
 
   const fakeWardrobeRows = [
-    { id: "item-1", title: "Camisa branca", image_url: "https://r2.example.com/items/item-1.jpg", tags: ["formal", "white"] },
-    { id: "item-2", title: "Calça jeans", image_url: null, tags: ["casual", "denim"] },
+    { id: "item-1", title: "Camisa branca", image_url: "https://r2.example.com/items/item-1.jpg", tags: ["formal", "white"], piece_type: "Top", piece_subtype: "Shirt" },
+    { id: "item-2", title: "Calça jeans", image_url: null, tags: ["casual", "denim"], piece_type: "Bottom", piece_subtype: "Jeans" },
   ]
 
   const fakeUserRow = {
@@ -91,8 +91,8 @@ describe("generate-wardrobe-panorama workflow steps", () => {
     expect(result.prompt).toContain("DADOS DO GUARDA-ROUPA:")
     expect(result.prompt).toContain("Total de peças: 2")
     // Verify the item formatting
-    expect(result.prompt).toContain("ID: item-1 Título: Camisa branca; Tags: formal, white")
-    expect(result.prompt).toContain("ID: item-2 Título: Calça jeans; Tags: casual, denim")
+    expect(result.prompt).toContain("ID: item-1 Título: Camisa branca; Tipo: Top; Subtipo: Shirt; Tags: formal, white")
+    expect(result.prompt).toContain("ID: item-2 Título: Calça jeans; Tipo: Bottom; Subtipo: Jeans; Tags: casual, denim")
   })
 
   it("calls the LLM and returns an interaction id and response", async () => {

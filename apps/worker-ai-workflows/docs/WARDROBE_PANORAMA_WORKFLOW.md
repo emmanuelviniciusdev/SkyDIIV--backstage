@@ -187,7 +187,7 @@ Loads data and assembles the language model prompt via `buildWardrobePanoramaPro
 | User locale | `app_preferences` + `domains` | Resolved via `resolveUserLocale()` |
 | User name | `users` | `first_name`; locale-specific fallback when missing |
 | Preferences | `weekly_outfit_preferences` | Optional — location and routine description |
-| Wardrobe items | `clothing_items` + `tags` | ID, title, tags per piece |
+| Wardrobe items | `clothing_items` + `tags` + `domains` | ID, title, tags, piece type and subtype per item (always present, values in en-US) |
 
 **Parallel fetches:** locale, user profile, preferences, and wardrobe are loaded concurrently.
 
@@ -300,12 +300,14 @@ The prompt instructs the model to act as a SkyDIIV personal fashion consultant. 
 2. **PREFERÊNCIAS DO USUÁRIO** — location and routine description (or `"não definidas"`)
 3. **DADOS DO GUARDA-ROUPA** — total piece count and one line per item:
    ```
-   ID: {id} Título: {title}; Tags: {tags}
+   ID: {id} Título: {title}; Tipo: {pieceType}; Subtipo: {pieceSubtype}; Tags: {tags}
    ```
+   `Tipo` and `Subtipo` are always present; their values are stored in English (en-US), regardless of the user's locale.
 
 ### Constraints
 
-- Use only the data provided — do not invent pieces or categories
+- Use only the data provided
+- Use **Type / Subtype** fields (English en-US values) to categorize items
 - If preferences are undefined, analyze wardrobe data only
 - Address the user by name when appropriate
 
@@ -317,8 +319,9 @@ The prompt instructs the model to act as a SkyDIIV personal fashion consultant. 
 |---|---|---|
 | `users` | Read | User's first name for personalized prompt |
 | `weekly_outfit_preferences` | Read | Optional location and routine description |
-| `clothing_items` | Read | Wardrobe items with titles and image URLs |
+| `clothing_items` | Read | Wardrobe items with titles, image URLs, and piece type/subtype FKs |
 | `clothing_item_tags` / `tags` | Read (join) | Tags describing each piece |
+| `domains` | Read (join) | Piece type and subtype names (`type = 'piece_type'` / `'piece_subtype'`) |
 | `wardrobe_panorama` | Write | One markdown panorama per user (insert or update) |
 | `llm_interactions` | Write | Audit log of the language model call |
 

@@ -162,7 +162,7 @@ Loads all inputs needed for the language model call:
 |---|---|---|
 | User locale | `app_preferences` + `domains` | Resolved via `resolveUserLocale()`; see [I18N.md](./I18N.md) |
 | User preferences | `weekly_outfit_preferences` | `location`, `routine_description` |
-| Wardrobe items | `clothing_items` + `tags` | ID, title, tags, optional `image_url` |
+| Wardrobe items | `clothing_items` + `tags` + `domains` | ID, title, tags, optional `image_url`, piece type and subtype (always present, values in en-US) |
 | Weather forecast | Weather API | 7 days from week start; geocoded from `location` |
 
 **Parallel fetches:** locale, preferences, and wardrobe are loaded concurrently.
@@ -324,14 +324,16 @@ The prompt language matches the user's locale (`pt-BR`, `es-PE`, or `en-US`). Se
 
 1. **Guarda-roupa (wardrobe)** — one line per item:
    ```
-   ID:{id} | TÍTULO:{title} | TAGS:{tag1, tag2, …}
+   ID:{id} | TÍTULO:{title} | TIPO:{pieceType} | SUBTIPO:{pieceSubtype} | TAGS:{tag1, tag2, …}
    ```
+   `TIPO` and `SUBTIPO` are always present; their values are stored in English (en-US), regardless of the user's locale.
 2. **Preferências do usuário** — free-text `routine_description`
 3. **Previsão meteorológica / weather forecast** — 7-day forecast with locale-specific weekday names and weather code descriptions
 
 ### Selection rules (highlights)
 
 - Use **only** IDs from the provided wardrobe
+- Use piece **type and subtype** (English en-US values) to build balanced outfits (e.g. pair a Bottom with a Top)
 - Consider weather, tags, user preferences, and day-to-day variety
 - Prioritize thermal comfort (cold/hot/rainy day heuristics)
 - Do not invent pieces or IDs
@@ -350,8 +352,9 @@ The prompt language matches the user's locale (`pt-BR`, `es-PE`, or `en-US`). Se
 | `app_preferences` | Read | User language preference (`language_id`) |
 | `domains` | Read (join) | Language domain (`name`; `source` is always null for languages) |
 | `weekly_outfit_preferences` | Read | User location and style/routine description |
-| `clothing_items` | Read | Wardrobe items with titles and image URLs |
+| `clothing_items` | Read | Wardrobe items with titles, image URLs, and piece type/subtype FKs |
 | `clothing_item_tags` / `tags` | Read (join) | Tags describing each piece |
+| `domains` | Read (join) | Piece type and subtype names (`type = 'piece_type'` / `'piece_subtype'`) |
 | `outfits` | Write | One AI-generated outfit per day; `image_url` updated in step 4 |
 | `outfit_items` | Write | Join table: outfit ↔ clothing item |
 | `weekly_outfits` | Write | Links outfit to week/day with weather summary |

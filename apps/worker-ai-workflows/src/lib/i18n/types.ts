@@ -22,10 +22,10 @@ export interface LocaleMessages {
     noTagsPanorama: string
   }
   weeklyOutfits: {
-    wardrobeLine(id: string, title: string, tags: string): string
+    wardrobeLine(id: string, title: string, pieceType: string, pieceSubtype: string, tags: string): string
   }
   wardrobePanorama: {
-    wardrobeLine(id: string, title: string, tags: string): string
+    wardrobeLine(id: string, title: string, pieceType: string, pieceSubtype: string, tags: string): string
     preferencesSection(location: string, routine: string): string
   }
 }

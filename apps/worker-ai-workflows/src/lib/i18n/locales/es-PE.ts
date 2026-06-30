@@ -62,10 +62,12 @@ export const esPE: LocaleMessages = {
     noTagsPanorama: "sin etiquetas",
   },
   weeklyOutfits: {
-    wardrobeLine: (id, title, tags) => `ID:${id} | TÍTULO:${title} | ETIQUETAS:${tags}`,
+    wardrobeLine: (id, title, pieceType, pieceSubtype, tags) =>
+      `ID:${id} | TÍTULO:${title} | TIPO:${pieceType} | SUBTIPO:${pieceSubtype} | ETIQUETAS:${tags}`,
   },
   wardrobePanorama: {
-    wardrobeLine: (id, title, tags) => `ID: ${id} Título: ${title}; Etiquetas: ${tags}`,
+    wardrobeLine: (id, title, pieceType, pieceSubtype, tags) =>
+      `ID: ${id} Título: ${title}; Tipo: ${pieceType}; Subtipo: ${pieceSubtype}; Etiquetas: ${tags}`,
     preferencesSection: (location, routine) =>
       `Ubicación: ${location}\nDescripción de rutina/estilo: ${routine}`,
   },

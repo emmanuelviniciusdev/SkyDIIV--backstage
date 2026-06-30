@@ -4,7 +4,7 @@ import type { WardrobeItem } from "../../../src/lib/db/wardrobe.repository"
 import type { WeeklyForecast } from "../../../src/lib/weather/types"
 
 const WARDROBE: WardrobeItem[] = [
-  { id: "item-1", title: "White T-Shirt", imageUrl: null, tags: ["casual", "summer"] },
+  { id: "item-1", title: "White T-Shirt", imageUrl: null, tags: ["casual", "summer"], pieceType: "Top", pieceSubtype: "T-Shirt" },
 ]
 
 const FORECAST: WeeklyForecast = {
@@ -24,7 +24,8 @@ describe("buildWeeklyOutfitsPrompt()", () => {
     })
 
     expect(prompt).toContain("assistente de moda do SkyDIIV")
-    expect(prompt).toContain("ID:item-1 | TÍTULO:White T-Shirt | TAGS:casual, summer")
+    expect(prompt).toContain("ID:item-1 | TÍTULO:White T-Shirt | TIPO:Top | SUBTIPO:T-Shirt | TAGS:casual, summer")
+    expect(prompt).toContain("fornecidos em inglês (en-US)")
     expect(prompt).toContain("Estilo casual")
     expect(prompt).toContain("Localização: Lima, Perú")
   })
@@ -38,7 +39,8 @@ describe("buildWeeklyOutfitsPrompt()", () => {
     })
 
     expect(prompt).toContain("asistente de moda de SkyDIIV")
-    expect(prompt).toContain("ID:item-1 | TÍTULO:White T-Shirt | ETIQUETAS:casual, summer")
+    expect(prompt).toContain("ID:item-1 | TÍTULO:White T-Shirt | TIPO:Top | SUBTIPO:T-Shirt | ETIQUETAS:casual, summer")
+    expect(prompt).toContain("en inglés (en-US)")
     expect(prompt).toContain("Ubicación: Lima, Perú")
   })
 
@@ -51,7 +53,8 @@ describe("buildWeeklyOutfitsPrompt()", () => {
     })
 
     expect(prompt).toContain("SkyDIIV fashion assistant")
-    expect(prompt).toContain("ID:item-1 | TITLE:White T-Shirt | TAGS:casual, summer")
+    expect(prompt).toContain("ID:item-1 | TITLE:White T-Shirt | TYPE:Top | SUBTYPE:T-Shirt | TAGS:casual, summer")
+    expect(prompt).toContain("provided in English (en-US)")
     expect(prompt).toContain("Location: Lima, Perú")
   })
 })

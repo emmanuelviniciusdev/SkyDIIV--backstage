@@ -16,9 +16,9 @@ Sua única responsabilidade é selecionar peças de roupa para cada dia da seman
 
 O guarda-roupa é fornecido como uma lista de strings no formato:
 
-ID:\${id} | TÍTULO:\${title} | TAGS:\${tags}
+ID:\${id} | TÍTULO:\${title} | TIPO:\${pieceType} | SUBTIPO:\${pieceSubtype} | TAGS:\${tags}
 
-As tags descrevem características da peça, incluindo categoria, estilo, ocasião, estação, temperatura adequada, cor, material ou qualquer outro atributo relevante.
+Os campos TIPO e SUBTIPO representam a categoria e subcategoria de cada peça (ex.: Top / T-Shirt, Bottom / Jeans). Esses valores estão sempre presentes e são fornecidos em inglês (en-US), independentemente do idioma do usuário. As tags descrevem características adicionais da peça, incluindo estilo, ocasião, estação, temperatura adequada, cor, material ou qualquer outro atributo relevante.
 
 {wardrobe}
 
@@ -42,6 +42,7 @@ Ao selecionar as peças:
 * Utilize exclusivamente IDs existentes no guarda-roupa.
 * Considere as preferências fornecidas pelo usuário.
 * Considere as condições climáticas previstas para cada dia.
+* Utilize o tipo e subtipo das peças para garantir montagens equilibradas (ex.: incluir uma peça Bottom quando houver uma Top selecionada).
 * Utilize as tags das peças para determinar adequação climática e visual.
 * Priorize conforto, funcionalidade e coerência entre as peças selecionadas.
 * Em dias frios, priorize peças associadas a frio, inverno ou proteção térmica.
@@ -97,9 +98,9 @@ Tu única responsabilidad es seleccionar prendas para cada día de la semana uti
 
 El guardarropa se proporciona como una lista de cadenas con el formato:
 
-ID:\${id} | TÍTULO:\${title} | ETIQUETAS:\${tags}
+ID:\${id} | TÍTULO:\${title} | TIPO:\${pieceType} | SUBTIPO:\${pieceSubtype} | ETIQUETAS:\${tags}
 
-Las etiquetas describen características de la prenda, incluyendo categoría, estilo, ocasión, estación, temperatura adecuada, color, material u otro atributo relevante.
+Los campos TIPO y SUBTIPO representan la categoría y subcategoría de cada prenda (ej.: Top / T-Shirt, Bottom / Jeans). Estos valores están siempre presentes y se proporcionan en inglés (en-US), independientemente del idioma del usuario. Las etiquetas describen características adicionales de la prenda, incluyendo estilo, ocasión, estación, temperatura adecuada, color, material u otro atributo relevante.
 
 {wardrobe}
 
@@ -123,6 +124,7 @@ Al seleccionar las prendas:
 * Utiliza exclusivamente IDs existentes en el guardarropa.
 * Considera las preferencias proporcionadas por el usuario.
 * Considera las condiciones climáticas previstas para cada día.
+* Utiliza el tipo y subtipo de las prendas para garantizar conjuntos equilibrados (ej.: incluir una prenda Bottom cuando se seleccione una Top).
 * Utiliza las etiquetas de las prendas para determinar adecuación climática y visual.
 * Prioriza comodidad, funcionalidad y coherencia entre las piezas seleccionadas.
 * En días fríos, prioriza prendas asociadas a frío, invierno o protección térmica.
@@ -178,9 +180,9 @@ Your sole responsibility is to select clothing items for each day of the week us
 
 The wardrobe is provided as a list of strings in the format:
 
-ID:\${id} | TITLE:\${title} | TAGS:\${tags}
+ID:\${id} | TITLE:\${title} | TYPE:\${pieceType} | SUBTYPE:\${pieceSubtype} | TAGS:\${tags}
 
-Tags describe item characteristics, including category, style, occasion, season, suitable temperature, color, material, or any other relevant attribute.
+TYPE and SUBTYPE represent the category and subcategory of each item (e.g. Top / T-Shirt, Bottom / Jeans). These values are always present and provided in English (en-US). Tags describe additional item characteristics, including style, occasion, season, suitable temperature, color, material, or any other relevant attribute.
 
 {wardrobe}
 
@@ -204,6 +206,7 @@ When selecting items:
 * Use only IDs that exist in the wardrobe.
 * Consider the user's provided preferences.
 * Consider the forecast weather conditions for each day.
+* Use item type and subtype to ensure balanced outfits (e.g. pair a Bottom when a Top is selected).
 * Use item tags to determine climate and visual suitability.
 * Prioritize comfort, functionality, and coherence among selected pieces.
 * On cold days, prioritize items associated with cold, winter, or thermal protection.
@@ -266,7 +269,13 @@ export function buildWeeklyOutfitsPrompt(input: BuildWeeklyOutfitsPromptInput): 
           .map((item) => {
             const title = item.title.trim() || fallbacks.noTitle
             const tags = item.tags.length > 0 ? item.tags.join(", ") : fallbacks.noTags
-            return weeklyOutfits.wardrobeLine(item.id, title, tags)
+            return weeklyOutfits.wardrobeLine(
+              item.id,
+              title,
+              item.pieceType ?? "",
+              item.pieceSubtype ?? "",
+              tags,
+            )
           })
           .join("\n")
       : fallbacks.noWardrobe

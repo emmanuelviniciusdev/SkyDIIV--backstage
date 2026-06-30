@@ -14,9 +14,9 @@ import type { WeeklyForecast, DailyWeather } from "../../src/lib/weather/types"
 // ---------------------------------------------------------------------------
 
 const WARDROBE: WardrobeItem[] = [
-  { id: "item-1", title: "White T-Shirt", imageUrl: "https://r2.example.com/shirt.jpg", tags: ["casual", "summer", "white", "cotton"] },
-  { id: "item-2", title: "Black Jeans", imageUrl: null, tags: ["casual", "all-season", "black", "denim"] },
-  { id: "item-3", title: "Blue Sneakers", imageUrl: null, tags: ["casual", "shoes", "blue"] },
+  { id: "item-1", title: "White T-Shirt", imageUrl: "https://r2.example.com/shirt.jpg", tags: ["casual", "summer", "white", "cotton"], pieceType: "Top", pieceSubtype: "T-Shirt" },
+  { id: "item-2", title: "Black Jeans", imageUrl: null, tags: ["casual", "all-season", "black", "denim"], pieceType: "Bottom", pieceSubtype: "Jeans" },
+  { id: "item-3", title: "Blue Sneakers", imageUrl: null, tags: ["casual", "shoes", "blue"], pieceType: "Footwear", pieceSubtype: "Sneakers" },
 ]
 
 const FORECAST: WeeklyForecast = {
@@ -94,9 +94,9 @@ describe("buildPrompt()", () => {
   it("includes each wardrobe item in the expected format", () => {
     const prompt = buildPrompt({ wardrobe: WARDROBE, preferences: "Casual wear", forecast: FORECAST })
 
-    expect(prompt).toContain("ID:item-1 | TÍTULO:White T-Shirt | TAGS:casual, summer, white, cotton")
-    expect(prompt).toContain("ID:item-2 | TÍTULO:Black Jeans | TAGS:casual, all-season, black, denim")
-    expect(prompt).toContain("ID:item-3 | TÍTULO:Blue Sneakers | TAGS:casual, shoes, blue")
+    expect(prompt).toContain("ID:item-1 | TÍTULO:White T-Shirt | TIPO:Top | SUBTIPO:T-Shirt | TAGS:casual, summer, white, cotton")
+    expect(prompt).toContain("ID:item-2 | TÍTULO:Black Jeans | TIPO:Bottom | SUBTIPO:Jeans | TAGS:casual, all-season, black, denim")
+    expect(prompt).toContain("ID:item-3 | TÍTULO:Blue Sneakers | TIPO:Footwear | SUBTIPO:Sneakers | TAGS:casual, shoes, blue")
   })
 
   it("includes the user preferences in the prompt", () => {
@@ -128,15 +128,17 @@ describe("buildPrompt()", () => {
   })
 
   it("uses 'sem tags' placeholder when a wardrobe item has no tags", () => {
-    const items: WardrobeItem[] = [{ id: "x1", title: "Mystery Item", imageUrl: null, tags: [] }]
+    const items: WardrobeItem[] = [
+      { id: "x1", title: "Mystery Item", imageUrl: null, tags: [], pieceType: "Top", pieceSubtype: "T-Shirt" },
+    ]
     const prompt = buildPrompt({ wardrobe: items, preferences: "Any", forecast: FORECAST })
-    expect(prompt).toContain("ID:x1 | TÍTULO:Mystery Item | TAGS:sem tags")
+    expect(prompt).toContain("ID:x1 | TÍTULO:Mystery Item | TIPO:Top | SUBTIPO:T-Shirt | TAGS:sem tags")
   })
 
   it("builds en-US prompt when locale is en-US", () => {
     const prompt = buildPrompt({ locale: "en-US", wardrobe: WARDROBE, preferences: "Casual", forecast: FORECAST })
     expect(prompt).toContain("SkyDIIV fashion assistant")
-    expect(prompt).toContain("ID:item-1 | TITLE:White T-Shirt | TAGS:")
+    expect(prompt).toContain("ID:item-1 | TITLE:White T-Shirt | TYPE:Top | SUBTYPE:T-Shirt | TAGS:")
   })
 })
 

@@ -11,7 +11,7 @@ const PREFERENCES: UserPreferences = {
 }
 
 const WARDROBE: WardrobeItem[] = [
-  { id: "item-1", title: "Camisa blanca", imageUrl: null, tags: ["formal"] },
+  { id: "item-1", title: "Camisa blanca", imageUrl: null, tags: ["formal"], pieceType: "Top", pieceSubtype: "Shirt" },
 ]
 
 describe("buildWardrobePanoramaPrompt()", () => {
@@ -27,7 +27,8 @@ describe("buildWardrobePanoramaPrompt()", () => {
     expect(prompt).toContain("DADOS DO USUÁRIO:")
     expect(prompt).toContain("Nome: Ana")
     expect(prompt).toContain("## equilíbrio do guarda-roupa")
-    expect(prompt).toContain("ID: item-1 Título: Camisa blanca; Tags: formal")
+    expect(prompt).toContain("em inglês (en-US)")
+    expect(prompt).toContain("ID: item-1 Título: Camisa blanca; Tipo: Top; Subtipo: Shirt; Tags: formal")
   })
 
   it("builds es-PE prompt with Spanish section headers", () => {
@@ -42,7 +43,8 @@ describe("buildWardrobePanoramaPrompt()", () => {
     expect(prompt).toContain("DATOS DEL USUARIO:")
     expect(prompt).toContain("Nombre: Ana")
     expect(prompt).toContain("## equilibrio del guardarropa")
-    expect(prompt).toContain("ID: item-1 Título: Camisa blanca; Etiquetas: formal")
+    expect(prompt).toContain("en inglés (en-US)")
+    expect(prompt).toContain("ID: item-1 Título: Camisa blanca; Tipo: Top; Subtipo: Shirt; Etiquetas: formal")
   })
 
   it("builds en-US prompt with English section headers", () => {
@@ -57,6 +59,7 @@ describe("buildWardrobePanoramaPrompt()", () => {
     expect(prompt).toContain("USER DATA:")
     expect(prompt).toContain("Name: Ana")
     expect(prompt).toContain("## wardrobe balance")
-    expect(prompt).toContain("ID: item-1 Title: Camisa blanca; Tags: formal")
+    expect(prompt).toContain("in English (en-US)")
+    expect(prompt).toContain("ID: item-1 Title: Camisa blanca; Type: Top; Subtype: Shirt; Tags: formal")
   })
 })

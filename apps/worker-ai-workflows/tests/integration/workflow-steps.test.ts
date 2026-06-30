@@ -29,9 +29,9 @@ const mocks = vi.hoisted(() => {
   }
 
   const fakeWardrobeRows = [
-    { id: "item-1", title: "White T-Shirt", image_url: "https://r2.example.com/items/item-1.jpg", tags: ["casual", "summer"] },
-    { id: "item-2", title: "Black Jeans", image_url: "https://r2.example.com/items/item-2.jpg", tags: ["casual", "denim"] },
-    { id: "item-3", title: "Blue Sneakers", image_url: null, tags: ["shoes", "casual"] },
+    { id: "item-1", title: "White T-Shirt", image_url: "https://r2.example.com/items/item-1.jpg", tags: ["casual", "summer"], piece_type: "Top", piece_subtype: "T-Shirt" },
+    { id: "item-2", title: "Black Jeans", image_url: "https://r2.example.com/items/item-2.jpg", tags: ["casual", "denim"], piece_type: "Bottom", piece_subtype: "Jeans" },
+    { id: "item-3", title: "Blue Sneakers", image_url: null, tags: ["shoes", "casual"], piece_type: "Footwear", piece_subtype: "Sneakers" },
   ]
 
   const fakeForecast = {
