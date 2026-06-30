@@ -184,10 +184,10 @@ Loads data and assembles the language model prompt via `buildWardrobePanoramaPro
 
 | Input | Source | Notes |
 |---|---|---|
-| User locale | `app_preferences` + `domains` | Resolved via `resolveUserLocale()` |
-| User name | `users` | `first_name`; locale-specific fallback when missing |
+| User locale | `app_preferences` + `domains` | Resolved via `resolveUserLocale()`; used for output-language directive and pt-BR fallback strings |
+| User name | `users` | `first_name`; pt-BR fallback when missing |
 | Preferences | `weekly_outfit_preferences` | Optional — location and routine description |
-| Wardrobe items | `clothing_items` + `tags` + `domains` | ID, title, tags, piece type and subtype per item (always present, values in en-US) |
+| Wardrobe items | `clothing_items` + `tags` + `domains` | ID, title, tags, piece type and subtype per item (type/subtype always in en-US; title/tags in user's language) |
 
 **Parallel fetches:** locale, user profile, preferences, and wardrobe are loaded concurrently.
 
@@ -212,7 +212,7 @@ Loads data and assembles the language model prompt via `buildWardrobePanoramaPro
 2. Logs the interaction to `llm_interactions` on success
 3. Returns the raw markdown response and the interaction ID for linking in step 4
 
-**Expected model output:** Markdown prose with exactly three sections (see [Prompt Design](#prompt-design)):
+**Expected model output:** Markdown prose with exactly three sections (see [Prompt Design](#prompt-design)), **in the user's language** (Portuguese, Spanish, or English, depending on locale):
 
 ```markdown
 ## equilíbrio do guarda-roupa
@@ -224,6 +224,8 @@ Loads data and assembles the language model prompt via `buildWardrobePanoramaPro
 ## o que vale buscar
 ...
 ```
+
+The section headers above are written in the user's language as instructed by the prompt. For an `en-US` user, they would appear in English (e.g. `## wardrobe balance`); for `es-PE`, in Spanish.
 
 Unlike the weekly outfits workflow, there is **no JSON parsing** — the raw model text is stored as-is.
 
@@ -282,15 +284,25 @@ Value: {"updatedAt":"<ISO timestamp>"}
 
 ## Prompt Design
 
-**Source:** `src/workflows/generate-wardrobe-panorama/steps/build-prompt.ts` (inline template)
+**Source:** `src/lib/i18n/prompts/wardrobe-panorama.ts`
 
-The prompt instructs the model to act as a SkyDIIV personal fashion consultant. Output is **Markdown in Brazilian Portuguese**, with a friendly, editorial tone — written as continuous paragraphs, no bullet lists.
+The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of the user's locale. The model is instructed to respond in the user's language via an explicit output-language directive in the prompt intro. Item titles and tags may be in the user's language — the model is told not to translate them.
+
+### Output language directive
+
+The prompt intro includes: `"Responda sempre em {languageName}."`, where `languageName` is resolved from the user's locale:
+
+| Locale | Language name used in prompt |
+|---|---|
+| `pt-BR` | português brasileiro |
+| `es-PE` | espanhol peruano |
+| `en-US` | inglês americano |
 
 ### Required sections (in order)
 
 | Section | Content |
 |---|---|
-| `## equilíbrio do guarda-roupa` | Patterns, concentrations, and gaps in the wardrobe based on pieces and tags |
+| `## equilíbrio do guarda-roupa` | Patterns, concentrations, and gaps based on pieces, types, subtypes, tags, and the summary |
 | `## seu estilo` | Predominant style in 2–3 sentences; compare with user-stated preferences when available |
 | `## o que vale buscar` | 2–4 specific piece types that would complement the wardrobe, with justification |
 
@@ -298,18 +310,29 @@ The prompt instructs the model to act as a SkyDIIV personal fashion consultant. 
 
 1. **DADOS DO USUÁRIO** — first name
 2. **PREFERÊNCIAS DO USUÁRIO** — location and routine description (or `"não definidas"`)
-3. **DADOS DO GUARDA-ROUPA** — total piece count and one line per item:
-   ```
-   ID: {id} Título: {title}; Tipo: {pieceType}; Subtipo: {pieceSubtype}; Tags: {tags}
-   ```
-   `Tipo` and `Subtipo` are always present; their values are stored in English (en-US), regardless of the user's locale.
+3. **DADOS DO GUARDA-ROUPA**:
+   - **Format note** — explains type/subtype are always in English (en-US); titles and tags may be in the user's language
+   - **RESUMO POR TIPO** — piece count grouped by type and subtype, sorted by frequency, e.g.:
+     ```
+     - Top: 8 peças → T-Shirt (5), Shirt (3)
+     - Bottom: 5 peças → Jeans (3), Shorts (2)
+     Total: 13 peças
+     ```
+   - **PEÇAS** — one line per item:
+     ```
+     ID: {id} Título: {title}; Tipo: {pieceType}; Subtipo: {pieceSubtype}; Tags: {tags}
+     ```
+     `Tipo` and `Subtipo` are always in English (en-US). `Título` and `Tags` reflect the user's language.
 
 ### Constraints
 
 - Use only the data provided
 - Use **Type / Subtype** fields (English en-US values) to categorize items
+- Use the type summary to identify wardrobe proportions and imbalances
+- Do not translate item titles or tags
 - If preferences are undefined, analyze wardrobe data only
 - Address the user by name when appropriate
+- Respond in the user's language (as instructed in the prompt intro)
 
 ---
 

@@ -61,14 +61,4 @@ export const ptBR: LocaleMessages = {
     noTitlePanorama: "sem título",
     noTagsPanorama: "sem tags",
   },
-  weeklyOutfits: {
-    wardrobeLine: (id, title, pieceType, pieceSubtype, tags) =>
-      `ID:${id} | TÍTULO:${title} | TIPO:${pieceType} | SUBTIPO:${pieceSubtype} | TAGS:${tags}`,
-  },
-  wardrobePanorama: {
-    wardrobeLine: (id, title, pieceType, pieceSubtype, tags) =>
-      `ID: ${id} Título: ${title}; Tipo: ${pieceType}; Subtipo: ${pieceSubtype}; Tags: ${tags}`,
-    preferencesSection: (location, routine) =>
-      `Localização: ${location}\nDescrição da rotina/estilo: ${routine}`,
-  },
 }

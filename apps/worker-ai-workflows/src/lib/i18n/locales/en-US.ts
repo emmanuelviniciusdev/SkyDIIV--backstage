@@ -61,14 +61,4 @@ export const enUS: LocaleMessages = {
     noTitlePanorama: "no title",
     noTagsPanorama: "no tags",
   },
-  weeklyOutfits: {
-    wardrobeLine: (id, title, pieceType, pieceSubtype, tags) =>
-      `ID:${id} | TITLE:${title} | TYPE:${pieceType} | SUBTYPE:${pieceSubtype} | TAGS:${tags}`,
-  },
-  wardrobePanorama: {
-    wardrobeLine: (id, title, pieceType, pieceSubtype, tags) =>
-      `ID: ${id} Title: ${title}; Type: ${pieceType}; Subtype: ${pieceSubtype}; Tags: ${tags}`,
-    preferencesSection: (location, routine) =>
-      `Location: ${location}\nRoutine/style description: ${routine}`,
-  },
 }

@@ -89,7 +89,10 @@ describe("generate-wardrobe-panorama workflow steps", () => {
     expect(result.prompt).toContain("Nome: Ana")
     expect(result.prompt).toContain("PREFERÊNCIAS DO USUÁRIO:")
     expect(result.prompt).toContain("DADOS DO GUARDA-ROUPA:")
-    expect(result.prompt).toContain("Total de peças: 2")
+    expect(result.prompt).toContain("RESUMO POR TIPO:")
+    expect(result.prompt).toContain("Top: 1 peça → Shirt (1)")
+    expect(result.prompt).toContain("Bottom: 1 peça → Jeans (1)")
+    expect(result.prompt).toContain("Total: 2 peças")
     // Verify the item formatting
     expect(result.prompt).toContain("ID: item-1 Título: Camisa branca; Tipo: Top; Subtipo: Shirt; Tags: formal, white")
     expect(result.prompt).toContain("ID: item-2 Título: Calça jeans; Tipo: Bottom; Subtipo: Jeans; Tags: casual, denim")

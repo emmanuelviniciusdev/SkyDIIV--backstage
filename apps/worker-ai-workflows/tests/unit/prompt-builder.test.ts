@@ -135,10 +135,19 @@ describe("buildPrompt()", () => {
     expect(prompt).toContain("ID:x1 | TÍTULO:Mystery Item | TIPO:Top | SUBTIPO:T-Shirt | TAGS:sem tags")
   })
 
-  it("builds en-US prompt when locale is en-US", () => {
+  it("always builds pt-BR instructions regardless of locale", () => {
     const prompt = buildPrompt({ locale: "en-US", wardrobe: WARDROBE, preferences: "Casual", forecast: FORECAST })
-    expect(prompt).toContain("SkyDIIV fashion assistant")
-    expect(prompt).toContain("ID:item-1 | TITLE:White T-Shirt | TYPE:Top | SUBTYPE:T-Shirt | TAGS:")
+    expect(prompt).toContain("assistente de moda do SkyDIIV")
+    expect(prompt).toContain("ID:item-1 | TÍTULO:White T-Shirt | TIPO:Top | SUBTIPO:T-Shirt | TAGS:")
+  })
+
+  it("includes wardrobe summary by type and subtype", () => {
+    const prompt = buildPrompt({ wardrobe: WARDROBE, preferences: "Casual", forecast: FORECAST })
+    expect(prompt).toContain("Resumo por tipo")
+    expect(prompt).toContain("Top: 1 peça → T-Shirt (1)")
+    expect(prompt).toContain("Bottom: 1 peça → Jeans (1)")
+    expect(prompt).toContain("Footwear: 1 peça → Sneakers (1)")
+    expect(prompt).toContain("Total: 3 peças")
   })
 })
 

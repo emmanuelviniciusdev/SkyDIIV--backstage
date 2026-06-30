@@ -160,10 +160,10 @@ Loads all inputs needed for the language model call:
 
 | Input | Source | Notes |
 |---|---|---|
-| User locale | `app_preferences` + `domains` | Resolved via `resolveUserLocale()`; see [I18N.md](./I18N.md) |
+| User locale | `app_preferences` + `domains` | Resolved via `resolveUserLocale()`; used for weather_summary DB storage and locale-specific fallbacks |
 | User preferences | `weekly_outfit_preferences` | `location`, `routine_description` |
 | Wardrobe items | `clothing_items` + `tags` + `domains` | ID, title, tags, optional `image_url`, piece type and subtype (always present, values in en-US) |
-| Weather forecast | Weather API | 7 days from week start; geocoded from `location` |
+| Weather forecast | Weather API | 7 days from week start; geocoded from `location`; formatted in pt-BR for the prompt |
 
 **Parallel fetches:** locale, preferences, and wardrobe are loaded concurrently.
 
@@ -314,27 +314,36 @@ Each saved outfit gets its own durable workflow step so every image compositing 
 
 ## LLM Prompt Design
 
-**Templates:** `src/lib/i18n/prompts/weekly-outfits.ts` (per locale)  
+**Template:** `src/lib/i18n/prompts/weekly-outfits.ts` (single pt-BR template)  
 **Builder:** `src/lib/prompt/builder.ts` → delegates to i18n  
 **Locale resolution:** `src/lib/i18n/resolve-user-locale.ts` (reads `app_preferences.language_id`)
 
-The prompt language matches the user's locale (`pt-BR`, `es-PE`, or `en-US`). See [I18N.md](./I18N.md) for the full i18n module reference.
+The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of the user's locale. Since the output is structured JSON (not natural-language prose), no output-language directive is needed. Item titles and tags may be in the user's language; types and subtypes are always in English (en-US).
 
 ### Input sections
 
-1. **Guarda-roupa (wardrobe)** — one line per item:
+1. **Guarda-roupa (wardrobe)** — one line per item, always in pt-BR format:
    ```
    ID:{id} | TÍTULO:{title} | TIPO:{pieceType} | SUBTIPO:{pieceSubtype} | TAGS:{tag1, tag2, …}
    ```
-   `TIPO` and `SUBTIPO` are always present; their values are stored in English (en-US), regardless of the user's locale.
-2. **Preferências do usuário** — free-text `routine_description`
-3. **Previsão meteorológica / weather forecast** — 7-day forecast with locale-specific weekday names and weather code descriptions
+   `TIPO` and `SUBTIPO` are always present and in English (en-US). `TÍTULO` and `TAGS` may be in the user's language.
+2. **Resumo por tipo** — piece count grouped by type and subtype, sorted by frequency, e.g.:
+   ```
+   - Top: 8 peças → T-Shirt (5), Shirt (3)
+   - Bottom: 5 peças → Jeans (3), Shorts (2)
+   Total: 13 peças
+   ```
+   Helps the model build balanced outfits across categories throughout the week.
+3. **Preferências do usuário** — free-text `routine_description`
+4. **Previsão meteorológica** — 7-day forecast formatted in pt-BR (weekday names and weather descriptions)
 
 ### Selection rules (highlights)
 
 - Use **only** IDs from the provided wardrobe
 - Use piece **type and subtype** (English en-US values) to build balanced outfits (e.g. pair a Bottom with a Top)
+- Use the **type summary** to ensure category balance across the week
 - Consider weather, tags, user preferences, and day-to-day variety
+- Do not translate or interpret item titles/tags
 - Prioritize thermal comfort (cold/hot/rainy day heuristics)
 - Do not invent pieces or IDs
 
