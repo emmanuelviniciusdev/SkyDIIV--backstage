@@ -1,4 +1,4 @@
-# 202506 — Backfill Piece Types
+# 202606 — Backfill Piece Types
 
 Populates `piece_type_id` and `piece_subtype_id` for clothing items that were
 registered without a type or subtype.
@@ -26,7 +26,7 @@ or occasion and rarely encode the garment category reliably.
 
 ```bash
 # from inside this folder
-cd scripts/202506_backfill_piece_types
+cd scripts/202606_backfill_piece_types
 
 # install dependencies into an isolated .venv
 uv sync
@@ -48,7 +48,7 @@ DATABASE_URL="postgresql://user:pass@host:5432/dbname"
 ```
 
 You can place `.env` in:
-- this folder (`scripts/202506_backfill_piece_types/.env`)
+- this folder (`scripts/202606_backfill_piece_types/.env`)
 - the current working directory when running the script
 - or pass it explicitly via `--env`
 
@@ -58,7 +58,7 @@ You can place `.env` in:
 
 ```bash
 # from inside the script folder
-cd scripts/202506_backfill_piece_types
+cd scripts/202606_backfill_piece_types
 
 # preview changes without touching the database
 uv run python __main__.py --dry-run
@@ -119,7 +119,7 @@ The timezone label reflects the local UTC offset at runtime (`UTC`, `UTC+1`,
 Example lines:
 
 ```
-YYYY-MM-DD HH:MM:SS (UTC-3): [INFO] backfill-piece-types started  dry_run=False  force=False
+YYYY-MM-DD HH:MM:SS (UTC-3): [INFO] 202606_backfill_piece_types started  dry_run=False  force=False
 YYYY-MM-DD HH:MM:SS (UTC-3): [INFO] Found 42 item(s) to process.
 YYYY-MM-DD HH:MM:SS (UTC-3): [INFO] NEW     id=<uuid>  title='<item title>'  type='Top'  subtype='T-Shirt'
 YYYY-MM-DD HH:MM:SS (UTC-3): [WARNING] UNCLASSIFIED  id=<uuid>  title='<item title>'

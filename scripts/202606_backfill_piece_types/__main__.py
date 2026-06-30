@@ -42,7 +42,7 @@ from utils.logger import Logger                    # noqa: E402
 from utils.piece_classifier import classify_piece  # noqa: E402
 
 _OUTPUT_FILE = Path(__file__).parent / "output.txt"
-_UPDATED_BY = "script:202506_backfill_piece_types"
+_UPDATED_BY = "script:202606_backfill_piece_types"
 
 
 # ---------------------------------------------------------------------------
@@ -241,9 +241,9 @@ if __name__ == "__main__":
     _args = _parse_args()
     with Logger(output_file=_OUTPUT_FILE) as _log:
         _log.info(
-            f"backfill-piece-types started  "
+            f"202606_backfill_piece_types started  "
             f"dry_run={_args.dry_run}  force={_args.force}"
         )
         _code = run(_args, _log)
-        _log.info(f"backfill-piece-types finished  exit_code={_code}")
+        _log.info(f"202606_backfill_piece_types finished  exit_code={_code}")
     sys.exit(_code)
