@@ -1,0 +1,10 @@
+[project]
+name = "backfill-piece-types"
+version = "0.1.0"
+description = "Backfill piece_type_id and piece_subtype_id for existing clothing items"
+requires-python = ">=3.12"
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "python-dotenv>=1.1",
+]
+

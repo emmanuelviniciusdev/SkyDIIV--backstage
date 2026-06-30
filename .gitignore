@@ -36,3 +36,6 @@ coverage/
 
 # TypeScript
 *.tsbuildinfo
+
+# Script runtime outputs (each script writes to its own output.txt)
+scripts/**/output.txt

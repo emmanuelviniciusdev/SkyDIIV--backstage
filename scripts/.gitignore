@@ -1,0 +1,14 @@
+# Script outputs — generated at runtime, never committed
+**/output.txt
+
+# Python virtual environments created by uv
+**/.venv
+
+# uv lock files (optional: remove if you want to commit them)
+# **/uv.lock
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
