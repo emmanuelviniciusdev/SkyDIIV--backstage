@@ -1,0 +1,29 @@
+name = "worker-outbox-events"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# nodejs_compat enables:
+#   - process.env (populated from Worker bindings below)
+#   - other Node.js built-ins used by dependencies (postgres.js, @upstash/qstash)
+compatibility_flags = ["nodejs_compat"]
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+# Set each secret once with: wrangler secret put <KEY>
+#
+#   wrangler secret put DATABASE_URL
+#   wrangler secret put QSTASH_URL
+#   wrangler secret put QSTASH_TOKEN
+#   wrangler secret put QSTASH_CURRENT_SIGNING_KEY
+#   wrangler secret put QSTASH_NEXT_SIGNING_KEY
+#   wrangler secret put UPSTASH_REDIS_REST_URL
+#   wrangler secret put UPSTASH_REDIS_REST_TOKEN
+#   wrangler secret put WORKER_SYNC_URL
+#   wrangler secret put WORKER_AI_WORKFLOWS_URL
+#
+# ── Staging / preview environment ─────────────────────────────────────────────
+[env.staging]
+name = "worker-outbox-events-staging"
