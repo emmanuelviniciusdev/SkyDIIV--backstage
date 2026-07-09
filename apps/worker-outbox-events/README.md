@@ -4,7 +4,7 @@ Cloudflare Worker that implements the processor side of SkyDIIV's Transactional 
 
 | Endpoint | Description | Documentation |
 |---|---|---|
-| `POST /process-outbox-event` | Process one outbox event by ID | [docs/PROCESS_OUTBOX_EVENT.md](docs/PROCESS_OUTBOX_EVENT_WORKFLOW.md) |
+| `POST /process-outbox-event` | Process one outbox event by ID | [docs/PROCESS_OUTBOX_EVENT.md](docs/PROCESS_OUTBOX_EVENT.md) |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
 Upstream publishing is handled by the **SkyDIIV web app**, which inserts a row into `outbox_events` inside a database transaction, then publishes the row's ID to QStash. This worker is the sole consumer.
@@ -105,7 +105,7 @@ export function resolveMyWorkerUrl(path: string): string {
 
 4. Add a test case in `tests/unit/dispatcher.test.ts`.
 
-5. Document the new flow in `docs/PROCESS_OUTBOX_EVENT.md` under **Routing by Flow**.
+5. Update `docs/PROCESS_OUTBOX_EVENT.md` if any routing or configuration details change.
 
 ---
 

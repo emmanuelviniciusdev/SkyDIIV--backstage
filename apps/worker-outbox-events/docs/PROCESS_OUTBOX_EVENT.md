@@ -1,4 +1,4 @@
-# Process Outbox Event Workflow
+# Process Outbox Event
 
 This document describes the **process-outbox-event** handler end to end: how it is triggered, what each step does, the processing lock strategy, routing by flow, and how it integrates with the SkyDIIV web app and downstream workers.
 
@@ -43,8 +43,7 @@ graph TD
     WEB --> MQ --> WORKER
     WORKER <--> REDIS
     WORKER -->|"SELECT + DELETE"| DB
-    WORKER -->|"sync-language"| SYNC["worker-sync\nPOST /sync/language"]
-    WORKER -->|"generate-weekly-outfits"| AI["worker-ai-workflows\nPOST /generate-weekly-outfits"]
+    WORKER -->|"publishJSON(payload)"| DS["Downstream worker"]
 ```
 
 ---
@@ -129,14 +128,9 @@ A `not-found` result means the event was already processed and deleted by a prev
 
 ### Step 6 — Dispatch payload to downstream worker
 
-Calls `dispatch(event)` which routes by `event.flow` and publishes `event.payload` verbatim to the downstream worker via QStash:
+Calls `dispatch(event)` in `src/lib/dispatcher.ts`, which switches on `event.flow` and publishes `event.payload` verbatim to the registered downstream worker via QStash.
 
-| `flow` | Target worker | Endpoint |
-|---|---|---|
-| `sync-language` | `worker-sync` | `{WORKER_SYNC_URL}/sync/language` |
-| `generate-weekly-outfits` | `worker-ai-workflows` | `{WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits` |
-
-The outbox `payload` is forwarded as-is — it carries exactly the fields the downstream worker expects.
+The `payload` stored in `outbox_events` is forwarded as-is — it carries exactly the fields the downstream worker expects.
 
 - Unknown flow → throws → releases lock → `500 Internal Server Error`
 - QStash publish error → releases lock → `500 Internal Server Error`
@@ -151,7 +145,9 @@ Returning `500` on dispatch failure causes QStash to retry the delivery. The loc
 DELETE FROM outbox_events WHERE id = $1
 ```
 
-If this query fails, the error is logged but the handler **does not return `5xx`** — the dispatch already succeeded. A retry triggered by a `5xx` would re-dispatch to the downstream worker, causing a duplicate. Instead, if a retry were to run anyway (e.g. due to a QStash delivery timeout), it would find the lock still held (or the row already gone) and skip cleanly.
+If this query fails, the error is logged but the handler **does not return `5xx`** — returning `500` would cause QStash to retry the entire handler, re-dispatching to the downstream worker and producing a duplicate. The lock is still released in Step 8 and `200` is returned.
+
+The tradeoff: the row remains in `outbox_events` as an orphan. If QStash happens to retry anyway (e.g. a delivery timeout where it never received the `200`), it would find the row still present and re-dispatch — the lock provides no protection because it was released. This is an accepted risk; the `200` response minimises the probability of a QStash-initiated retry while accepting that delivery-timeout edge cases may cause a duplicate downstream invocation.
 
 ---
 
@@ -181,12 +177,7 @@ export type ProcessOutboxEventPayload = {
 
 ## Routing by Flow
 
-Routing logic lives in `src/lib/dispatcher.ts`. The `dispatch()` function switches on `event.flow` and publishes `event.payload` to the corresponding URL:
-
-| `outbox_events.flow` | `outbox_events.event` | Downstream endpoint | Payload fields |
-|---|---|---|---|
-| `sync-language` | `language-changed` | `{WORKER_SYNC_URL}/sync/language` | `{ userId, oldLocale, newLocale }` |
-| `generate-weekly-outfits` | `dispatch-requested` | `{WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits` | `{ userId }` |
+Routing logic lives in `src/lib/dispatcher.ts`. The `dispatch()` function switches on `event.flow` — read directly from the database row — and publishes `event.payload` verbatim to the corresponding downstream worker endpoint.
 
 To add a new flow, see [Adding a New Flow](../README.md#adding-a-new-flow) in the main README.
 
@@ -225,7 +216,9 @@ QStash may deliver the same message more than once under certain retry condition
 
 ### Delete failure after successful dispatch
 
-If the DELETE query fails after a successful dispatch, the handler logs the error and returns `200`. The lock is released normally. If a follow-up invocation arrives (e.g. because QStash did not receive the `200`), it will find the row gone and return `200 { reason: "not-found" }`, preventing a duplicate dispatch.
+If the DELETE query fails after a successful dispatch, the lock is still released and the handler returns `200`. The row remains in `outbox_events`.
+
+Returning `200` prevents QStash from scheduling an automatic retry (which would re-dispatch). However, if QStash did not receive the `200` (e.g. a delivery timeout), it may retry regardless — and since the row is still present and the lock is gone, that retry would re-dispatch to the downstream worker. This is an accepted edge case: the `200` minimises the probability of a duplicate while avoiding making it a certainty with a `500`.
 
 ---
 
@@ -247,11 +240,11 @@ If the DELETE query fails after a successful dispatch, the handler logs the erro
 
 ### Idempotency summary
 
-| Scenario | Outcome                                                  |
-|---|----------------------------------------------------------|
-| Same event delivered twice concurrently | Second invocation skipped (`already-processing`)         |
-| Same event delivered after successful processing | `not-found` → `200`, no duplicate dispatch               |
-| Dispatch succeeded but DELETE failed | Next invocation finds row gone → `not-found` → `200`            |
+| Scenario | Outcome |
+|---|---|
+| Same event delivered twice concurrently | Second invocation skipped (`already-processing`) |
+| Same event delivered after successful processing | Row gone → `not-found` → `200`, no duplicate dispatch |
+| Dispatch succeeded but DELETE failed | `200` returned; lock released; row remains in DB — a QStash delivery-timeout retry may re-dispatch |
 | Worker crashes mid-process | Lock expires after 5 min; QStash retry proceeds normally |
 
 ### Logging
@@ -275,8 +268,8 @@ Set via `wrangler secret put <KEY>` (production) or `.dev.vars` (local):
 | `DATABASE_URL` | ✅ | `outbox_events` SELECT + DELETE |
 | `UPSTASH_REDIS_REST_URL` | ✅ | Processing lock (or use `REDIS_URL`) |
 | `UPSTASH_REDIS_REST_TOKEN` | ✅ | Processing lock (or use `REDIS_URL`) |
-| `WORKER_SYNC_URL` | ✅ | Dispatch target for `sync-language` |
-| `WORKER_AI_WORKFLOWS_URL` | ✅ | Dispatch target for `generate-weekly-outfits` |
+
+One downstream worker URL secret is required per registered flow in `src/lib/dispatcher.ts`. See the [Secrets](../README.md#secrets) section in the main README for the current list.
 
 ### Web app secrets (separate deployment)
 
