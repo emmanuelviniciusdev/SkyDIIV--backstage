@@ -4,7 +4,6 @@ import { executePromptStep } from "./steps/execute-prompt"
 import { saveOutfitsStep } from "./steps/save-outfits"
 import { invalidateWeeklyOutfitsCacheStep } from "./steps/invalidate-weekly-outfits-cache"
 import { setWeeklyOutfitsNotificationStep } from "./steps/set-weekly-outfits-notification"
-import { generateImageStep } from "./steps/generate-images"
 import { resetDbClients } from "../../lib/db/client"
 import { createLogger } from "../../lib/logger"
 
@@ -25,15 +24,12 @@ function getCurrentWeekStartDate(): string {
  * Registered in src/workflows/index.ts under the "generate-weekly-outfits" key,
  * which serveMany exposes at POST /generate-weekly-outfits.
  *
- * Four sequential durable steps:
+ * Durable steps:
  *   1. build-prompt   — loads preferences, wardrobe, weather → builds LLM prompt.
  *   2. execute-prompt — calls the LLM; validates and parses JSON suggestions.
  *   3. save-outfits   — persists generated outfits to the DB (idempotent).
  *   3b. invalidate-weekly-outfits-cache — clears the skydiiv web app Redis cache.
  *   3c. set-weekly-outfits-notification — marks new weekly outfits as unread.
- *   4. generate-image — one step per outfit; composites a thumbnail via the
- *                       Cloudflare Images binding (env.IMAGES). All pixel work
- *                       is done by Cloudflare's backend
  */
 export const generateWeeklyOutfitsWorkflow = createWorkflow<GenerateWeeklyOutfitsPayload, void>(
   async (context) => {
@@ -100,27 +96,6 @@ export const generateWeeklyOutfitsWorkflow = createWorkflow<GenerateWeeklyOutfit
       await setWeeklyOutfitsNotificationStep(promptData.userId)
     })
     log.info("Step completed: set-weekly-outfits-notification")
-
-    // ── Step 4: Generate thumbnails (one CF Images call per outfit) ──────────
-    // Each outfit runs in its own workflow step so it gets a fresh Worker
-    // invocation — and therefore a fresh CPU budget — for the async binding call.
-    log.info("Starting steps: generate-image", { outfitCount: savedOutfits.length })
-    let imageGeneratedCount = 0
-    for (const outfit of savedOutfits) {
-      const generated = await context.run(`generate-image-${outfit.outfitId}`, async () => {
-        return generateImageStep({
-          userId: promptData.userId,
-          outfit,
-          wardrobeImageMap: promptData.wardrobeImageMap,
-        })
-      })
-      if (generated) imageGeneratedCount++
-    }
-    log.info("Steps completed: generate-image", {
-      outfitCount: savedOutfits.length,
-      imageGeneratedCount,
-      skippedCount: savedOutfits.length - imageGeneratedCount,
-    })
 
     log.info("Workflow completed", {
       weekStartDate: promptData.weekStartDate,

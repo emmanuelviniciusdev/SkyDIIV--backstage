@@ -1,7 +1,6 @@
 import { randomUUID } from "crypto"
 import type postgres from "postgres"
 import { createLogger } from "../logger"
-import { deleteImageFromR2 } from "../storage/r2-client"
 import type { DayWeatherInfo } from "../i18n/weather/formatters"
 
 export interface OutfitSuggestion {
@@ -28,7 +27,6 @@ export interface SavedOutfitRef {
 
 export interface WeeklyOutfitsRepository {
   saveWeeklyOutfits(input: SaveWeeklyOutfitsInput): Promise<SavedOutfitRef[]>
-  updateOutfitImageUrl(outfitId: string, imageUrl: string): Promise<void>
 }
 
 const WEEKDAY_TO_DAY_OF_WEEK: Record<string, number> = {
@@ -54,8 +52,8 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
    * suggestions. All deletes and inserts run inside a single postgres.js
    * transaction (sql.begin), making the operation atomic and idempotent.
    *
-   * Returns refs for every outfit that was successfully inserted so that a
-   * subsequent step can generate and attach composite images.
+   * Returns refs for every outfit that was successfully inserted.
+   * `outfits.image_url` is left NULL — thumbnail generation is not performed.
    */
   async saveWeeklyOutfits(input: SaveWeeklyOutfitsInput): Promise<SavedOutfitRef[]> {
     const { userId, weeklyOutfitPreferencesId, weekStartDate, suggestions, dayWeatherByWeekday } = input
@@ -152,39 +150,7 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
       return refs
     })
 
-    // Delete old thumbnail images from R2 after the DB transaction has committed.
-    // Done outside the transaction because object storage is not transactional —
-    // a failure here must never roll back the successfully saved outfits.
-    // R2 returns 204 for keys that don't exist, so this is safe to call even when
-    // a previous run generated no thumbnail (image_url was null).
-    if (existingOutfitIds.length > 0) {
-      const deletions = existingOutfitIds.map(async (outfitId) => {
-        const key = `outfits/${outfitId}.jpg`
-        try {
-          await deleteImageFromR2(key)
-          log.debug("Deleted old thumbnail from R2", { key })
-        } catch (err) {
-          log.warn("Failed to delete old thumbnail from R2 — continuing", {
-            key,
-            error: err instanceof Error ? err.message : String(err),
-          })
-        }
-      })
-      await Promise.all(deletions)
-      log.info("R2 thumbnail cleanup complete", { count: existingOutfitIds.length })
-    }
-
     return savedRefs ?? []
-  }
-
-  /** Updates the composite image URL for an outfit generated in step 4. */
-  async updateOutfitImageUrl(outfitId: string, imageUrl: string): Promise<void> {
-    const now = new Date()
-    await this.writeDb`
-      UPDATE outfits
-      SET image_url = ${imageUrl}, updated_at = ${now}, updated_by = ${CREATED_BY}
-      WHERE id = ${outfitId}
-    `
   }
 }
 

@@ -28,8 +28,7 @@ export interface SaveOutfitsInput {
  * This step is idempotent: any existing weekly outfits for the same user/week
  * are deleted (inside the same transaction) before the new records are created.
  *
- * Returns refs for the saved outfits so that step 4 (generate-images) can
- * composite and attach images without an extra DB round-trip.
+ * Returns refs for the saved outfits (outfitId, weekday, clothingPieceIds).
  */
 export async function saveOutfitsStep(input: SaveOutfitsInput): Promise<SavedOutfitRef[]> {
   const log = createLogger("save-outfits", input.userId)

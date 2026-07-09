@@ -9,9 +9,8 @@ This document describes the **generate-weekly-outfits** workflow end to end: how
 The **generate-weekly-outfits** workflow produces a full week of AI-curated outfit suggestions (Sunday through Saturday) for a single user. Given a `userId`, it:
 
 1. Selects clothing items from the user's existing wardrobe using a language model
-2. Persists the outfits to the database
+2. Persists the outfits to the database (`outfits.image_url` remains NULL)
 3. Invalidates the web app's cache and sets an unread notification
-4. Composites a 400×400 JPEG thumbnail collage from the selected pieces and uploads it to object storage
 
 **Hosted in:** `worker-ai-workflows` (workflow worker)  
 **Endpoint:** `POST /generate-weekly-outfits`  
@@ -48,18 +47,12 @@ graph TD
 
     S2 --> S3["Step 3: save-outfits"]
     S3 --> DB2["Database\n(write outfits)"]
-    S3 --> OSDEL["Object storage\n(delete old thumbnails)"]
 
     S3 --> S3B["Step 3b: invalidate-weekly-outfits-cache"]
     S3B --> CACHE1["Cache\ninvalidate outfit list"]
 
     S3B --> S3C["Step 3c: set-weekly-outfits-notification"]
     S3C --> CACHE2["Cache\nset unread notification"]
-
-    S3C --> S4["Step 4: generate-image-{outfitId}\n(one step per day)"]
-    S4 --> IMG["Image service\n(collage compositing)"]
-    S4 --> OSUP["Object storage\n(upload collage JPEG)"]
-    S4 --> DB3["Database\nupdate outfits.image_url"]
 ```
 
 ### Component roles
@@ -183,7 +176,6 @@ Loads all inputs needed for the language model call:
 | `weeklyOutfitPreferencesId` | FK for `weekly_outfits` inserts |
 | `weekStartDate` | Sunday ISO date (`YYYY-MM-DD`) |
 | `dayWeatherByWeekday` | Map of English weekday → structured weather data for the database (summary + temperature fields) |
-| `wardrobeImageMap` | `clothing_item_id → image_url` for thumbnail generation |
 | `validClothingItemIds` | All wardrobe IDs; used to filter invalid model output in step 3 |
 
 ---
@@ -233,8 +225,7 @@ Persists outfit suggestions atomically and idempotently.
 1. Existing outfit IDs are looked up
 2. Inside a single database transaction:
    - Old `outfits` rows are deleted (cascades to `outfit_items` and `weekly_outfits`)
-   - New `outfits`, `outfit_items`, and `weekly_outfits` rows are inserted
-3. After commit, old thumbnails in object storage (`outfits/{outfitId}.jpg`) are deleted (non-fatal on failure)
+   - New `outfits`, `outfit_items`, and `weekly_outfits` rows are inserted (`outfits.image_url` is NULL)
 
 **Records created per valid suggestion:**
 
@@ -246,7 +237,7 @@ Persists outfit suggestions atomically and idempotently.
 
 Suggestions with unknown weekdays or zero clothing pieces after sanitization are skipped with a warning.
 
-**Output:** Array of `SavedOutfitRef` objects (`outfitId`, `weekday`, `clothingPieceIds`) passed to step 4.
+**Output:** Array of `SavedOutfitRef` objects (`outfitId`, `weekday`, `clothingPieceIds`).
 
 ---
 
@@ -278,37 +269,6 @@ Value: {"updatedAt":"<ISO timestamp>"}
 ```
 
 **Non-fatal:** Same graceful-degradation behavior as cache invalidation.
-
----
-
-### Step 4 — `generate-image-{outfitId}` (one step per outfit)
-
-**Source:** `src/workflows/generate-weekly-outfits/steps/generate-images.ts`
-
-Each saved outfit gets its own durable workflow step so every image compositing call runs in a **fresh worker invocation** with a fresh CPU budget.
-
-**Per-outfit flow:**
-
-1. Resolve piece image URLs from `wardrobeImageMap` (max **12** pieces)
-2. Fetch images concurrently; individual fetch failures are dropped
-3. Build a 400×400 JPEG collage via the image processing service
-4. Upload to object storage at `outfits/{outfitId}.jpg` with metadata `{ userid: userId }`
-5. Update `outfits.image_url` in the database
-
-**Grid layout:** Mirrors the SkyDIIV web app's composite logic:
-- Columns = `ceil(sqrt(n))`, rows = `ceil(n / cols)`
-- Last row spreads remaining images evenly
-- Pixel sizes are distributed so the grid exactly fills 400×400
-
-**Image pipeline batching:** The image service caps a single pipeline at 10 operations. Overlays are drawn in batches of 3 (`DRAWS_PER_BATCH`) across multiple pipeline executions to support any number of pieces.
-
-**Outcomes:**
-
-| Result | Behavior |
-|---|---|
-| No piece images / all fetches fail | Step returns `false`; workflow continues |
-| Composite + upload succeed | Step returns `true`; `outfits.image_url` updated |
-| Unexpected error (storage, image service, database) | Step throws; the workflow engine retries that step |
 
 ---
 
@@ -364,7 +324,7 @@ The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of 
 | `clothing_items` | Read | Wardrobe items with titles, image URLs, and piece type/subtype FKs |
 | `clothing_item_tags` / `tags` | Read (join) | Tags describing each piece |
 | `domains` | Read (join) | Piece type and subtype names (`type = 'piece_type'` / `'piece_subtype'`) |
-| `outfits` | Write | One AI-generated outfit per day; `image_url` updated in step 4 |
+| `outfits` | Write | One AI-generated outfit per day; `image_url` is NULL |
 | `outfit_items` | Write | Join table: outfit ↔ clothing item |
 | `weekly_outfits` | Write | Links outfit to week/day with weather summary |
 | `llm_interactions` | Write | Audit log of every language model call |
@@ -406,7 +366,7 @@ erDiagram
 
     outfits {
         string type "AI_GENERATED"
-        string image_url
+        string image_url "nullable"
     }
 ```
 
@@ -444,22 +404,8 @@ Set via `wrangler secret put <KEY>` (production) or `.dev.vars` (local):
 | `GEMINI_MODEL` | — | Model name override |
 | `UPSTASH_REDIS_REST_URL` | ✅* | Cache + notifications |
 | `UPSTASH_REDIS_REST_TOKEN` | ✅* | Cache + notifications |
-| `R2_ACCOUNT_ID` | ✅ | Object storage upload |
-| `R2_BUCKET` | ✅ | Object storage upload |
-| `R2_ACCESS_KEY_ID` | ✅ | Object storage upload |
-| `R2_SECRET_ACCESS_KEY` | ✅ | Object storage upload |
-| `R2_PUBLIC_URL` | ✅ | Public URL for `outfits.image_url` |
 
 \*Cache-related steps degrade gracefully when not configured.
-
-### Image service binding
-
-Configured in `wrangler.toml`:
-
-```toml
-[images]
-binding = "IMAGES"
-```
 
 ### Scheduler worker secrets (separate deployable)
 
@@ -484,12 +430,10 @@ binding = "IMAGES"
 | Database save failure | ✅ Fatal | Transaction rolls back |
 | Cache invalidation failure | ❌ Non-fatal | Warning logged |
 | Notification set failure | ❌ Non-fatal | Warning logged |
-| Individual image generation failure | ⚠️ Partial | That step retries; other outfits unaffected |
-| No images for an outfit | ❌ Non-fatal | Step returns `false`; outfit saved without thumbnail |
 
 ### Idempotency
 
-Safe to re-run for the same `userId` + week. The save step atomically replaces all outfits for that week. Old thumbnails in object storage are cleaned up after a successful save.
+Safe to re-run for the same `userId` + week. The save step atomically replaces all outfits for that week.
 
 ### Logging
 
@@ -522,17 +466,14 @@ apps/worker-ai-workflows/
 │   │           ├── execute-prompt.ts                     # Step 2
 │   │           ├── save-outfits.ts                       # Step 3
 │   │           ├── invalidate-weekly-outfits-cache.ts    # Step 3b
-│   │           ├── set-weekly-outfits-notification.ts    # Step 3c
-│   │           └── generate-images.ts                    # Step 4
+│   │           └── set-weekly-outfits-notification.ts    # Step 3c
 │   └── lib/
 │       ├── db/                                           # Database repositories
 │       ├── i18n/                                         # Locale resolution, prompts, weather labels
 │       ├── prompt/                                       # Weekly-outfits builder + JSON parser
 │       ├── llm/                                          # Language model provider
 │       ├── weather/                                      # Weather API provider
-│       ├── cache/                                        # Cache client + key helpers
-│       ├── storage/                                      # Object storage upload/delete
-│       └── cf-images.ts                                  # Image service binding accessor
+│       └── cache/                                        # Cache client + key helpers
 
 apps/worker-scheduler/
 └── src/flows/
@@ -550,11 +491,10 @@ Unit and integration tests cover the workflow's critical paths:
 |---|---|
 | `tests/integration/workflow-steps.test.ts` | End-to-end data flow through all steps (mocked externals) |
 | `tests/unit/prompt-builder.test.ts` | Prompt construction and response parsing |
-| `tests/unit/weekly-outfits-repository.test.ts` | Idempotent save, weekday mapping, storage cleanup |
+| `tests/unit/weekly-outfits-repository.test.ts` | Idempotent save, weekday mapping |
 | `tests/unit/weekly-outfits-cache.test.ts` | Cache key deletion |
 | `tests/unit/invalidate-weekly-outfits-cache-step.test.ts` | Step 3b behavior |
 | `tests/unit/set-weekly-outfits-notification-step.test.ts` | Step 3c behavior |
-| `tests/unit/generate-images-step.test.ts` | Image compositing step |
 | `tests/unit/workflows-registry.test.ts` | Endpoint registration |
 | `apps/worker-scheduler/tests/unit/weekly-outfits-flow.test.ts` | Scheduler fan-out |
 
@@ -578,8 +518,6 @@ sequenceDiagram
     participant WF as Workflow worker
     participant LLM as Language model
     participant CACHE as Cache
-    participant OS as Object storage
-    participant IMG as Image service
 
     CRON->>SCH: POST /schedule/every-<day>
     SCH->>DB: SELECT eligible user_ids
@@ -596,7 +534,6 @@ sequenceDiagram
     Note over WF: Step 2 complete
 
     WF->>DB: transaction: delete old + insert new outfits
-    WF->>OS: delete old thumbnails
     Note over WF: Step 3 complete
 
     WF->>CACHE: invalidate weekly-outfits:{userId}:{week}
@@ -604,14 +541,6 @@ sequenceDiagram
 
     WF->>CACHE: set notification--new-weekly-outfits--{userId}
     Note over WF: Step 3c complete
-
-    loop For each outfit (7 days)
-        WF->>OS: fetch piece images
-        WF->>IMG: composite 400×400 collage
-        WF->>OS: upload outfits/{outfitId}.jpg
-        WF->>DB: UPDATE outfits.image_url
-    end
-    Note over WF: Step 4 complete
 ```
 
 ---

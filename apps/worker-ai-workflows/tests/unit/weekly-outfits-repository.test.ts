@@ -222,26 +222,3 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     expect(result).toEqual([])
   })
 })
-
-describe("SqlWeeklyOutfitsRepository.updateOutfitImageUrl()", () => {
-  it("issues an UPDATE with the correct outfit ID and image URL", async () => {
-    const readDb = makeReadDb([])
-    const { db: writeDb } = makeWriteDb()
-    const repo = new SqlWeeklyOutfitsRepository(readDb, writeDb)
-
-    await repo.updateOutfitImageUrl("outfit-abc", "https://r2.example.com/outfits/outfit-abc.jpg")
-
-    const writeMock = writeDb as unknown as ReturnType<typeof vi.fn>
-    const sqlStrings = writeMock.mock.calls.flatMap((call: unknown[]) => {
-      const first = call[0]
-      if (Array.isArray(first)) return first.filter((s): s is string => typeof s === "string")
-      return []
-    })
-    expect(sqlStrings.some((s: string) => /update outfits/i.test(s))).toBe(true)
-    expect(sqlStrings.some((s: string) => /image_url/i.test(s))).toBe(true)
-
-    const values = writeMock.mock.calls.flatMap((call: unknown[]) => call.slice(1))
-    expect(values).toContain("outfit-abc")
-    expect(values).toContain("https://r2.example.com/outfits/outfit-abc.jpg")
-  })
-})

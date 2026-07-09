@@ -37,8 +37,6 @@ flowchart LR
 | Cache | [Upstash Redis](https://upstash.com/docs/redis) (REST API) | Web app cache keys and notifications |
 | Language model | [Google Gemini](https://ai.google.dev/) (`gemini-2.5-flash` default) | Wardrobe selection and panorama generation |
 | Weather | [Open-Meteo](https://open-meteo.com) | Forecast + geocoding (`generate-weekly-outfits` only) |
-| Object storage | [Cloudflare R2](https://developers.cloudflare.com/r2/) via `@aws-sdk/client-s3` | Outfit thumbnails (`generate-weekly-outfits` only) |
-| Image processing | [Cloudflare Images](https://developers.cloudflare.com/images/) (`IMAGES` binding) | Collage compositing (`generate-weekly-outfits` only) |
 | Validation | [Zod](https://zod.dev/) | LLM response parsing |
 | Dev / deploy | Wrangler 4 | Local dev and Cloudflare deployment |
 | Testing | Vitest 4 | Unit + integration tests |
@@ -60,7 +58,7 @@ flowchart LR
 │   │   ├── index.ts                        # Endpoint registry
 │   │   ├── generate-weekly-outfits/
 │   │   └── generate-wardrobe-panorama/
-│   └── lib/                                # Shared DB, i18n, LLM, weather, cache, storage, logging
+│   └── lib/                                # Shared DB, i18n, LLM, weather, cache, logging
 ├── tests/
 ├── wrangler.toml
 ├── .env.example                            # Copy to .dev.vars for local dev
@@ -179,9 +177,6 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `WORKER_AI_WORKFLOWS_URL` | All workflows — this worker's public origin (no path) |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | All workflows |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | All workflows |
-| `R2_*` | `generate-weekly-outfits` only |
-
-`[images]` binding in `wrangler.toml` is required for `generate-weekly-outfits`.
 
 Per-workflow env requirements and scheduler upstream URLs are documented in each workflow's doc.
 
