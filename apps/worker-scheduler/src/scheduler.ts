@@ -1,7 +1,7 @@
-import { getQStashReceiver } from "./lib/qstash"
 import { getFlowsForDay } from "./flows/registry"
 import type { FlowRunResult, Weekday } from "./flows/types"
 import { createLogger } from "./lib/logger"
+import { verifyQStashRequest } from "./lib/verify-qstash-request"
 
 /**
  * Central schedule handler — invoked via signed POST to a weekday endpoint.
@@ -21,27 +21,8 @@ import { createLogger } from "./lib/logger"
 export async function handleSchedule(request: Request, day: Weekday): Promise<Response> {
   const log = createLogger("scheduler")
 
-  // ── Step 1: Verify QStash signature ────────────────────────────────────────
-  const signature = request.headers.get("upstash-signature")
-  if (!signature) {
-    log.warn("Missing upstash-signature header — rejecting request", { day })
-    return new Response("Unauthorized", { status: 401 })
-  }
-
-  const body = await request.text()
-
-  try {
-    const receiver = getQStashReceiver()
-    const isValid = await receiver.verify({ signature, body, url: request.url })
-
-    if (!isValid) {
-      log.warn("Invalid QStash signature — rejecting request", { day })
-      return new Response("Unauthorized", { status: 401 })
-    }
-  } catch (err) {
-    log.error("Signature verification failed", { day, error: String(err) })
-    return new Response("Unauthorized", { status: 401 })
-  }
+  const verified = await verifyQStashRequest(request, log, { day })
+  if (!verified.ok) return verified.response
 
   log.info("QStash signature verified — resolving flows", { day })
 

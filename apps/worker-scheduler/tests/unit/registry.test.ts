@@ -7,19 +7,12 @@ import { generateWardrobePanoramaFlow } from "../../src/flows/generate-wardrobe-
 describe("flow registry", () => {
   it("registers the weekly-outfits flow on sunday", () => {
     const flows = getFlowsForDay("sunday")
-    expect(flows).toHaveLength(1)
-    expect(flows[0]).toBe(weeklyOutfitsFlow)
+    expect(flows).toEqual([weeklyOutfitsFlow])
   })
 
   it("registers the generate-wardrobe-panorama flow on thursday", () => {
     const flows = getFlowsForDay("thursday")
-    expect(flows).toHaveLength(1)
-    expect(flows[0]).toBe(generateWardrobePanoramaFlow)
-  })
-
-  it("supports multiple flows registered for the same day", () => {
-    const flows = getFlowsForDay("sunday")
-    expect(Array.isArray(flows)).toBe(true)
+    expect(flows).toEqual([generateWardrobePanoramaFlow])
   })
 
   it("returns an empty array for days without registered flows", () => {

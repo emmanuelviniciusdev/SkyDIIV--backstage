@@ -7,6 +7,10 @@ Downstream work is delegated to [`worker-ai-workflows`](../worker-ai-workflows/R
 - [generate-weekly-outfits](../worker-ai-workflows/docs/WEEKLY_OUTFITS_WORKFLOW.md)
 - [generate-wardrobe-panorama](../worker-ai-workflows/docs/WARDROBE_PANORAMA_WORKFLOW.md)
 
+Stale outbox events are re-enqueued via [`worker-outbox-events`](../worker-outbox-events/README.md):
+
+- [catch-up-outbox-events](docs/CATCH_UP_OUTBOX_EVENTS.md)
+
 ---
 
 ## Endpoints
@@ -20,6 +24,7 @@ Downstream work is delegated to [`worker-ai-workflows`](../worker-ai-workflows/R
 | `POST /schedule/every-friday` | Friday | _(none)_ |
 | `POST /schedule/every-saturday` | Saturday | _(none)_ |
 | `POST /schedule/every-sunday` | Sunday | `weekly-outfits` |
+| `POST /schedule/catch-up-outbox-events` | — | `catch-up-outbox-events` |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
 Flow assignments come from `src/flows/registry.ts` and may change independently of this table.
@@ -40,7 +45,9 @@ Every `POST /schedule/every-<day>` request:
 | Some flows failed | `207` | Mix of `status: "ok"` and `status: "error"` entries |
 | All flows failed | `500` | All entries have `status: "error"` |
 
-The CRON expression, timezone, and which weekday endpoint QStash calls are configured entirely in Upstash — this worker only verifies the signature and runs the registered flows.
+`POST /schedule/catch-up-outbox-events` follows the same QStash auth rules but runs a single dedicated flow and returns `{ "status": "ok", "flow": "catch-up-outbox-events", "dispatched": <count> }` (or `500` on failure).
+
+The CRON expression, timezone, and which endpoint QStash calls are configured entirely in Upstash — this worker only verifies the signature and runs the registered flows.
 
 ---
 
@@ -75,6 +82,22 @@ Returns `{ flow: "generate-wardrobe-panorama", dispatched: <count> }`.
 
 > The downstream workflow still re-checks the cache marker at step 1 as a safety gate. Ad-hoc triggers that bypass the scheduler are also gated there.
 
+### `catch-up-outbox-events`
+
+**Endpoint:** `POST /schedule/catch-up-outbox-events`  
+**Source:** `src/flows/catch-up-outbox-events.flow.ts`  
+**Handler:** `src/handlers/catch-up-outbox-events.schedule.ts`  
+**Downstream:** `POST /process-outbox-event` on `worker-outbox-events`  
+**Workflow doc:** [CATCH_UP_OUTBOX_EVENTS.md](docs/CATCH_UP_OUTBOX_EVENTS.md)
+
+1. Queries `outbox_events` for `PENDING` rows older than `OUTBOX_CATCHUP_MIN_AGE_MINUTES` (default **10**)
+2. Publishes one signed queue message per stale event (`{ outboxEventId }`) to `{WORKER_OUTBOX_EVENTS_URL}/process-outbox-event`
+3. Messages are batched in groups of 100
+
+Returns `{ status: "ok", flow: "catch-up-outbox-events", dispatched: <count> }`.
+
+> Create a QStash schedule pointing at `/schedule/catch-up-outbox-events` with the desired catch-up frequency (for example every 30 minutes).
+
 ---
 
 ## Services & Technologies
@@ -84,8 +107,8 @@ Returns `{ flow: "generate-wardrobe-panorama", dispatched: <count> }`.
 | Runtime | [Cloudflare Workers](https://developers.cloudflare.com/workers/) (`nodejs_compat`) | Hosts this worker |
 | Language | TypeScript 5 (strict) | Implementation |
 | Scheduling trigger | [Upstash QStash](https://upstash.com/docs/qstash) (external CRON) | Fires weekday endpoints on a configured schedule |
-| Message publishing | [Upstash QStash](https://upstash.com/docs/qstash) (`@upstash/qstash`) | Dispatches per-user messages to `worker-ai-workflows` |
-| Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Read-only queries for eligible users |
+| Message publishing | [Upstash QStash](https://upstash.com/docs/qstash) (`@upstash/qstash`) | Dispatches per-user messages to `worker-ai-workflows`; re-enqueues stale outbox events to `worker-outbox-events` |
+| Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Read-only queries for eligible users and stale outbox events |
 | Cache | [Upstash Redis](https://upstash.com/docs/redis) (REST API) | Wardrobe panorama flow — filter users by update marker |
 | Dev / deploy | Wrangler 4 | Local dev and Cloudflare deployment |
 | Testing | Vitest 4 | Unit tests |
@@ -98,22 +121,30 @@ Returns `{ flow: "generate-wardrobe-panorama", dispatched: <count> }`.
 
 ```
 ├── src/
-│   ├── index.ts                            # Worker entry; health check + weekday routing
-│   ├── scheduler.ts                        # Verify signature → resolve flows → run in parallel
+│   ├── index.ts                            # Worker entry; health check + routing
+│   ├── scheduler.ts                        # Weekday handler — verify → resolve → run in parallel
+│   ├── handlers/
+│   │   └── catch-up-outbox-events.schedule.ts  # Dedicated catch-up endpoint handler
 │   ├── flows/
 │   │   ├── types.ts                        # Weekday, ScheduleFlow, FlowResult
 │   │   ├── registry.ts                     # Maps weekday → flows
 │   │   ├── weekly-outfits.flow.ts
-│   │   └── generate-wardrobe-panorama.flow.ts
+│   │   ├── generate-wardrobe-panorama.flow.ts
+│   │   └── catch-up-outbox-events.flow.ts
 │   └── lib/
 │       ├── logger.ts
 │       ├── qstash.ts                       # QStash client + receiver
+│       ├── outbox-catchup-config.ts        # OUTBOX_CATCHUP_MIN_AGE_MINUTES parser
+│       ├── worker-outbox-events-url.ts     # WORKER_OUTBOX_EVENTS_URL resolver
 │       ├── cache/
 │       │   ├── redis.ts                    # Upstash Redis REST helpers
 │       │   └── wardrobe-panorama-cache.ts  # Update-marker filter for panorama flow
 │       └── db/
 │           ├── client.ts
-│           └── users.repository.ts
+│           ├── users.repository.ts
+│           └── outbox-events.repository.ts
+├── docs/
+│   └── CATCH_UP_OUTBOX_EVENTS.md
 ├── tests/unit/
 ├── wrangler.toml
 ├── .env.example                            # Copy to .dev.vars for local dev
@@ -149,9 +180,16 @@ export const flowRegistry: Partial<Record<Weekday, ScheduleFlow[]>> = {
 
 Multiple flows can share a day — they run in parallel.
 
-3. Create a QStash schedule pointing at `https://worker-scheduler.<subdomain>.workers.dev/schedule/every-<day>`.
+For a flow that needs its own endpoint (like catch-up-outbox-events), add a handler in `src/handlers/` and wire the route in `src/index.ts`.
 
-No changes to `src/index.ts` are required.
+3. Create a QStash schedule pointing at the appropriate endpoint:
+
+```
+https://worker-scheduler.<subdomain>.workers.dev/schedule/every-<day>
+https://worker-scheduler.<subdomain>.workers.dev/schedule/catch-up-outbox-events
+```
+
+No changes to `src/index.ts` are required for weekday-only jobs.
 
 ---
 
@@ -220,6 +258,8 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `QSTASH_URL`, `QSTASH_TOKEN` | Flows that publish messages |
 | `DATABASE_URL` | All flows (eligible-user queries) |
 | `WORKER_AI_WORKFLOWS_URL` | `weekly-outfits` and `generate-wardrobe-panorama` flows |
+| `WORKER_OUTBOX_EVENTS_URL` | `catch-up-outbox-events` flow |
+| `OUTBOX_CATCHUP_MIN_AGE_MINUTES` | `catch-up-outbox-events` flow (optional; default `10`) |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` (or `REDIS_URL`) | `generate-wardrobe-panorama` flow (update-marker filter) |
 
 `WORKER_AI_WORKFLOWS_URL` is the worker-ai-workflows origin only (no path). Each flow appends its endpoint:
@@ -227,14 +267,16 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 ```
 {WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits
 {WORKER_AI_WORKFLOWS_URL}/generate-wardrobe-panorama
+{WORKER_OUTBOX_EVENTS_URL}/process-outbox-event
 ```
 
 ### External schedules
 
-After deploying, create one QStash schedule per active weekday endpoint in the [Upstash Console](https://console.upstash.com/qstash):
+After deploying, create QStash schedules in the [Upstash Console](https://console.upstash.com/qstash):
 
 ```
 https://worker-scheduler.<subdomain>.workers.dev/schedule/every-<day>
+https://worker-scheduler.<subdomain>.workers.dev/schedule/catch-up-outbox-events
 ```
 
 When and how often each endpoint fires is configured in Upstash, not in this repository.
@@ -261,5 +303,7 @@ npm run deploy -- --env staging # staging
 | `QSTASH_CURRENT_SIGNING_KEY` | QStash current signing key |
 | `QSTASH_NEXT_SIGNING_KEY` | QStash next signing key |
 | `WORKER_AI_WORKFLOWS_URL` | worker-ai-workflows origin (no path) |
+| `WORKER_OUTBOX_EVENTS_URL` | worker-outbox-events origin (no path) |
+| `OUTBOX_CATCHUP_MIN_AGE_MINUTES` | Minimum age in minutes before a PENDING outbox event is re-enqueued (optional; default `10`) |
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (wardrobe panorama cache filter) |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |

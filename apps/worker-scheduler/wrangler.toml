@@ -20,6 +20,10 @@ invocation_logs = true
 #   wrangler secret put QSTASH_CURRENT_SIGNING_KEY
 #   wrangler secret put QSTASH_NEXT_SIGNING_KEY
 #   wrangler secret put WORKER_AI_WORKFLOWS_URL
+#   wrangler secret put WORKER_OUTBOX_EVENTS_URL
+#
+# Optional var (can also be set as a Worker var):
+#   OUTBOX_CATCHUP_MIN_AGE_MINUTES=10
 #
 # ── Staging / preview environment ─────────────────────────────────────────────
 [env.staging]

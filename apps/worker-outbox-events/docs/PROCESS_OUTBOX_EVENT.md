@@ -50,7 +50,12 @@ graph TD
 
 ## Triggering
 
-This endpoint is invoked exclusively by QStash. The SkyDIIV web app publishes a message after each successful transaction that inserts an outbox event:
+This endpoint is invoked exclusively by QStash. Producers publish a message after inserting an outbox event:
+
+| Producer | When |
+|---|---|
+| SkyDIIV web app | Immediately after a successful transaction that inserts an outbox event |
+| `worker-scheduler` (`catch-up-outbox-events` flow) | On schedule via `POST /schedule/catch-up-outbox-events` — re-enqueues `PENDING` rows older than `OUTBOX_CATCHUP_MIN_AGE_MINUTES` (default 10 min) |
 
 ```
 # Single event
@@ -60,7 +65,9 @@ QStash.publishJSON({ url: "{WORKER_OUTBOX_EVENTS_URL}/process-outbox-event", bod
 QStash.batchJSON([{ url, body: { outboxEventId } }, ...])
 ```
 
-The web app sets `WORKER_OUTBOX_EVENTS_URL` to this worker's origin (no path). QStash signs every delivery and retries on `5xx` responses with exponential backoff.
+The web app and `worker-scheduler` set `WORKER_OUTBOX_EVENTS_URL` to this worker's origin (no path). QStash signs every delivery and retries on `5xx` responses with exponential backoff.
+
+See [CATCH_UP_OUTBOX_EVENTS.md](../../worker-scheduler/docs/CATCH_UP_OUTBOX_EVENTS.md) for the catch-up flow details.
 
 ---
 

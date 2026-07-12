@@ -1,12 +1,13 @@
 /**
  * Core abstractions for the central scheduler.
  *
- * The worker exposes one endpoint per weekday (/schedule/every-monday … sunday).
- * Each endpoint can have multiple `ScheduleFlow`s registered. Once the QStash
- * signature is verified, all flows for that day run in parallel. Results are
- * collected individually — one flow failing never stops the others.
+ * The worker exposes one endpoint per weekday (/schedule/every-monday … sunday)
+ * plus dedicated endpoints for individual flows (e.g. /schedule/catch-up-outbox-events).
+ * Each weekday endpoint can have multiple `ScheduleFlow`s registered. Once the QStash
+ * signature is verified, all flows for that day run in parallel. Results are collected
+ * individually — one flow failing never stops the others.
  *
- * New scheduled jobs are added by implementing a flow and registering it in
+ * New weekday jobs are added by implementing a flow and registering it in
  * `flows/registry.ts` — no routing changes needed.
  */
 

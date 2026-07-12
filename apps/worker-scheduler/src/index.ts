@@ -1,8 +1,11 @@
+import { handleCatchUpOutboxEventsSchedule } from "./handlers/catch-up-outbox-events.schedule"
 import { handleSchedule } from "./scheduler"
 import { createLogger } from "./lib/logger"
 import type { Weekday } from "./flows/types"
 
 type Env = Record<string, string | undefined>
+
+const CATCH_UP_OUTBOX_EVENTS_PATH = "/schedule/catch-up-outbox-events"
 
 /**
  * Maps each weekday endpoint to its `Weekday`. Adding a new scheduled job does
@@ -24,8 +27,9 @@ const DAY_ROUTES: Readonly<Record<string, Weekday>> = {
  * Copies all Worker bindings into process.env so downstream modules that
  * read process.env work without modification.
  *
- * GET  /                       → health-check (useful for uptime monitors).
- * POST /schedule/every-<day>   → signed trigger endpoint; runs the day's flow.
+ * GET  /                                  → health-check (useful for uptime monitors).
+ * POST /schedule/every-<day>              → signed trigger endpoint; runs the day's flows.
+ * POST /schedule/catch-up-outbox-events   → signed trigger; re-enqueues stale outbox events.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -44,6 +48,10 @@ export default {
     }
 
     if (method === "POST") {
+      if (pathname === CATCH_UP_OUTBOX_EVENTS_PATH) {
+        return handleCatchUpOutboxEventsSchedule(request)
+      }
+
       const day = DAY_ROUTES[pathname]
       if (day) return handleSchedule(request, day)
     }
