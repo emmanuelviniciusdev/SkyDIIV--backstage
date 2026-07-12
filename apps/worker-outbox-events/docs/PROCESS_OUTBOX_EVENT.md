@@ -27,17 +27,14 @@ graph TD
     WORKER["worker-outbox-events\nPOST /process-outbox-event"]
     REDIS[("Redis\noutbox-processing:{id}")]
 
-    WORKER --> S1["1. Verify QStash signature"]
-    S1 --> S2["2. Parse { outboxEventId }"]
-    S2 --> S3["3. Check processing lock"]
-    S3 -->|"lock present"| SKIP["200 already-processing\n(skip)"]
-    S3 -->|"no lock"| S4["4. Acquire lock (TTL 5 min)"]
-    S4 --> S5["5. Fetch outbox_event by ID"]
-    S5 -->|"not found"| S5R["release lock\n200 not-found"]
-    S5 -->|"found"| S6["6. Dispatch payload → downstream"]
-    S6 -->|"error"| S6R["release lock\n500 retry"]
-    S6 -->|"ok"| S7["7. Delete outbox_event"]
-    S7 --> S8["8. Release lock\n200 processed"]
+    WORKER --> S1["1. Validate request\n(verify signature + parse payload)"]
+    S1 -->|"invalid"| S1R["401 / 400"]
+    S1 -->|"valid"| S2["2. Try acquire lock\n(SET NX EX 300)"]
+    S2 -->|"lock held"| SKIP["200 already-processing\n(skip)"]
+    S2 -->|"acquired"| S3["3. Fetch and dispatch\n(SELECT → publishJSON)"]
+    S3 -->|"not found"| S3A["release lock\n200 not-found"]
+    S3 -->|"dispatch error"| S3B["release lock\n500 retry"]
+    S3 -->|"ok"| S4["4. Finalize\n(DELETE + release lock)\n200 processed"]
 
     WEB --> TX --> DB
     WEB --> MQ --> WORKER
@@ -75,48 +72,30 @@ See [CATCH_UP_OUTBOX_EVENTS.md](../../worker-scheduler/docs/CATCH_UP_OUTBOX_EVEN
 
 **Source:** `src/handlers/process-outbox-event.ts`
 
-### Step 1 — Verify QStash signature
+### Step 1 — Validate request
 
-Reads the `upstash-signature` header and verifies it with the QStash receiver singleton (`getQStashReceiver()`).
+Reads the `upstash-signature` header and verifies it with the QStash receiver singleton (`getQStashReceiver()`), then parses and validates the request body.
 
-- Missing header → `401 Unauthorized`
+- Missing `upstash-signature` header → `401 Unauthorized`
 - Invalid signature or verification error → `401 Unauthorized`
-
-No further logic executes on rejected requests.
-
----
-
-### Step 2 — Parse request payload
-
-Parses the raw request body as JSON and validates it against:
-
-```ts
-{ outboxEventId: z.string().min(1) }
-```
-
 - Invalid JSON or missing / empty `outboxEventId` → `400 Bad Request`
 
----
-
-### Step 3 — Check processing lock
-
-Reads the Redis key `outbox-processing:{outboxEventId}` via the Upstash REST API.
-
-- Key **exists** → another invocation is already processing this event → `200 { processed: false, reason: "already-processing", outboxEventId }`
-
-This prevents two concurrent QStash deliveries for the same event from dispatching duplicate messages to the downstream worker.
+No further logic executes on rejected requests — no side effects of any kind before this step completes successfully.
 
 ---
 
-### Step 4 — Acquire processing lock
+### Step 2 — Try to acquire processing lock
 
-Sets `outbox-processing:{outboxEventId}` in Redis with a **5-minute TTL**.
+Atomically sets `outbox-processing:{outboxEventId}` in Redis with a **5-minute TTL** only if the key does not already exist (`SET NX EX`).
 
-The TTL acts as a safety net: if the worker crashes before reaching Step 8, the lock expires automatically and allows future retries to proceed without getting stuck.
+- Key **already existed** → another invocation is already processing this event → `200 { processed: false, reason: "already-processing", outboxEventId }`
+- Key **set successfully** → lock acquired, processing continues
+
+This prevents two concurrent QStash deliveries for the same event from both dispatching to the downstream worker. The TTL acts as a safety net: if the worker crashes before Step 4, the lock expires automatically so future retries can proceed.
 
 ---
 
-### Step 5 — Fetch outbox event
+### Step 3 — Fetch and dispatch
 
 Queries `outbox_events` for the row with the given ID:
 
@@ -131,11 +110,7 @@ LIMIT 1
 
 A `not-found` result means the event was already processed and deleted by a previous invocation. Returning `200` prevents QStash from scheduling another retry.
 
----
-
-### Step 6 — Dispatch payload to downstream worker
-
-Calls `dispatch(event)` in `src/lib/dispatcher.ts`, which switches on `event.flow` and publishes `event.payload` verbatim to the registered downstream worker via QStash.
+If the row is found, calls `dispatch(event)` in `src/lib/dispatcher.ts`, which switches on `event.flow` and publishes `event.payload` verbatim to the registered downstream worker via QStash.
 
 The `payload` stored in `outbox_events` is forwarded as-is — it carries exactly the fields the downstream worker expects.
 
@@ -146,23 +121,17 @@ Returning `500` on dispatch failure causes QStash to retry the delivery. The loc
 
 ---
 
-### Step 7 — Delete outbox event
+### Step 4 — Finalize: delete outbox event and release lock
 
 ```sql
 DELETE FROM outbox_events WHERE id = $1
 ```
 
-If this query fails, the error is logged but the handler **does not return `5xx`** — returning `500` would cause QStash to retry the entire handler, re-dispatching to the downstream worker and producing a duplicate. The lock is still released in Step 8 and `200` is returned.
+If the DELETE fails, the error is logged but the handler **does not return `5xx`** — returning `500` would cause QStash to retry the entire handler, re-dispatching to the downstream worker and producing a duplicate.
 
-The tradeoff: the row remains in `outbox_events` as an orphan. If QStash happens to retry anyway (e.g. a delivery timeout where it never received the `200`), it would find the row still present and re-dispatch — the lock provides no protection because it was released. This is an accepted risk; the `200` response minimises the probability of a QStash-initiated retry while accepting that delivery-timeout edge cases may cause a duplicate downstream invocation.
+After the delete attempt (successful or not), `outbox-processing:{outboxEventId}` is deleted from Redis and the handler returns `200 { processed: true, outboxEventId, flow, event }`.
 
----
-
-### Step 8 — Release processing lock
-
-Deletes `outbox-processing:{outboxEventId}` from Redis.
-
-Returns `200 { processed: true, outboxEventId, flow, event }`.
+The tradeoff: if the DELETE fails, the row remains in `outbox_events` as an orphan. If QStash happens to retry anyway (e.g. a delivery timeout where it never received the `200`), it would find the row still present and re-dispatch — the lock provides no protection because it was released. This is an accepted risk; the `200` response minimises the probability of a QStash-initiated retry while accepting that delivery-timeout edge cases may cause a duplicate downstream invocation.
 
 ---
 
@@ -211,7 +180,7 @@ The Redis key `outbox-processing:{outboxEventId}` is used as a short-lived mutex
 
 | Event | Lock action |
 |---|---|
-| Processing starts | Acquired (TTL: 5 min) |
+| Processing starts | Atomically acquired via SET NX EX (TTL: 5 min) — skips if key already exists |
 | Event not found in DB | Released |
 | Dispatch fails | Released (so QStash retries can proceed) |
 | Processing completes successfully | Released |
@@ -238,8 +207,7 @@ Returning `200` prevents QStash from scheduling an automatic retry (which would 
 | Missing `upstash-signature` | ✅ Fatal | `401` — no further processing |
 | Invalid QStash signature | ✅ Fatal | `401` — no further processing |
 | Invalid payload | ✅ Fatal | `400` — no lock acquired |
-| Redis lock check failure | ✅ Fatal | Error propagates (unhandled; QStash retries) |
-| Redis lock acquire failure | ✅ Fatal | Error propagates (unhandled; QStash retries) |
+| Redis SET NX failure | ✅ Fatal | Error propagates (unhandled; QStash retries) |
 | Outbox event not found | ❌ Non-fatal | `200 not-found` — lock released |
 | Unknown flow | ✅ Fatal | `500` — lock released |
 | QStash publish failure | ✅ Fatal | `500` — lock released |
@@ -303,7 +271,7 @@ apps/worker-outbox-events/
 ├── src/
 │   ├── index.ts                                 # Worker entry; env injection + routing
 │   ├── handlers/
-│   │   └── process-outbox-event.ts              # Full handler — all 8 steps
+│   │   └── process-outbox-event.ts              # Full handler — 4 steps
 │   └── lib/
 │       ├── logger.ts                            # Structured JSON logger
 │       ├── qstash.ts                            # QStash client + receiver singletons
@@ -361,9 +329,8 @@ sequenceDiagram
 
     MQ->>WORKER: POST /process-outbox-event { outboxEventId }
     WORKER->>WORKER: verify upstash-signature
-    WORKER->>REDIS: EXISTS outbox-processing:{id}
-    REDIS-->>WORKER: 0 (not locked)
-    WORKER->>REDIS: SET outbox-processing:{id} EX 300
+    WORKER->>REDIS: SET outbox-processing:{id} 1 EX 300 NX
+    REDIS-->>WORKER: OK (lock acquired)
     WORKER->>DB: SELECT * FROM outbox_events WHERE id = ?
     DB-->>WORKER: event row (flow, event, payload)
     WORKER->>MQ: publishJSON({ url: downstream, body: payload })

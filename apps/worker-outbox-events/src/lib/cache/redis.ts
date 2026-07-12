@@ -82,6 +82,27 @@ export async function setRedisKey(key: string, ttlSeconds?: number): Promise<voi
 }
 
 /**
+ * Atomically sets a Redis key to `"1"` with a TTL only if it does not already exist
+ * (SET NX EX). Returns `true` if the key was set (lock acquired), `false` if the key
+ * already existed (lock already held by another invocation).
+ */
+export async function setRedisKeyNx(key: string, ttlSeconds: number): Promise<boolean> {
+  const credentials = getUpstashRestCredentials()
+
+  const response = await fetch(
+    `${credentials.url}/set/${encodeURIComponent(key)}/1/EX/${ttlSeconds}/NX`,
+    { headers: { Authorization: `Bearer ${credentials.token}` } },
+  )
+
+  if (!response.ok) {
+    throw new Error(`Redis SET NX failed for key "${key}" (${response.status})`)
+  }
+
+  const body: { result?: string | null } = await response.json()
+  return body.result === "OK"
+}
+
+/**
  * Deletes a Redis key via the Upstash REST API.
  */
 export async function deleteRedisKey(key: string): Promise<void> {

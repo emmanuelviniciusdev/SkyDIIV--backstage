@@ -4,8 +4,7 @@ import { getDb } from "../lib/db/client"
 import { SqlOutboxEventsRepository } from "../lib/db/outbox-events.repository"
 import { dispatch } from "../lib/dispatcher"
 import {
-  isOutboxEventBeingProcessed,
-  acquireOutboxProcessingLock,
+  tryAcquireOutboxProcessingLock,
   releaseOutboxProcessingLock,
 } from "../lib/cache/outbox-processing-cache"
 import { createLogger } from "../lib/logger"
@@ -22,23 +21,22 @@ const ProcessOutboxEventPayloadSchema = z.object({
  * Handles `POST /process-outbox-event`.
  *
  * Steps:
- *   1. Verify the incoming request is signed by QStash (prevents unauthorised triggers).
- *   2. Parse and validate the `{ outboxEventId }` body.
- *   3. Check the Redis processing lock — if the event is already being processed by a
- *      concurrent invocation, skip and return 200 (prevents duplicate dispatches).
- *   4. Acquire the Redis processing lock for this event.
- *   5. Fetch the outbox event from the database by ID.
- *      - If not found, release the lock and return 200 (idempotency — already processed).
- *   6. Dispatch the event payload to the appropriate downstream worker via QStash.
- *      - On failure, release the lock and return 500 so QStash retries.
- *   7. Delete the outbox event record from the database.
+ *   1. Validate the request — verify the QStash signature and parse the `{ outboxEventId }`
+ *      body. Rejects unsigned/invalid requests before any side effects.
+ *   2. Try to acquire the Redis processing lock atomically (SET NX EX) — if the lock is
+ *      already held by a concurrent invocation, skip and return 200 (prevents duplicate
+ *      dispatches). Lock TTL acts as a safety net if the worker crashes.
+ *   3. Fetch and dispatch — read the outbox event row from the database and forward its
+ *      payload to the appropriate downstream worker via QStash.
+ *      - Row not found: release lock, return 200 (idempotency — already processed).
+ *      - Dispatch error: release lock, return 500 so QStash retries.
+ *   4. Finalize: delete the outbox event record and release the processing lock.
  *      - Delete failure is logged but does not fail the request — dispatch already succeeded.
- *   8. Release the Redis processing lock (successful processing complete).
  */
 export async function handleProcessOutboxEvent(request: Request): Promise<Response> {
   const log = createLogger("process-outbox-event")
 
-  // ── Step 1: Verify QStash signature ──────────────────────────────────────────
+  // ── Step 1: Validate request — verify signature and parse payload ────────────
   const signature = request.headers.get("upstash-signature")
   if (!signature) {
     log.warn("Missing upstash-signature header — rejecting request")
@@ -59,7 +57,6 @@ export async function handleProcessOutboxEvent(request: Request): Promise<Respon
     return new Response("Unauthorized", { status: 401 })
   }
 
-  // ── Step 2: Parse payload ─────────────────────────────────────────────────────
   let parsed: ProcessOutboxEventPayload
   try {
     const json = JSON.parse(body) as unknown
@@ -72,18 +69,15 @@ export async function handleProcessOutboxEvent(request: Request): Promise<Respon
   const { outboxEventId } = parsed
   log.info("Processing outbox event", { outboxEventId })
 
-  // ── Step 3: Check processing lock ────────────────────────────────────────────
-  const alreadyProcessing = await isOutboxEventBeingProcessed(outboxEventId)
-  if (alreadyProcessing) {
+  // ── Step 2: Try to acquire processing lock ───────────────────────────────────
+  const lockAcquired = await tryAcquireOutboxProcessingLock(outboxEventId)
+  if (!lockAcquired) {
     log.warn("Outbox event is already being processed — skipping", { outboxEventId })
     return Response.json({ processed: false, reason: "already-processing", outboxEventId })
   }
-
-  // ── Step 4: Acquire processing lock ──────────────────────────────────────────
-  await acquireOutboxProcessingLock(outboxEventId)
   log.info("Processing lock acquired", { outboxEventId })
 
-  // ── Step 5: Fetch outbox event ────────────────────────────────────────────────
+  // ── Step 3: Fetch and dispatch ────────────────────────────────────────────────
   const db = getDb()
   const repo = new SqlOutboxEventsRepository(db)
 
@@ -96,7 +90,6 @@ export async function handleProcessOutboxEvent(request: Request): Promise<Respon
 
   log.info("Outbox event found", { outboxEventId, flow: event.flow, event: event.event })
 
-  // ── Step 6: Dispatch to downstream worker ─────────────────────────────────────
   try {
     await dispatch(event)
     log.info("Outbox event dispatched", { outboxEventId, flow: event.flow })
@@ -112,7 +105,7 @@ export async function handleProcessOutboxEvent(request: Request): Promise<Respon
     return new Response("Internal Server Error", { status: 500 })
   }
 
-  // ── Step 7: Delete outbox event ───────────────────────────────────────────────
+  // ── Step 4: Finalize — delete outbox event and release lock ──────────────────
   try {
     await repo.deleteById(outboxEventId)
     log.info("Outbox event deleted", { outboxEventId })
@@ -125,7 +118,6 @@ export async function handleProcessOutboxEvent(request: Request): Promise<Respon
     })
   }
 
-  // ── Step 8: Release processing lock ──────────────────────────────────────────
   await releaseOutboxProcessingLock(outboxEventId)
   log.info("Processing lock released", { outboxEventId })
 

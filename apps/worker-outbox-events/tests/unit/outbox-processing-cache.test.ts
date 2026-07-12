@@ -5,79 +5,57 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
  * Mocks the Redis primitives to verify correct key naming and delegation.
  */
 
-const { mockExistsRedisKey, mockSetRedisKey, mockDeleteRedisKey } = vi.hoisted(() => ({
-  mockExistsRedisKey: vi.fn(),
-  mockSetRedisKey: vi.fn(),
+const { mockSetRedisKeyNx, mockDeleteRedisKey } = vi.hoisted(() => ({
+  mockSetRedisKeyNx: vi.fn(),
   mockDeleteRedisKey: vi.fn(),
 }))
 
 vi.mock("../../src/lib/cache/redis", () => ({
-  existsRedisKey: mockExistsRedisKey,
-  setRedisKey: mockSetRedisKey,
+  setRedisKeyNx: mockSetRedisKeyNx,
   deleteRedisKey: mockDeleteRedisKey,
 }))
 
 import {
-  isOutboxEventBeingProcessed,
-  acquireOutboxProcessingLock,
+  tryAcquireOutboxProcessingLock,
   releaseOutboxProcessingLock,
 } from "../../src/lib/cache/outbox-processing-cache"
 
 const EVENT_ID = "evt-uuid-abc"
 const EXPECTED_KEY = `outbox-processing:${EVENT_ID}`
 
-describe("isOutboxEventBeingProcessed", () => {
+describe("tryAcquireOutboxProcessingLock", () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it("checks the outbox-processing key for the given event ID", async () => {
-    mockExistsRedisKey.mockResolvedValueOnce(true)
+  it("returns true when the lock was acquired (key did not exist)", async () => {
+    mockSetRedisKeyNx.mockResolvedValueOnce(true)
 
-    const result = await isOutboxEventBeingProcessed(EVENT_ID)
+    const result = await tryAcquireOutboxProcessingLock(EVENT_ID)
 
     expect(result).toBe(true)
-    expect(mockExistsRedisKey).toHaveBeenCalledWith(EXPECTED_KEY)
+    expect(mockSetRedisKeyNx).toHaveBeenCalledWith(EXPECTED_KEY, expect.any(Number))
   })
 
-  it("returns false when the key does not exist", async () => {
-    mockExistsRedisKey.mockResolvedValueOnce(false)
+  it("returns false when the lock is already held (key already existed)", async () => {
+    mockSetRedisKeyNx.mockResolvedValueOnce(false)
 
-    const result = await isOutboxEventBeingProcessed(EVENT_ID)
+    const result = await tryAcquireOutboxProcessingLock(EVENT_ID)
 
     expect(result).toBe(false)
   })
 
-  it("propagates Redis errors", async () => {
-    mockExistsRedisKey.mockRejectedValueOnce(new Error("Redis unavailable"))
-
-    await expect(isOutboxEventBeingProcessed(EVENT_ID)).rejects.toThrow("Redis unavailable")
-  })
-})
-
-describe("acquireOutboxProcessingLock", () => {
-  beforeEach(() => vi.clearAllMocks())
-
-  it("sets the outbox-processing key with a TTL for the given event ID", async () => {
-    mockSetRedisKey.mockResolvedValueOnce(undefined)
-
-    await acquireOutboxProcessingLock(EVENT_ID)
-
-    expect(mockSetRedisKey).toHaveBeenCalledOnce()
-    expect(mockSetRedisKey).toHaveBeenCalledWith(EXPECTED_KEY, expect.any(Number))
-  })
-
   it("sets a positive TTL as safety net", async () => {
-    mockSetRedisKey.mockResolvedValueOnce(undefined)
+    mockSetRedisKeyNx.mockResolvedValueOnce(true)
 
-    await acquireOutboxProcessingLock(EVENT_ID)
+    await tryAcquireOutboxProcessingLock(EVENT_ID)
 
-    const ttl = mockSetRedisKey.mock.calls[0]![1] as number
+    const ttl = mockSetRedisKeyNx.mock.calls[0]![1] as number
     expect(ttl).toBeGreaterThan(0)
   })
 
   it("propagates Redis errors", async () => {
-    mockSetRedisKey.mockRejectedValueOnce(new Error("Redis SET failed"))
+    mockSetRedisKeyNx.mockRejectedValueOnce(new Error("Redis SET NX failed"))
 
-    await expect(acquireOutboxProcessingLock(EVENT_ID)).rejects.toThrow("Redis SET failed")
+    await expect(tryAcquireOutboxProcessingLock(EVENT_ID)).rejects.toThrow("Redis SET NX failed")
   })
 })
 

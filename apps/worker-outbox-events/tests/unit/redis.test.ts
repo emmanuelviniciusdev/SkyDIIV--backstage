@@ -4,6 +4,7 @@ import {
   getUpstashRestCredentials,
   existsRedisKey,
   setRedisKey,
+  setRedisKeyNx,
   deleteRedisKey,
 } from "../../src/lib/cache/redis"
 
@@ -180,6 +181,67 @@ describe("setRedisKey", () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 500 })
 
     await expect(setRedisKey("my-key", 60)).rejects.toThrow('Redis SET failed for key "my-key" (500)')
+  })
+})
+
+describe("setRedisKeyNx", () => {
+  const mockFetch = vi.fn()
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", mockFetch)
+    process.env.UPSTASH_REDIS_REST_URL = "https://my-db.upstash.io"
+    process.env.UPSTASH_REDIS_REST_TOKEN = "test-token"
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    delete process.env.UPSTASH_REDIS_REST_URL
+    delete process.env.UPSTASH_REDIS_REST_TOKEN
+  })
+
+  it("returns true when the key was set (result: OK)", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ result: "OK" }),
+    })
+
+    const result = await setRedisKeyNx("my-key", 300)
+
+    expect(result).toBe(true)
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://my-db.upstash.io/set/my-key/1/EX/300/NX",
+      expect.objectContaining({ headers: { Authorization: "Bearer test-token" } }),
+    )
+  })
+
+  it("returns false when the key already exists (result: null)", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ result: null }),
+    })
+
+    const result = await setRedisKeyNx("my-key", 300)
+
+    expect(result).toBe(false)
+  })
+
+  it("throws when the HTTP response is not ok", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 })
+
+    await expect(setRedisKeyNx("my-key", 300)).rejects.toThrow(
+      'Redis SET NX failed for key "my-key" (500)',
+    )
+  })
+
+  it("URL-encodes the key", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ result: "OK" }) })
+
+    await setRedisKeyNx("outbox-processing:evt uuid 1", 60)
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("outbox-processing%3Aevt%20uuid%201"),
+      expect.anything(),
+    )
   })
 })
 

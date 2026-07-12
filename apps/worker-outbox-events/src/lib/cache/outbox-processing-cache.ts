@@ -1,4 +1,4 @@
-import { existsRedisKey, setRedisKey, deleteRedisKey } from "./redis"
+import { setRedisKeyNx, deleteRedisKey } from "./redis"
 
 /**
  * TTL for the processing lock in seconds.
@@ -12,26 +12,21 @@ function buildProcessingKey(outboxEventId: string): string {
 }
 
 /**
- * Returns true if a processing lock already exists for the given outbox event.
- * Used to detect concurrent duplicate invocations and skip redundant work.
+ * Atomically checks and acquires the processing lock for the given outbox event
+ * using a Redis SET NX EX command. Returns `true` if the lock was acquired (this
+ * invocation may proceed), or `false` if the lock was already held by a concurrent
+ * invocation (this invocation should skip and return early).
+ *
+ * The TTL acts as a safety net: if the worker crashes before
+ * `releaseOutboxProcessingLock` is called, the lock expires automatically so future
+ * QStash retries can proceed.
  */
-export async function isOutboxEventBeingProcessed(outboxEventId: string): Promise<boolean> {
-  return existsRedisKey(buildProcessingKey(outboxEventId))
-}
-
-/**
- * Acquires the processing lock for the given outbox event.
- * The lock is set with a TTL so it self-expires if the worker crashes before
- * `releaseOutboxProcessingLock` is called.
- */
-export async function acquireOutboxProcessingLock(outboxEventId: string): Promise<void> {
-  await setRedisKey(buildProcessingKey(outboxEventId), PROCESSING_LOCK_TTL_SECONDS)
+export async function tryAcquireOutboxProcessingLock(outboxEventId: string): Promise<boolean> {
+  return setRedisKeyNx(buildProcessingKey(outboxEventId), PROCESSING_LOCK_TTL_SECONDS)
 }
 
 /**
  * Releases the processing lock for the given outbox event.
- * Should be called after successful processing to allow future reprocessing
- * if the same ID were to appear again (e.g. from a replay).
  */
 export async function releaseOutboxProcessingLock(outboxEventId: string): Promise<void> {
   await deleteRedisKey(buildProcessingKey(outboxEventId))
