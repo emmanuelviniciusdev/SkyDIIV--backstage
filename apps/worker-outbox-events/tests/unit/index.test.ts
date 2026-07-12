@@ -1,17 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
-/**
- * Unit tests for the Worker entry point routing.
- * Mocks the process-outbox-event handler to assert route mapping,
- * the health check, and 404 behaviour.
- */
-
-const { mockHandleProcessOutboxEvent } = vi.hoisted(() => ({
-  mockHandleProcessOutboxEvent: vi.fn(),
+const { mockWorkflowsFetch } = vi.hoisted(() => ({
+  mockWorkflowsFetch: vi.fn(),
 }))
 
-vi.mock("../../src/handlers/process-outbox-event", () => ({
-  handleProcessOutboxEvent: mockHandleProcessOutboxEvent,
+vi.mock("../../src/workflows", () => ({
+  workflowsFetch: mockWorkflowsFetch,
 }))
 
 import worker from "../../src/index"
@@ -23,43 +17,30 @@ function makeRequest(method: string, path: string): Request {
 describe("worker fetch routing", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockHandleProcessOutboxEvent.mockResolvedValue(Response.json({ processed: true }))
+    mockWorkflowsFetch.mockResolvedValue(Response.json({ processed: true }))
   })
 
-  it("responds to GET / health check without invoking the handler", async () => {
+  it("responds to GET / health check without invoking workflows", async () => {
     const res = await worker.fetch(makeRequest("GET", "/"), {})
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.status).toBe("ok")
     expect(body.timestamp).toBeDefined()
-    expect(mockHandleProcessOutboxEvent).not.toHaveBeenCalled()
+    expect(mockWorkflowsFetch).not.toHaveBeenCalled()
   })
 
-  it("routes POST /process-outbox-event to the handler", async () => {
-    await worker.fetch(makeRequest("POST", "/process-outbox-event"), {})
-    expect(mockHandleProcessOutboxEvent).toHaveBeenCalledOnce()
-  })
-
-  it("passes the request object to the handler", async () => {
+  it("delegates non-health requests to workflowsFetch", async () => {
     const req = makeRequest("POST", "/process-outbox-event")
-    await worker.fetch(req, {})
-    expect(mockHandleProcessOutboxEvent).toHaveBeenCalledWith(req)
+    await worker.fetch(req, { WORKER_OUTBOX_EVENTS_URL: "https://example.workers.dev" })
+    expect(mockWorkflowsFetch).toHaveBeenCalledWith(req, {
+      WORKER_OUTBOX_EVENTS_URL: "https://example.workers.dev",
+    })
   })
 
-  it("returns 404 for an unknown POST path", async () => {
-    const res = await worker.fetch(makeRequest("POST", "/unknown-endpoint"), {})
-    expect(res.status).toBe(404)
-    expect(mockHandleProcessOutboxEvent).not.toHaveBeenCalled()
-  })
-
-  it("returns 404 for GET on the process-outbox-event endpoint", async () => {
-    const res = await worker.fetch(makeRequest("GET", "/process-outbox-event"), {})
-    expect(res.status).toBe(404)
-    expect(mockHandleProcessOutboxEvent).not.toHaveBeenCalled()
-  })
-
-  it("returns 404 for an unrelated path", async () => {
-    const res = await worker.fetch(makeRequest("GET", "/healthz"), {})
-    expect(res.status).toBe(404)
+  it("rethrows unhandled workflow errors", async () => {
+    mockWorkflowsFetch.mockRejectedValueOnce(new Error("workflow failed"))
+    await expect(
+      worker.fetch(makeRequest("POST", "/process-outbox-event"), {}),
+    ).rejects.toThrow("workflow failed")
   })
 })

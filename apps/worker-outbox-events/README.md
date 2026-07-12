@@ -1,6 +1,6 @@
 # worker-outbox-events
 
-Cloudflare Worker that implements the processor side of SkyDIIV's Transactional Outbox Pattern. It receives outbox event IDs from QStash, reads the matching record from the database, dispatches the payload to the appropriate downstream worker, and deletes the record when done.
+Cloudflare Worker that implements the processor side of SkyDIIV's Transactional Outbox Pattern. It receives outbox event IDs from QStash, reads the matching record from the database, dispatches the payload to the appropriate downstream worker, and marks the record as `SUCCESS` or `ERROR` when done — using **Upstash Workflow** durable steps so dispatch, status updates, and lock release can be retried independently.
 
 | Endpoint | Description | Documentation |
 |---|---|---|
@@ -22,7 +22,7 @@ flowchart LR
     WEB -->|"publishJSON({ outboxEventId })"| MQ
     MQ -->|"POST { outboxEventId }"| WORKER
     WORKER <-->|"acquire / release lock"| REDIS
-    WORKER -->|"SELECT + DELETE"| DB
+    WORKER -->|"SELECT + UPDATE status"| DB
     WORKER -->|"publishJSON(payload)"| DS
 ```
 
@@ -34,9 +34,9 @@ flowchart LR
 |---|---|---|
 | Runtime | [Cloudflare Workers](https://developers.cloudflare.com/workers/) (`nodejs_compat`) | Hosts this worker |
 | Language | TypeScript 5 (strict) | Implementation |
-| Inbound trigger | [Upstash QStash](https://upstash.com/docs/qstash) | Delivers signed `{ outboxEventId }` messages to the endpoint |
+| Inbound trigger | [Upstash QStash](https://upstash.com/docs/qstash) + [Upstash Workflow](https://upstash.com/docs/workflow) | Delivers signed `{ outboxEventId }` messages; durable step retries |
 | Downstream dispatch | [Upstash QStash](https://upstash.com/docs/qstash) (`@upstash/qstash`) | Publishes event payload to `worker-sync` / `worker-ai-workflows` |
-| Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Reads and deletes rows from `outbox_events` |
+| Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Reads and updates status on rows in `outbox_events` |
 | Processing lock | [Upstash Redis](https://upstash.com/docs/redis) (REST API) | Per-event lock that prevents concurrent duplicate dispatches |
 | Validation | [Zod](https://zod.dev/) | Request body validation |
 | Dev / deploy | Wrangler 4 | Local dev and Cloudflare deployment |
@@ -52,12 +52,16 @@ flowchart LR
 ├── docs/
 │   └── PROCESS_OUTBOX_EVENT.md             # Handler reference — full execution flow and routing
 ├── src/
-│   ├── index.ts                            # Worker entry (health check + routing)
-│   ├── handlers/
-│   │   └── process-outbox-event.ts         # Signature verify → lock → fetch → dispatch → delete → unlock
+│   ├── index.ts                            # Worker entry (health check + serveMany routing)
+│   ├── workflows/
+│   │   ├── index.ts                        # Workflow registry
+│   │   └── process-outbox-event/
+│   │       ├── workflow.ts                 # Durable workflow orchestration
+│   │       └── steps/                      # acquire-lock, load-event, dispatch-event, mark-*, release-lock
 │   └── lib/
 │       ├── logger.ts                       # Structured JSON logger
-│       ├── qstash.ts                       # QStash client + receiver singletons
+│       ├── workflow-base-url.ts            # WORKER_OUTBOX_EVENTS_URL resolver
+│       ├── qstash.ts                       # QStash client singleton
 │       ├── dispatcher.ts                   # Routes flow → downstream worker via QStash
 │       ├── downstream-urls.ts              # URL resolvers for downstream workers
 │       ├── cache/
@@ -65,10 +69,13 @@ flowchart LR
 │       │   └── outbox-processing-cache.ts  # Per-event processing lock
 │       └── db/
 │           ├── client.ts                   # postgres.js singleton
-│           └── outbox-events.repository.ts # findById + deleteById
+│           └── outbox-events.repository.ts # findById + updateStatus
 ├── tests/unit/
 │   ├── index.test.ts
-│   ├── process-outbox-event.test.ts
+│   ├── workflows-registry.test.ts
+│   ├── workflow-base-url.test.ts
+│   ├── process-outbox-event-workflow.test.ts
+│   ├── process-outbox-event-steps.test.ts
 │   ├── dispatcher.test.ts
 │   ├── outbox-events-repository.test.ts
 │   ├── downstream-urls.test.ts
@@ -176,9 +183,10 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 
 | Secret | Used by |
 |---|---|
-| `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY` | Inbound signature verification |
+| `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY` | Inbound signature verification (via Upstash Workflow) |
 | `QSTASH_URL`, `QSTASH_TOKEN` | Downstream dispatch via QStash |
-| `DATABASE_URL` | Reading and deleting rows from `outbox_events` |
+| `WORKER_OUTBOX_EVENTS_URL` | This worker's origin for Upstash Workflow step callbacks |
+| `DATABASE_URL` | Reading and updating status on rows in `outbox_events` |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Processing lock (or `REDIS_URL` as alternative) |
 | `WORKER_SYNC_URL` | Dispatch target for flow `sync-language` |
 | `WORKER_AI_WORKFLOWS_URL` | Dispatch target for flow `generate-weekly-outfits` |

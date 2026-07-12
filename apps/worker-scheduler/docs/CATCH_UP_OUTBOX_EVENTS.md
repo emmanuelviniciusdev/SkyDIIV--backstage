@@ -14,7 +14,7 @@ The **catch-up-outbox-events** flow scans the `outbox_events` table for `PENDING
 **Downstream:** `POST /process-outbox-event` on `worker-outbox-events`  
 **Payload per message:** `{ "outboxEventId": "<uuid>" }`
 
-It is a safety net for orphaned outbox rows — for example when the web app's initial QStash publish failed, or when **process-outbox-event** returned `200` after a successful dispatch but the row was not deleted.
+It is a safety net for orphaned outbox rows — for example when the web app's initial QStash publish failed, or when **process-outbox-event** returned `200` after a successful dispatch but the row was not marked `SUCCESS`.
 
 ---
 
@@ -68,7 +68,7 @@ WHERE status = 'PENDING'
 ORDER BY created_at ASC
 ```
 
-Only `PENDING` rows are eligible. Rows already being processed or successfully deleted are not returned.
+Only `PENDING` rows are eligible. Rows already being processed or marked `SUCCESS` / `ERROR` are not returned.
 
 ### Step 3 — Batch-publish and report result
 
@@ -79,7 +79,7 @@ POST {WORKER_OUTBOX_EVENTS_URL}/process-outbox-event
 { "outboxEventId": "<uuid>" }
 ```
 
-Messages are batched in groups of **100** (QStash limit). The downstream **process-outbox-event** handler applies its own Redis lock, routing, and delete logic — this flow does not dispatch payloads directly.
+Messages are batched in groups of **100** (QStash limit). The downstream **process-outbox-event** handler applies its own Redis lock, routing, and status update logic — this flow does not dispatch payloads directly.
 
 When no stale events are found, dispatch is skipped and `dispatched` is `0`.
 

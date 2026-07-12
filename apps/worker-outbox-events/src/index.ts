@@ -1,4 +1,4 @@
-import { handleProcessOutboxEvent } from "./handlers/process-outbox-event"
+import { workflowsFetch } from "./workflows"
 import { createLogger } from "./lib/logger"
 
 type Env = Record<string, string | undefined>
@@ -7,10 +7,11 @@ type Env = Record<string, string | undefined>
  * Cloudflare Worker entry point — outbox event processor.
  *
  * Copies all Worker bindings into process.env so downstream modules that
- * read process.env work without modification.
+ * read process.env work without modification, then delegates workflow
+ * requests to the @upstash/workflow serveMany router.
  *
  * GET  /                        → health-check (useful for uptime monitors).
- * POST /process-outbox-event   → signed QStash endpoint; processes one outbox event.
+ * POST /process-outbox-event   → signed QStash Upstash Workflow endpoint.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -28,11 +29,13 @@ export default {
       return Response.json(body)
     }
 
-    if (method === "POST" && pathname === "/process-outbox-event") {
-      return handleProcessOutboxEvent(request)
+    try {
+      const response = await workflowsFetch(request, env)
+      log.info("Request handled", { path: pathname, status: response.status })
+      return response
+    } catch (err) {
+      log.error("Unhandled error", { path: pathname, error: String(err) })
+      throw err
     }
-
-    log.warn("Route not found", { method, path: pathname })
-    return new Response("Not Found", { status: 404 })
   },
 }

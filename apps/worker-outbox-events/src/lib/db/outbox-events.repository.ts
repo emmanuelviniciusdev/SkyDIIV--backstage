@@ -1,11 +1,17 @@
 import type postgres from "postgres"
 
+export const UPDATED_BY = "worker-outbox-events"
+
+export type OutboxEventStatus = "PENDING" | "SUCCESS" | "ERROR"
+
+export type TerminalOutboxEventStatus = Extract<OutboxEventStatus, "SUCCESS" | "ERROR">
+
 export interface OutboxEventRow {
   id: string
   flow: string
   event: string
   payload: Record<string, unknown>
-  status: string
+  status: OutboxEventStatus
   created_at: Date
   created_by: string | null
   updated_at: Date
@@ -14,7 +20,7 @@ export interface OutboxEventRow {
 
 export interface OutboxEventsRepository {
   findById(id: string): Promise<OutboxEventRow | null>
-  deleteById(id: string): Promise<void>
+  updateStatus(id: string, status: TerminalOutboxEventStatus): Promise<void>
 }
 
 export class SqlOutboxEventsRepository implements OutboxEventsRepository {
@@ -30,9 +36,10 @@ export class SqlOutboxEventsRepository implements OutboxEventsRepository {
     return rows[0] ?? null
   }
 
-  async deleteById(id: string): Promise<void> {
+  async updateStatus(id: string, status: TerminalOutboxEventStatus): Promise<void> {
     await this.db`
-      DELETE FROM outbox_events
+      UPDATE outbox_events
+      SET status = ${status}, updated_at = NOW(), updated_by = ${UPDATED_BY}
       WHERE id = ${id}
     `
   }

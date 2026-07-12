@@ -6,9 +6,9 @@ This document describes the **process-outbox-event** handler end to end: how it 
 
 ## Overview
 
-The **process-outbox-event** handler receives an outbox event ID via a signed QStash message, reads the matching row from the `outbox_events` table, dispatches the stored payload to the appropriate downstream worker, and deletes the row when done.
+The **process-outbox-event** workflow receives an outbox event ID via a signed QStash message, reads the matching row from the `outbox_events` table, dispatches the stored payload to the appropriate downstream worker, and marks the row as `SUCCESS` or `ERROR` when done.
 
-**Hosted in:** `worker-outbox-events`  
+**Hosted in:** `worker-outbox-events` (Upstash Workflow)  
 **Endpoint:** `POST /process-outbox-event`  
 **Payload:** `{ "outboxEventId": "<uuid>" }`
 
@@ -27,19 +27,20 @@ graph TD
     WORKER["worker-outbox-events\nPOST /process-outbox-event"]
     REDIS[("Redis\noutbox-processing:{id}")]
 
-    WORKER --> S1["1. Validate request\n(verify signature + parse payload)"]
-    S1 -->|"invalid"| S1R["401 / 400"]
-    S1 -->|"valid"| S2["2. Try acquire lock\n(SET NX EX 300)"]
-    S2 -->|"lock held"| SKIP["200 already-processing\n(skip)"]
-    S2 -->|"acquired"| S3["3. Fetch and dispatch\n(SELECT → publishJSON)"]
-    S3 -->|"not found"| S3A["release lock\n200 not-found"]
-    S3 -->|"dispatch error"| S3B["release lock\n500 retry"]
-    S3 -->|"ok"| S4["4. Finalize\n(DELETE + release lock)\n200 processed"]
+    WORKER --> S1["1. acquire-lock\n(SET NX EX 300)"]
+    S1 -->|"lock held"| SKIP["already-processing\n(skip)"]
+    S1 -->|"acquired"| S2["2. load-event\n(SELECT)"]
+    S2 -->|"not found / terminal"| S2A["release-lock\nnot-found / already-processed"]
+    S2 -->|"PENDING"| S3["3. dispatch-event\n(publishJSON)"]
+    S3 -->|"dispatch error"| S3B["mark-error → release-lock\n500"]
+    S3 -->|"ok"| S4["4. mark-success\n(UPDATE status)"]
+    S4 --> S5["5. release-lock\n(DEL)"]
+    S5 --> DONE["200 processed"]
 
     WEB --> TX --> DB
     WEB --> MQ --> WORKER
     WORKER <--> REDIS
-    WORKER -->|"SELECT + DELETE"| DB
+    WORKER -->|"SELECT + UPDATE status"| DB
     WORKER -->|"publishJSON(payload)"| DS["Downstream worker"]
 ```
 
@@ -68,34 +69,29 @@ See [CATCH_UP_OUTBOX_EVENTS.md](../../worker-scheduler/docs/CATCH_UP_OUTBOX_EVEN
 
 ---
 
-## Handler Execution Flow
+## Workflow Execution Flow
 
-**Source:** `src/handlers/process-outbox-event.ts`
+**Source:** `src/workflows/process-outbox-event/workflow.ts`  
+**Registration:** `src/workflows/index.ts` under key `"process-outbox-event"`
 
-### Step 1 — Validate request
+Each step is wrapped in `context.run("<step-name>", …)`, making it a **durable workflow step**. If a step fails, only that step is retried on the next invocation — completed steps are not re-executed. This is critical now that rows are marked `SUCCESS` / `ERROR` instead of deleted: a retry after a successful dispatch must not re-dispatch to the downstream worker.
 
-Reads the `upstash-signature` header and verifies it with the QStash receiver singleton (`getQStashReceiver()`), then parses and validates the request body.
+Inbound QStash signature verification is handled by `@upstash/workflow` (`serveMany`).
 
-- Missing `upstash-signature` header → `401 Unauthorized`
-- Invalid signature or verification error → `401 Unauthorized`
-- Invalid JSON or missing / empty `outboxEventId` → `400 Bad Request`
+### Step: acquire-lock
 
-No further logic executes on rejected requests — no side effects of any kind before this step completes successfully.
-
----
-
-### Step 2 — Try to acquire processing lock
+**Source:** `steps/acquire-lock.ts`
 
 Atomically sets `outbox-processing:{outboxEventId}` in Redis with a **5-minute TTL** only if the key does not already exist (`SET NX EX`).
 
-- Key **already existed** → another invocation is already processing this event → `200 { processed: false, reason: "already-processing", outboxEventId }`
-- Key **set successfully** → lock acquired, processing continues
-
-This prevents two concurrent QStash deliveries for the same event from both dispatching to the downstream worker. The TTL acts as a safety net: if the worker crashes before Step 4, the lock expires automatically so future retries can proceed.
+- Key **already existed** → `200 { processed: false, reason: "already-processing", outboxEventId }`
+- Key **set successfully** → lock acquired, workflow continues
 
 ---
 
-### Step 3 — Fetch and dispatch
+### Step: load-event
+
+**Source:** `steps/load-event.ts`
 
 Queries `outbox_events` for the row with the given ID:
 
@@ -106,32 +102,57 @@ WHERE id = $1
 LIMIT 1
 ```
 
-- Row **not found** → releases lock → `200 { processed: false, reason: "not-found", outboxEventId }`
-
-A `not-found` result means the event was already processed and deleted by a previous invocation. Returning `200` prevents QStash from scheduling another retry.
-
-If the row is found, calls `dispatch(event)` in `src/lib/dispatcher.ts`, which switches on `event.flow` and publishes `event.payload` verbatim to the registered downstream worker via QStash.
-
-The `payload` stored in `outbox_events` is forwarded as-is — it carries exactly the fields the downstream worker expects.
-
-- Unknown flow → throws → releases lock → `500 Internal Server Error`
-- QStash publish error → releases lock → `500 Internal Server Error`
-
-Returning `500` on dispatch failure causes QStash to retry the delivery. The lock is always released on failure so retries can acquire it and reprocess.
+- Row **not found** → `release-lock` → `200 { processed: false, reason: "not-found", outboxEventId }`
+- Row found with status **not** `PENDING` → `release-lock` → `200 { processed: false, reason: "already-processed", outboxEventId, status }`
+- Row is `PENDING` → workflow continues to `dispatch-event`
 
 ---
 
-### Step 4 — Finalize: delete outbox event and release lock
+### Step: dispatch-event
+
+**Source:** `steps/dispatch-event.ts`
+
+Calls `dispatch(event)` in `src/lib/dispatcher.ts`, which switches on `event.flow` and publishes `event.payload` verbatim to the registered downstream worker via QStash.
+
+The `payload` stored in `outbox_events` is forwarded as-is — it carries exactly the fields the downstream worker expects.
+
+This step returns `{ ok: true }` or `{ ok: false, error }` without throwing, so its outcome is cached as a durable step result. A workflow retry after a failed downstream publish does **not** re-run a step that already returned `{ ok: true }`.
+
+- Unknown flow or QStash publish error → `mark-error` → `release-lock` → `500 Internal Server Error`
+
+---
+
+### Step: mark-success / mark-error
+
+**Sources:** `steps/mark-success.ts`, `steps/mark-error.ts`
+
+On successful dispatch:
 
 ```sql
-DELETE FROM outbox_events WHERE id = $1
+UPDATE outbox_events
+SET status = 'SUCCESS', updated_at = NOW(), updated_by = 'worker-outbox-events'
+WHERE id = $1
 ```
 
-If the DELETE fails, the error is logged but the handler **does not return `5xx`** — returning `500` would cause QStash to retry the entire handler, re-dispatching to the downstream worker and producing a duplicate.
+On dispatch failure:
 
-After the delete attempt (successful or not), `outbox-processing:{outboxEventId}` is deleted from Redis and the handler returns `200 { processed: true, outboxEventId, flow, event }`.
+```sql
+UPDATE outbox_events
+SET status = 'ERROR', updated_at = NOW(), updated_by = 'worker-outbox-events'
+WHERE id = $1
+```
 
-The tradeoff: if the DELETE fails, the row remains in `outbox_events` as an orphan. If QStash happens to retry anyway (e.g. a delivery timeout where it never received the `200`), it would find the row still present and re-dispatch — the lock provides no protection because it was released. This is an accepted risk; the `200` response minimises the probability of a QStash-initiated retry while accepting that delivery-timeout edge cases may cause a duplicate downstream invocation.
+Both updates set `updated_by = 'worker-outbox-events'`. If `mark-success` throws (e.g. DB unavailable), the workflow retries **only** that step — `dispatch-event` is not re-executed.
+
+---
+
+### Step: release-lock
+
+**Source:** `steps/release-lock.ts`
+
+Deletes `outbox-processing:{outboxEventId}` from Redis.
+
+This step always runs after `mark-success` or `mark-error`, in a separate durable step. The lock stays held while `mark-success` is retrying, preventing concurrent duplicate dispatches.
 
 ---
 
@@ -166,7 +187,8 @@ To add a new flow, see [Adding a New Flow](../README.md#adding-a-new-flow) in th
 | Missing or invalid QStash signature | `401` | `Unauthorized` |
 | Invalid or missing `outboxEventId` | `400` | `Bad Request` |
 | Event already being processed (Redis lock present) | `200` | `{ processed: false, reason: "already-processing", outboxEventId }` |
-| Event not found in database (already deleted) | `200` | `{ processed: false, reason: "not-found", outboxEventId }` |
+| Event not found in database | `200` | `{ processed: false, reason: "not-found", outboxEventId }` |
+| Event already processed (`SUCCESS` or `ERROR`) | `200` | `{ processed: false, reason: "already-processed", outboxEventId, status }` |
 | Dispatch failed (unknown flow or QStash error) | `500` | `Internal Server Error` |
 | Successfully processed | `200` | `{ processed: true, outboxEventId, flow, event }` |
 
@@ -182,19 +204,22 @@ The Redis key `outbox-processing:{outboxEventId}` is used as a short-lived mutex
 |---|---|
 | Processing starts | Atomically acquired via SET NX EX (TTL: 5 min) — skips if key already exists |
 | Event not found in DB | Released |
+| Event already processed (`SUCCESS` / `ERROR`) | Released |
 | Dispatch fails | Released (so QStash retries can proceed) |
 | Processing completes successfully | Released |
 | Worker crashes before release | Expires automatically after TTL |
 
 ### Duplicate delivery handling
 
-QStash may deliver the same message more than once under certain retry conditions. The lock prevents two concurrent invocations from both dispatching the same event. Once the first invocation succeeds and deletes the row, any subsequent invocation will find either the lock held (if still in progress) or the row gone (`not-found` → `200`).
+QStash may deliver the same message more than once under certain retry conditions. The lock prevents two concurrent invocations from both dispatching the same event. Once the first invocation succeeds and marks the row `SUCCESS`, any subsequent invocation will find either the lock held (if still in progress) or a terminal status (`already-processed` → `200`).
 
-### Delete failure after successful dispatch
+### Status update failure after successful dispatch
 
-If the DELETE query fails after a successful dispatch, the lock is still released and the handler returns `200`. The row remains in `outbox_events`.
+If `mark-success` fails, the workflow retries **only** that step. `dispatch-event` already completed and is not re-run. The Redis lock remains held until `release-lock` succeeds, preventing concurrent duplicate dispatches while the status update is retrying.
 
-Returning `200` prevents QStash from scheduling an automatic retry (which would re-dispatch). However, if QStash did not receive the `200` (e.g. a delivery timeout), it may retry regardless — and since the row is still present and the lock is gone, that retry would re-dispatch to the downstream worker. This is an accepted edge case: the `200` minimises the probability of a duplicate while avoiding making it a certainty with a `500`.
+### Dispatch failure and ERROR status
+
+When dispatch fails, the handler marks the row `ERROR` before returning `500`. On subsequent QStash retries, the handler finds the `ERROR` status and returns `already-processed` (`200`) without re-dispatching. The `catch-up-outbox-events` flow only re-enqueues `PENDING` rows, so `ERROR` events require manual investigation.
 
 ---
 
@@ -209,17 +234,20 @@ Returning `200` prevents QStash from scheduling an automatic retry (which would 
 | Invalid payload | ✅ Fatal | `400` — no lock acquired |
 | Redis SET NX failure | ✅ Fatal | Error propagates (unhandled; QStash retries) |
 | Outbox event not found | ❌ Non-fatal | `200 not-found` — lock released |
-| Unknown flow | ✅ Fatal | `500` — lock released |
-| QStash publish failure | ✅ Fatal | `500` — lock released |
-| Database DELETE failure | ❌ Non-fatal | Error logged; `200` returned; lock released |
+| Outbox event already processed | ❌ Non-fatal | `200 already-processed` — lock released |
+| Unknown flow | ✅ Fatal | `ERROR` status set; `500` — lock released |
+| QStash publish failure | ✅ Fatal | `ERROR` status set; `500` — lock released |
+| Database UPDATE failure (SUCCESS) | ✅ Fatal for step | Workflow retries `mark-success` only |
+| Database UPDATE failure (ERROR) | ✅ Fatal for step | Workflow retries `mark-error` only |
 
 ### Idempotency summary
 
 | Scenario | Outcome |
 |---|---|
 | Same event delivered twice concurrently | Second invocation skipped (`already-processing`) |
-| Same event delivered after successful processing | Row gone → `not-found` → `200`, no duplicate dispatch |
-| Dispatch succeeded but DELETE failed | `200` returned; lock released; row remains in DB — a QStash delivery-timeout retry may re-dispatch |
+| Same event delivered after successful processing | Row is `SUCCESS` → `already-processed` → `200`, no duplicate dispatch |
+| Same event delivered after dispatch failure | Row is `ERROR` → `already-processed` → `200`, no duplicate dispatch |
+| Dispatch succeeded but mark-success keeps failing | Workflow retries `mark-success` only; lock held until `release-lock` |
 | Worker crashes mid-process | Lock expires after 5 min; QStash retry proceeds normally |
 
 ### Logging
@@ -240,7 +268,8 @@ Set via `wrangler secret put <KEY>` (production) or `.dev.vars` (local):
 | `QSTASH_NEXT_SIGNING_KEY` | ✅ | Key rotation |
 | `QSTASH_URL` | — | QStash client (optional base URL override) |
 | `QSTASH_TOKEN` | ✅ | Downstream dispatch |
-| `DATABASE_URL` | ✅ | `outbox_events` SELECT + DELETE |
+| `DATABASE_URL` | ✅ | `outbox_events` SELECT + UPDATE |
+| `WORKER_OUTBOX_EVENTS_URL` | ✅ | Upstash Workflow step callbacks (`serveMany` baseUrl) |
 | `UPSTASH_REDIS_REST_URL` | ✅ | Processing lock (or use `REDIS_URL`) |
 | `UPSTASH_REDIS_REST_TOKEN` | ✅ | Processing lock (or use `REDIS_URL`) |
 
@@ -269,12 +298,23 @@ One downstream worker URL secret is required per registered flow in `src/lib/dis
 ```
 apps/worker-outbox-events/
 ├── src/
-│   ├── index.ts                                 # Worker entry; env injection + routing
-│   ├── handlers/
-│   │   └── process-outbox-event.ts              # Full handler — 4 steps
+│   ├── index.ts                                 # Worker entry; env injection + serveMany routing
+│   ├── workflows/
+│   │   ├── index.ts                             # serveMany registry
+│   │   └── process-outbox-event/
+│   │       ├── workflow.ts                      # Durable workflow orchestration
+│   │       ├── types.ts                         # Payload + step result types
+│   │       └── steps/
+│   │           ├── acquire-lock.ts
+│   │           ├── load-event.ts
+│   │           ├── dispatch-event.ts
+│   │           ├── mark-success.ts
+│   │           ├── mark-error.ts
+│   │           └── release-lock.ts
 │   └── lib/
 │       ├── logger.ts                            # Structured JSON logger
-│       ├── qstash.ts                            # QStash client + receiver singletons
+│       ├── workflow-base-url.ts                 # WORKER_OUTBOX_EVENTS_URL resolver
+│       ├── qstash.ts                            # QStash client singleton
 │       ├── dispatcher.ts                        # Flow → downstream routing
 │       ├── downstream-urls.ts                   # URL resolvers for downstream workers
 │       ├── cache/
@@ -282,7 +322,7 @@ apps/worker-outbox-events/
 │       │   └── outbox-processing-cache.ts       # acquire / check / release lock
 │       └── db/
 │           ├── client.ts                        # postgres.js singleton
-│           └── outbox-events.repository.ts      # findById + deleteById
+│           └── outbox-events.repository.ts      # findById + updateStatus
 ```
 
 ---
@@ -293,10 +333,13 @@ Unit tests cover all critical paths:
 
 | Test file | Coverage |
 |---|---|
-| `tests/unit/index.test.ts` | Worker routing (health check, endpoint dispatch, 404) |
-| `tests/unit/process-outbox-event.test.ts` | Full handler orchestration (auth, lock, fetch, dispatch, delete) |
+| `tests/unit/index.test.ts` | Worker routing (health check, workflow delegation) |
+| `tests/unit/workflows-registry.test.ts` | serveMany registry and baseUrl |
+| `tests/unit/workflow-base-url.test.ts` | `WORKER_OUTBOX_EVENTS_URL` resolver |
+| `tests/unit/process-outbox-event-workflow.test.ts` | Workflow orchestration and step ordering |
+| `tests/unit/process-outbox-event-steps.test.ts` | Individual step implementations |
 | `tests/unit/dispatcher.test.ts` | Flow routing, payload forwarding, unknown flow error |
-| `tests/unit/outbox-events-repository.test.ts` | `findById` (found / not-found) and `deleteById` |
+| `tests/unit/outbox-events-repository.test.ts` | `findById` (found / not-found) and `updateStatus` |
 | `tests/unit/downstream-urls.test.ts` | URL composition and missing env var errors |
 | `tests/unit/outbox-processing-cache.test.ts` | Lock check, acquire, release |
 | `tests/unit/redis.test.ts` | Upstash REST primitives (exists, set with/without TTL, del) |
@@ -328,14 +371,18 @@ sequenceDiagram
     WEB->>MQ: publishJSON({ outboxEventId })
 
     MQ->>WORKER: POST /process-outbox-event { outboxEventId }
-    WORKER->>WORKER: verify upstash-signature
+    Note over WORKER: durable step: acquire-lock
     WORKER->>REDIS: SET outbox-processing:{id} 1 EX 300 NX
     REDIS-->>WORKER: OK (lock acquired)
+    Note over WORKER: durable step: load-event
     WORKER->>DB: SELECT * FROM outbox_events WHERE id = ?
-    DB-->>WORKER: event row (flow, event, payload)
+    DB-->>WORKER: event row (flow, event, payload, status=PENDING)
+    Note over WORKER: durable step: dispatch-event
     WORKER->>MQ: publishJSON({ url: downstream, body: payload })
     MQ-->>WORKER: ok
-    WORKER->>DB: DELETE FROM outbox_events WHERE id = ?
+    Note over WORKER: durable step: mark-success
+    WORKER->>DB: UPDATE outbox_events SET status = 'SUCCESS', updated_by = 'worker-outbox-events' WHERE id = ?
+    Note over WORKER: durable step: release-lock
     WORKER->>REDIS: DEL outbox-processing:{id}
     WORKER-->>MQ: 200 { processed: true }
 ```
