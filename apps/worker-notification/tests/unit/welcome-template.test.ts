@@ -37,7 +37,7 @@ describe("renderWelcomeEmail", () => {
       appUrl: "https://skydiiv.space",
     })
     expect(html).toContain("oi, Ana.")
-    expect(html).toContain("bem-vinda ao skydiiv — que bom que você chegou.")
+    expect(html).toContain("bem-vindo(a) ao skydiiv — que bom que você chegou.")
     expect(html).toContain("começar seu guarda-roupa")
   })
 

@@ -19,14 +19,14 @@ describe("welcome email copy", () => {
   it("renders pt-BR copy", () => {
     const copy = getWelcomeEmailCopy("pt-BR", "Ana")
     expect(copy.greeting).toBe("oi, Ana.")
-    expect(copy.welcome).toBe("bem-vinda ao skydiiv — que bom que você chegou.")
+    expect(copy.welcome).toBe("bem-vindo(a) ao skydiiv — que bom que você chegou.")
     expect(copy.cta).toBe("começar seu guarda-roupa")
   })
 
   it("renders es-PE copy", () => {
     const copy = getWelcomeEmailCopy("es-PE", "María")
     expect(copy.greeting).toBe("hola, María.")
-    expect(copy.welcome).toBe("bienvenida a skydiiv — qué bueno que llegaste.")
+    expect(copy.welcome).toBe("bienvenido(a) a skydiiv — qué bueno que llegaste.")
     expect(copy.cta).toBe("empezar tu guardarropa")
   })
 

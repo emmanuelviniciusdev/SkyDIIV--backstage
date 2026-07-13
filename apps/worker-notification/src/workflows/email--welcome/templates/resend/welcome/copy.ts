@@ -33,7 +33,7 @@ export function getWelcomeEmailCopy(locale: Locale, firstName?: string): Welcome
     case "es-PE":
       return {
         greeting: greeting("hola", firstName),
-        welcome: "bienvenida a skydiiv — qué bueno que llegaste.",
+        welcome: "bienvenido(a) a skydiiv — qué bueno que llegaste.",
         bodyLine1: "empieza agregando tus prendas. mientras más crece tu guardarropa,",
         bodyLine2: "mejor la app entiende tu estilo.",
         bodyLine3: "sin prisa — constrúyelo a tu ritmo.",
@@ -44,7 +44,7 @@ export function getWelcomeEmailCopy(locale: Locale, firstName?: string): Welcome
     default:
       return {
         greeting: greeting("oi", firstName),
-        welcome: "bem-vinda ao skydiiv — que bom que você chegou.",
+        welcome: "bem-vindo(a) ao skydiiv — que bom que você chegou.",
         bodyLine1: "comece adicionando suas peças. quanto mais seu guarda-roupa cresce,",
         bodyLine2: "melhor o app entende o seu estilo.",
         bodyLine3: "sem pressa — construa no seu ritmo.",
