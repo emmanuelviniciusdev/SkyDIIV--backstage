@@ -23,12 +23,11 @@ compatibility_flags = ["nodejs_compat"]
 #
 # ── Email (Resend) ──────────────────────────────────────────────────────────────
 #   wrangler secret put RESEND_API_KEY
-
-[vars]
-EMAIL_PROVIDER = "resend"
-EMAIL_FROM = "SkyDIIV <no-reply@skydiiv.space>"
-APP_URL = "https://skydiiv.space"
-# EMAIL_REPLY_TO = "contato@skydiiv.space"
+#
+# ── Vars (non-secrets) ────────────────────────────────────────────────────────
+# Injected at deploy from GitHub Environment *variables* (not secrets):
+#   EMAIL_PROVIDER, EMAIL_FROM, APP_URL
+# See README → Deployment → First-time setup.
 
 [observability.logs]
 enabled = true
@@ -37,8 +36,3 @@ invocation_logs = true
 # ── Staging / preview environment ─────────────────────────────────────────────
 [env.staging]
 name = "worker-notification-staging"
-
-[env.staging.vars]
-EMAIL_PROVIDER = "resend"
-EMAIL_FROM = "SkyDIIV <no-reply@skydiiv.space>"
-APP_URL = "https://skydiiv.space"

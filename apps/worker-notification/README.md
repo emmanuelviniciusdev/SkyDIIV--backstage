@@ -196,7 +196,7 @@ npm run lint:fix
 
 ### Vars & Secrets
 
-Non-secret config lives in `[vars]`; secrets are set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `.env.example` for the full list.
+Non-secret config is injected at deploy from **GitHub Environment variables**. Secrets are synced from GitHub Environment secrets via the deploy workflow. Locally, use `.dev.vars` (see `.env.example`).
 
 | Key | Kind | Used by |
 |---|---|---|
@@ -219,6 +219,43 @@ CI runs lint + test on PRs; deploys on push to `staging` or `main` when files un
 npm run deploy                  # production
 npm run deploy -- --env staging # staging
 ```
+
+### First-time setup
+
+Before the first CI deploy, configure the GitHub Environments (`production` and/or `staging`):
+
+**Variables** (Settings → Environments → *environment* → Environment variables):
+
+| Variable | Example |
+|---|---|
+| `EMAIL_PROVIDER` | `resend` |
+| `EMAIL_FROM` | `no-reply@skydiiv.space` |
+| `APP_URL` | `https://skydiiv.space` |
+
+> Use **Variables**, not Secrets, for `EMAIL_FROM`. If the same key exists as both a GitHub secret and a var injected into `wrangler.toml`, the deploy will fail.
+
+**Secrets** — same set as the other workers (`DATABASE_URL`, `QSTASH_*`, `RESEND_API_KEY`, `WORKER_NOTIFICATION_URL`, etc.). Copy from an existing worker environment if already provisioned.
+
+### Manual deploy (first Worker creation)
+
+The pipeline runs `wrangler secret bulk` before deploy. On the **very first** deploy the Worker may not exist yet. If CI fails at *Sync Worker secrets*, bootstrap once from your machine:
+
+```bash
+cd apps/worker-notification
+npm ci
+
+# 1. Deploy with vars from .dev.vars (or add [vars] temporarily)
+npm run deploy
+
+# 2. Push secrets
+wrangler secret put RESEND_API_KEY
+wrangler secret put DATABASE_URL
+# ... remaining secrets
+
+# 3. Re-run the GitHub Actions workflow (push to main, or workflow_dispatch on main)
+```
+
+After the Worker exists, CI deploys follow the same pattern as `worker-sync` and `worker-outbox-events`.
 
 After the first deploy, set `WORKER_NOTIFICATION_URL` to the deployed worker origin (used both as this worker's callback base and as the dispatch target in `worker-outbox-events`):
 
