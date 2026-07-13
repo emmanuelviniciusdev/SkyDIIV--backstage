@@ -15,6 +15,10 @@ describe("renderWelcomeEmail", () => {
       firstName: "Jane",
       appUrl: "https://skydiiv.space/",
     })
+    expect(html).toContain("fonts.googleapis.com/css2?family=Inter")
+    expect(html).toContain("#AC7C76")
+    expect(html).toContain("letter-spacing:0.3em")
+    expect(html).not.toContain("cid:")
     expect(html).toContain("hey, Jane.")
     expect(html).toContain("welcome to skydiiv — glad you made it here.")
     expect(html).toContain("start by adding your pieces. the more your wardrobe grows,")
