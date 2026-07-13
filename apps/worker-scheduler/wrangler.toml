@@ -21,6 +21,9 @@ invocation_logs = true
 #   wrangler secret put QSTASH_NEXT_SIGNING_KEY
 #   wrangler secret put WORKER_AI_WORKFLOWS_URL
 #   wrangler secret put WORKER_OUTBOX_EVENTS_URL
+#   wrangler secret put NEON_API_KEY
+#   wrangler secret put NEON_PROJECT_ID
+#   wrangler secret put NEON_BRANCH_ID
 #
 # Optional var (can also be set as a Worker var):
 #   OUTBOX_CATCHUP_MIN_AGE_MINUTES=10

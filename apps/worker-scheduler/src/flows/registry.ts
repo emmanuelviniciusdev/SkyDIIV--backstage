@@ -9,8 +9,8 @@ import { generateWardrobePanoramaFlow } from "./generate-wardrobe-panorama.flow"
  * parallel. Days without an entry have no flows yet; their endpoint still
  * verifies the QStash signature and responds 200.
  *
- * Flows with a dedicated endpoint (e.g. catch-up-outbox-events) are wired in
- * `src/index.ts` and do not appear here.
+ * Flows with a dedicated endpoint (e.g. catch-up-outbox-events, everyday) are
+ * wired in `src/index.ts` and registered in their own registry — not here.
  *
  * To schedule a new job: implement a `ScheduleFlow` and append it to the
  * desired day's array (create the array if the day has none yet).

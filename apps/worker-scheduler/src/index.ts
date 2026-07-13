@@ -1,4 +1,5 @@
 import { handleCatchUpOutboxEventsSchedule } from "./handlers/catch-up-outbox-events.schedule"
+import { handleEverydaySchedule } from "./handlers/everyday.schedule"
 import { resetDbClient } from "./lib/db/client"
 import { handleSchedule } from "./scheduler"
 import { createLogger } from "./lib/logger"
@@ -7,6 +8,7 @@ import type { Weekday } from "./flows/types"
 type Env = Record<string, string | undefined>
 
 const CATCH_UP_OUTBOX_EVENTS_PATH = "/schedule/catch-up-outbox-events"
+const EVERYDAY_PATH = "/schedule/everyday"
 
 /**
  * Maps each weekday endpoint to its `Weekday`. Adding a new scheduled job does
@@ -31,6 +33,7 @@ const DAY_ROUTES: Readonly<Record<string, Weekday>> = {
  * GET  /                                  → health-check (useful for uptime monitors).
  * POST /schedule/every-<day>              → signed trigger endpoint; runs the day's flows.
  * POST /schedule/catch-up-outbox-events   → signed trigger; re-enqueues stale outbox events.
+ * POST /schedule/everyday                 → signed trigger; runs registered everyday flows.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -54,6 +57,10 @@ export default {
     if (method === "POST") {
       if (pathname === CATCH_UP_OUTBOX_EVENTS_PATH) {
         return handleCatchUpOutboxEventsSchedule(request)
+      }
+
+      if (pathname === EVERYDAY_PATH) {
+        return handleEverydaySchedule(request)
       }
 
       const day = DAY_ROUTES[pathname]

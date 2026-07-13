@@ -5,9 +5,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
  * Mocks the schedule handlers to assert route mapping, plus health check and 404.
  */
 
-const { mockHandleSchedule, mockHandleCatchUp } = vi.hoisted(() => ({
+const { mockHandleSchedule, mockHandleCatchUp, mockHandleEveryday } = vi.hoisted(() => ({
   mockHandleSchedule: vi.fn(),
   mockHandleCatchUp: vi.fn(),
+  mockHandleEveryday: vi.fn(),
 }))
 
 vi.mock("../../src/scheduler", () => ({
@@ -16,6 +17,10 @@ vi.mock("../../src/scheduler", () => ({
 
 vi.mock("../../src/handlers/catch-up-outbox-events.schedule", () => ({
   handleCatchUpOutboxEventsSchedule: mockHandleCatchUp,
+}))
+
+vi.mock("../../src/handlers/everyday.schedule", () => ({
+  handleEverydaySchedule: mockHandleEveryday,
 }))
 
 const { mockResetDbClient } = vi.hoisted(() => ({
@@ -37,6 +42,7 @@ describe("worker fetch routing", () => {
     vi.clearAllMocks()
     mockHandleSchedule.mockResolvedValue(Response.json({ ok: true }))
     mockHandleCatchUp.mockResolvedValue(Response.json({ ok: true }))
+    mockHandleEveryday.mockResolvedValue(Response.json({ ok: true }))
   })
 
   it("responds to GET / health check without invoking a flow", async () => {
@@ -47,6 +53,7 @@ describe("worker fetch routing", () => {
     expect(mockResetDbClient).toHaveBeenCalledOnce()
     expect(mockHandleSchedule).not.toHaveBeenCalled()
     expect(mockHandleCatchUp).not.toHaveBeenCalled()
+    expect(mockHandleEveryday).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -62,12 +69,21 @@ describe("worker fetch routing", () => {
     expect(mockHandleSchedule).toHaveBeenCalledOnce()
     expect(mockHandleSchedule.mock.calls[0]![1]).toBe(day)
     expect(mockHandleCatchUp).not.toHaveBeenCalled()
+    expect(mockHandleEveryday).not.toHaveBeenCalled()
   })
 
   it("routes POST /schedule/catch-up-outbox-events to the dedicated handler", async () => {
     await worker.fetch(makeRequest("POST", "/schedule/catch-up-outbox-events"), {})
     expect(mockHandleCatchUp).toHaveBeenCalledOnce()
     expect(mockHandleSchedule).not.toHaveBeenCalled()
+    expect(mockHandleEveryday).not.toHaveBeenCalled()
+  })
+
+  it("routes POST /schedule/everyday to the dedicated handler", async () => {
+    await worker.fetch(makeRequest("POST", "/schedule/everyday"), {})
+    expect(mockHandleEveryday).toHaveBeenCalledOnce()
+    expect(mockHandleSchedule).not.toHaveBeenCalled()
+    expect(mockHandleCatchUp).not.toHaveBeenCalled()
   })
 
   it("returns 404 for an unknown path", async () => {
@@ -86,5 +102,12 @@ describe("worker fetch routing", () => {
     const res = await worker.fetch(makeRequest("GET", "/schedule/catch-up-outbox-events"), {})
     expect(res.status).toBe(404)
     expect(mockHandleCatchUp).not.toHaveBeenCalled()
+    expect(mockHandleEveryday).not.toHaveBeenCalled()
+  })
+
+  it("returns 404 for GET on the everyday schedule endpoint", async () => {
+    const res = await worker.fetch(makeRequest("GET", "/schedule/everyday"), {})
+    expect(res.status).toBe(404)
+    expect(mockHandleEveryday).not.toHaveBeenCalled()
   })
 })

@@ -25,6 +25,7 @@ Stale outbox events are re-enqueued via [`worker-outbox-events`](../worker-outbo
 | `POST /schedule/every-saturday` | Saturday | _(none)_ |
 | `POST /schedule/every-sunday` | Sunday | `weekly-outfits` |
 | `POST /schedule/catch-up-outbox-events` | — | `catch-up-outbox-events` |
+| `POST /schedule/everyday` | — | Registered everyday flows (see registry) |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
 Flow assignments come from `src/flows/registry.ts` and may change independently of this table.
@@ -98,6 +99,30 @@ Returns `{ status: "ok", flow: "catch-up-outbox-events", dispatched: <count> }`.
 
 > Create a QStash schedule pointing at `/schedule/catch-up-outbox-events` with the desired catch-up frequency (for example every 30 minutes).
 
+### Everyday flows (`POST /schedule/everyday`)
+
+**Handler:** `src/handlers/everyday.schedule.ts`  
+**Registry:** `src/flows/everyday-registry.ts`  
+**Workflow doc:** [EVERYDAY_SCHEDULE.md](docs/EVERYDAY_SCHEDULE.md)
+
+Runs all flows registered in `everyday-registry.ts` **in parallel**. One flow failing does not stop the others. Currently registered:
+
+| Flow | Doc |
+|---|---|
+| `neon-database-snapshot` | [NEON_DATABASE_SNAPSHOT.md](docs/NEON_DATABASE_SNAPSHOT.md) |
+
+> Create a QStash schedule pointing at `/schedule/everyday` with a daily CRON (for example `0 6 * * *` UTC).
+
+#### `neon-database-snapshot`
+
+**Source:** `src/flows/neon-database-snapshot.flow.ts`
+
+1. Lists existing manual snapshots via the Neon Management API
+2. Deletes each snapshot (required on the Free plan, which allows only one manual snapshot)
+3. Creates a new snapshot named `skydiiv-daily-YYYY-MM-DD` on the configured root branch
+
+Returns `{ flow, deletedSnapshotIds, createdSnapshotId, createdSnapshotName }` inside the everyday response `flows` array.
+
 ---
 
 ## Services & Technologies
@@ -109,6 +134,7 @@ Returns `{ status: "ok", flow: "catch-up-outbox-events", dispatched: <count> }`.
 | Scheduling trigger | [Upstash QStash](https://upstash.com/docs/qstash) (external CRON) | Fires weekday endpoints on a configured schedule |
 | Message publishing | [Upstash QStash](https://upstash.com/docs/qstash) (`@upstash/qstash`) | Dispatches per-user messages to `worker-ai-workflows`; re-enqueues stale outbox events to `worker-outbox-events` |
 | Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Read-only queries for eligible users and stale outbox events |
+| Backups | [Neon Management API](https://neon.com/docs/reference/api-reference) | `neon-database-snapshot` flow (registered on `/schedule/everyday`) |
 | Cache | [Upstash Redis](https://upstash.com/docs/redis) (REST API) | Wardrobe panorama flow — filter users by update marker |
 | Dev / deploy | Wrangler 4 | Local dev and Cloudflare deployment |
 | Testing | Vitest 4 | Unit tests |
@@ -124,18 +150,24 @@ Returns `{ status: "ok", flow: "catch-up-outbox-events", dispatched: <count> }`.
 │   ├── index.ts                            # Worker entry; health check + routing
 │   ├── scheduler.ts                        # Weekday handler — verify → resolve → run in parallel
 │   ├── handlers/
-│   │   └── catch-up-outbox-events.schedule.ts  # Dedicated catch-up endpoint handler
+│   │   ├── catch-up-outbox-events.schedule.ts  # Dedicated catch-up endpoint handler
+│   │   └── everyday.schedule.ts                # Everyday endpoint handler
 │   ├── flows/
 │   │   ├── types.ts                        # Weekday, ScheduleFlow, FlowResult
 │   │   ├── registry.ts                     # Maps weekday → flows
+│   │   ├── everyday-registry.ts            # Flows for POST /schedule/everyday
 │   │   ├── weekly-outfits.flow.ts
 │   │   ├── generate-wardrobe-panorama.flow.ts
-│   │   └── catch-up-outbox-events.flow.ts
+│   │   ├── catch-up-outbox-events.flow.ts
+│   │   └── neon-database-snapshot.flow.ts
 │   └── lib/
 │       ├── logger.ts
 │       ├── qstash.ts                       # QStash client + receiver
 │       ├── outbox-catchup-config.ts        # OUTBOX_CATCHUP_MIN_AGE_MINUTES parser
 │       ├── worker-outbox-events-url.ts     # WORKER_OUTBOX_EVENTS_URL resolver
+│       ├── neon/
+│       │   ├── config.ts                   # NEON_* env resolver
+│       │   └── snapshots.ts                # Neon snapshot API client
 │       ├── cache/
 │       │   ├── redis.ts                    # Upstash Redis REST helpers
 │       │   └── wardrobe-panorama-cache.ts  # Update-marker filter for panorama flow
@@ -144,7 +176,9 @@ Returns `{ status: "ok", flow: "catch-up-outbox-events", dispatched: <count> }`.
 │           ├── users.repository.ts
 │           └── outbox-events.repository.ts
 ├── docs/
-│   └── CATCH_UP_OUTBOX_EVENTS.md
+│   ├── CATCH_UP_OUTBOX_EVENTS.md
+│   ├── EVERYDAY_SCHEDULE.md
+│   └── NEON_DATABASE_SNAPSHOT.md
 ├── tests/unit/
 ├── wrangler.toml
 ├── .env.example                            # Copy to .dev.vars for local dev
@@ -180,16 +214,17 @@ export const flowRegistry: Partial<Record<Weekday, ScheduleFlow[]>> = {
 
 Multiple flows can share a day — they run in parallel.
 
-For a flow that needs its own endpoint (like catch-up-outbox-events), add a handler in `src/handlers/` and wire the route in `src/index.ts`.
+For daily jobs, implement a `ScheduleFlow` and append it to `everydayFlowRegistry` in `src/flows/everyday-registry.ts` (see [EVERYDAY_SCHEDULE.md](docs/EVERYDAY_SCHEDULE.md)).
 
 3. Create a QStash schedule pointing at the appropriate endpoint:
 
 ```
 https://worker-scheduler.<subdomain>.workers.dev/schedule/every-<day>
 https://worker-scheduler.<subdomain>.workers.dev/schedule/catch-up-outbox-events
+https://worker-scheduler.<subdomain>.workers.dev/schedule/everyday
 ```
 
-No changes to `src/index.ts` are required for weekday-only jobs.
+No changes to `src/index.ts` are required for weekday or everyday jobs.
 
 ---
 
@@ -198,7 +233,7 @@ No changes to `src/index.ts` are required for weekday-only jobs.
 - No end-user authentication — internal automation only
 - All schedule requests must be signed by QStash; unsigned or invalid signatures get `401`
 - `GET /` is the only unsigned endpoint (health check)
-- Secrets (`DATABASE_URL`, `QSTASH_*`, worker URLs) are Cloudflare Worker secrets — never in source control
+- Secrets (`DATABASE_URL`, `QSTASH_*`, worker URLs, `NEON_*`) are Cloudflare Worker secrets — never in source control
 
 ---
 
@@ -261,6 +296,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `WORKER_OUTBOX_EVENTS_URL` | `catch-up-outbox-events` flow |
 | `OUTBOX_CATCHUP_MIN_AGE_MINUTES` | `catch-up-outbox-events` flow (optional; default `10`) |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` (or `REDIS_URL`) | `generate-wardrobe-panorama` flow (update-marker filter) |
+| `NEON_API_KEY`, `NEON_PROJECT_ID`, `NEON_BRANCH_ID` | `neon-database-snapshot` flow |
 
 `WORKER_AI_WORKFLOWS_URL` is the worker-ai-workflows origin only (no path). Each flow appends its endpoint:
 
@@ -277,6 +313,7 @@ After deploying, create QStash schedules in the [Upstash Console](https://consol
 ```
 https://worker-scheduler.<subdomain>.workers.dev/schedule/every-<day>
 https://worker-scheduler.<subdomain>.workers.dev/schedule/catch-up-outbox-events
+https://worker-scheduler.<subdomain>.workers.dev/schedule/everyday
 ```
 
 When and how often each endpoint fires is configured in Upstash, not in this repository.
@@ -307,3 +344,6 @@ npm run deploy -- --env staging # staging
 | `OUTBOX_CATCHUP_MIN_AGE_MINUTES` | Minimum age in minutes before a PENDING outbox event is re-enqueued (optional; default `10`) |
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (wardrobe panorama cache filter) |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
+| `NEON_API_KEY` | Neon Management API key (daily snapshot flow) |
+| `NEON_PROJECT_ID` | Neon project ID |
+| `NEON_BRANCH_ID` | Neon root branch ID to snapshot |

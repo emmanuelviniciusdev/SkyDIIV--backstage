@@ -1,8 +1,9 @@
 /**
  * Core abstractions for the central scheduler.
  *
- * The worker exposes one endpoint per weekday (/schedule/every-monday … sunday)
- * plus dedicated endpoints for individual flows (e.g. /schedule/catch-up-outbox-events).
+ * The worker exposes one endpoint per weekday (/schedule/every-monday … sunday),
+ * a daily endpoint (/schedule/everyday), and dedicated endpoints for individual
+ * flows (e.g. /schedule/catch-up-outbox-events).
  * Each weekday endpoint can have multiple `ScheduleFlow`s registered. Once the QStash
  * signature is verified, all flows for that day run in parallel. Results are collected
  * individually — one flow failing never stops the others.
