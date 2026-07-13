@@ -18,6 +18,14 @@ vi.mock("../../src/handlers/catch-up-outbox-events.schedule", () => ({
   handleCatchUpOutboxEventsSchedule: mockHandleCatchUp,
 }))
 
+const { mockResetDbClient } = vi.hoisted(() => ({
+  mockResetDbClient: vi.fn(),
+}))
+
+vi.mock("../../src/lib/db/client", () => ({
+  resetDbClient: mockResetDbClient,
+}))
+
 import worker from "../../src/index"
 
 function makeRequest(method: string, path: string): Request {
@@ -36,6 +44,7 @@ describe("worker fetch routing", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.status).toBe("ok")
+    expect(mockResetDbClient).toHaveBeenCalledOnce()
     expect(mockHandleSchedule).not.toHaveBeenCalled()
     expect(mockHandleCatchUp).not.toHaveBeenCalled()
   })

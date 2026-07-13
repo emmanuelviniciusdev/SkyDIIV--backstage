@@ -12,6 +12,8 @@ import postgres from "postgres"
  *
  * Singleton is initialised lazily so it picks up process.env values that
  * src/index.ts copies from CF Worker bindings before the first request.
+ * src/index.ts calls resetDbClient() at the start of every fetch handler so
+ * a warm isolate never reuses a TCP connection from a previous request.
  */
 
 let _db: postgres.Sql | null = null

@@ -1,4 +1,5 @@
 import { handleCatchUpOutboxEventsSchedule } from "./handlers/catch-up-outbox-events.schedule"
+import { resetDbClient } from "./lib/db/client"
 import { handleSchedule } from "./scheduler"
 import { createLogger } from "./lib/logger"
 import type { Weekday } from "./flows/types"
@@ -34,6 +35,9 @@ const DAY_ROUTES: Readonly<Record<string, Weekday>> = {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     Object.assign(process.env, env)
+    // CF Workers isolates are reused across requests; drop any postgres.js
+    // connection from a prior request so I/O stays scoped to this handler.
+    resetDbClient()
 
     const { method, url } = request
     const { pathname } = new URL(url)
