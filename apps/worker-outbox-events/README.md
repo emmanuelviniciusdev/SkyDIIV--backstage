@@ -190,12 +190,14 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Processing lock (or `REDIS_URL` as alternative) |
 | `WORKER_SYNC_URL` | Dispatch target for flow `sync-language` |
 | `WORKER_AI_WORKFLOWS_URL` | Dispatch target for flow `generate-weekly-outfits` |
+| `WORKER_NOTIFICATION_URL` | Dispatch target for flow `email--welcome` |
 
-`WORKER_SYNC_URL` and `WORKER_AI_WORKFLOWS_URL` are the worker origins only (no path). The dispatcher appends the endpoint path automatically:
+`WORKER_SYNC_URL`, `WORKER_AI_WORKFLOWS_URL`, and `WORKER_NOTIFICATION_URL` are the worker origins only (no path). The dispatcher appends the endpoint path automatically:
 
 ```
 {WORKER_SYNC_URL}/sync/language
 {WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits
+{WORKER_NOTIFICATION_URL}/email--welcome
 ```
 
 ---
@@ -230,3 +232,4 @@ wrangler deployments list
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
 | `WORKER_SYNC_URL` | `worker-sync` origin (no path) |
 | `WORKER_AI_WORKFLOWS_URL` | `worker-ai-workflows` origin (no path) |
+| `WORKER_NOTIFICATION_URL` | `worker-notification` origin (no path) |

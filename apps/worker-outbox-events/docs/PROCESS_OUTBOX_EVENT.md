@@ -176,6 +176,12 @@ export type ProcessOutboxEventPayload = {
 
 Routing logic lives in `src/lib/dispatcher.ts`. The `dispatch()` function switches on `event.flow` — read directly from the database row — and publishes `event.payload` verbatim to the corresponding downstream worker endpoint.
 
+| `flow` | Downstream worker | Endpoint | URL secret |
+|---|---|---|---|
+| `sync-language` | `worker-sync` | `POST /sync/language` | `WORKER_SYNC_URL` |
+| `generate-weekly-outfits` | `worker-ai-workflows` | `POST /generate-weekly-outfits` | `WORKER_AI_WORKFLOWS_URL` |
+| `email--welcome` | `worker-notification` | `POST /email--welcome` | `WORKER_NOTIFICATION_URL` |
+
 To add a new flow, see [Adding a New Flow](../README.md#adding-a-new-flow) in the main README.
 
 ---
@@ -394,3 +400,4 @@ sequenceDiagram
 - [`README.md`](../README.md) — worker setup, deployment, adding new flows
 - [`apps/worker-sync/README.md`](../../worker-sync/README.md) — `sync-language` workflow reference
 - [`apps/worker-ai-workflows/docs/WEEKLY_OUTFITS_WORKFLOW.md`](../../worker-ai-workflows/docs/WEEKLY_OUTFITS_WORKFLOW.md) — `generate-weekly-outfits` workflow reference
+- [`apps/worker-notification/docs/EMAIL_WELCOME_WORKFLOW.md`](../../worker-notification/docs/EMAIL_WELCOME_WORKFLOW.md) — `email--welcome` workflow reference

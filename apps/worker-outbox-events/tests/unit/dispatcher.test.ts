@@ -37,6 +37,7 @@ describe("dispatch", () => {
     vi.clearAllMocks()
     process.env.WORKER_SYNC_URL = "https://worker-sync.example.workers.dev"
     process.env.WORKER_AI_WORKFLOWS_URL = "https://worker-ai-workflows.example.workers.dev"
+    process.env.WORKER_NOTIFICATION_URL = "https://worker-notification.example.workers.dev"
   })
 
   // ── sync-language ──────────────────────────────────────────────────────────
@@ -90,6 +91,37 @@ describe("dispatch", () => {
     await dispatch(event)
 
     expect(mockPublishJSON.mock.calls[0]![0]).toMatchObject({ body: payload })
+  })
+
+  // ── email--welcome ─────────────────────────────────────────────────────────
+
+  it("publishes to worker-notification /email--welcome for email--welcome flow", async () => {
+    mockPublishJSON.mockResolvedValueOnce({})
+    const payload = {
+      user_id: "user-3",
+      first_name: "Jane",
+      last_name: "Doe",
+      email: "jane@example.com",
+    }
+    const event = makeEvent({ flow: OUTBOX_FLOWS.EMAIL_WELCOME, payload })
+
+    await dispatch(event)
+
+    expect(mockPublishJSON).toHaveBeenCalledOnce()
+    expect(mockPublishJSON).toHaveBeenCalledWith({
+      url: "https://worker-notification.example.workers.dev/email--welcome",
+      body: payload,
+    })
+  })
+
+  it("throws when WORKER_NOTIFICATION_URL is not set", async () => {
+    delete process.env.WORKER_NOTIFICATION_URL
+    const event = makeEvent({ flow: OUTBOX_FLOWS.EMAIL_WELCOME })
+
+    await expect(dispatch(event)).rejects.toThrow(
+      "WORKER_NOTIFICATION_URL environment variable is not set",
+    )
+    expect(mockPublishJSON).not.toHaveBeenCalled()
   })
 
   // ── Unknown flow ───────────────────────────────────────────────────────────

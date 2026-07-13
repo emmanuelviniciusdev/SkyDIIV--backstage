@@ -1,5 +1,9 @@
 import { getQStashClient } from "./qstash"
-import { resolveWorkerSyncUrl, resolveWorkerAiWorkflowsUrl } from "./downstream-urls"
+import {
+  resolveWorkerSyncUrl,
+  resolveWorkerAiWorkflowsUrl,
+  resolveWorkerNotificationUrl,
+} from "./downstream-urls"
 import type { OutboxEventRow } from "./db/outbox-events.repository"
 
 /**
@@ -9,6 +13,7 @@ import type { OutboxEventRow } from "./db/outbox-events.repository"
 export const OUTBOX_FLOWS = {
   SYNC_LANGUAGE: "sync-language",
   GENERATE_WEEKLY_OUTFITS: "generate-weekly-outfits",
+  EMAIL_WELCOME: "email--welcome",
 } as const
 
 export type OutboxFlow = (typeof OUTBOX_FLOWS)[keyof typeof OUTBOX_FLOWS]
@@ -33,6 +38,11 @@ export async function dispatch(event: OutboxEventRow): Promise<void> {
     }
     case OUTBOX_FLOWS.GENERATE_WEEKLY_OUTFITS: {
       const url = resolveWorkerAiWorkflowsUrl("/generate-weekly-outfits")
+      await client.publishJSON({ url, body: event.payload })
+      break
+    }
+    case OUTBOX_FLOWS.EMAIL_WELCOME: {
+      const url = resolveWorkerNotificationUrl("/email--welcome")
       await client.publishJSON({ url, body: event.payload })
       break
     }
