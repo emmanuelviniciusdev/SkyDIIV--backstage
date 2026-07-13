@@ -1,11 +1,3 @@
-export interface EmailInlineAttachment {
-  filename: string
-  /** Base64-encoded file bytes. */
-  content: string
-  /** Referenced in HTML as `cid:<contentId>`. */
-  contentId: string
-}
-
 export interface SendEmailInput {
   /** Recipient address. */
   to: string
@@ -18,8 +10,6 @@ export interface SendEmailInput {
   text?: string
   /** Optional Reply-To header. */
   replyTo?: string
-  /** Optional inline attachments (e.g. brand icon referenced via cid: in HTML). */
-  attachments?: EmailInlineAttachment[]
 }
 
 export interface SendEmailResult {

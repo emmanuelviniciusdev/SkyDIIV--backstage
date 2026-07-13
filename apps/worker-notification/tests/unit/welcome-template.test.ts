@@ -15,10 +15,6 @@ describe("renderWelcomeEmail", () => {
       firstName: "Jane",
       appUrl: "https://skydiiv.space/",
     })
-    expect(html).toContain("fonts.googleapis.com/css2?family=Inter")
-    expect(html).toContain('src="cid:skydiiv-icon"')
-    expect(html).toContain("#AC7C76")
-    expect(html).toContain("letter-spacing:0.3em")
     expect(html).toContain("hey, Jane.")
     expect(html).toContain("welcome to skydiiv — glad you made it here.")
     expect(html).toContain("start by adding your pieces. the more your wardrobe grows,")
@@ -39,19 +35,6 @@ describe("renderWelcomeEmail", () => {
     expect(html).toContain("oi, Ana.")
     expect(html).toContain("bem-vinda ao skydiiv — que bom que você chegou.")
     expect(html).toContain("começar seu guarda-roupa")
-  })
-
-  it("includes the brand icon as an inline attachment", () => {
-    const { attachments } = renderWelcomeEmail({
-      locale: "en-US",
-      appUrl: "https://skydiiv.space",
-    })
-    expect(attachments).toHaveLength(1)
-    expect(attachments[0]).toMatchObject({
-      filename: "icon--colorful.png",
-      contentId: "skydiiv-icon",
-    })
-    expect(attachments[0]?.content.length).toBeGreaterThan(1000)
   })
 
   it("escapes HTML in the first name", () => {
