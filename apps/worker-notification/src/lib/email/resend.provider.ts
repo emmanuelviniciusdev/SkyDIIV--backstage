@@ -2,6 +2,12 @@ import type { EmailProvider, SendEmailInput, SendEmailResult } from "./types"
 
 const DEFAULT_API_URL = "https://api.resend.com/emails"
 
+interface ResendAttachment {
+  filename: string
+  content: string
+  content_id?: string
+}
+
 interface ResendRequestBody {
   from: string
   to: string[]
@@ -9,6 +15,7 @@ interface ResendRequestBody {
   html: string
   text?: string
   reply_to?: string
+  attachments?: ResendAttachment[]
 }
 
 interface ResendResponse {
@@ -38,6 +45,15 @@ export class ResendProvider implements EmailProvider {
       html: input.html,
       ...(input.text ? { text: input.text } : {}),
       ...(input.replyTo ? { reply_to: input.replyTo } : {}),
+      ...(input.attachments?.length
+        ? {
+            attachments: input.attachments.map((attachment) => ({
+              filename: attachment.filename,
+              content: attachment.content,
+              content_id: attachment.contentId,
+            })),
+          }
+        : {}),
     }
 
     const res = await fetch(url, {

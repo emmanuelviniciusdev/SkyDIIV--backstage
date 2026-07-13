@@ -59,6 +59,7 @@ const renderedEmail = {
   subject: "you're in — SkyDIIV",
   html: "<p>oi</p>",
   text: "oi",
+  attachments: [],
 }
 
 function runWorkflow(payload: unknown) {

@@ -21,6 +21,7 @@ const email = {
   subject: "bem-vinda ao SkyDIIV",
   html: "<p>oi</p>",
   text: "oi",
+  attachments: [],
 }
 
 describe("sendEmailStep", () => {
@@ -40,6 +41,7 @@ describe("sendEmailStep", () => {
       subject: email.subject,
       html: email.html,
       text: email.text,
+      attachments: email.attachments,
     })
   })
 

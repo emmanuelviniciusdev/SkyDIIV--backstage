@@ -1,4 +1,5 @@
 import { resolveAppUrl } from "../../../lib/app-url"
+import type { EmailInlineAttachment } from "../../../lib/email/types"
 import type { Locale } from "../../../lib/i18n/config"
 import { resolveUserLocale } from "../../../lib/i18n/resolve-user-locale"
 import { createLogger } from "../../../lib/logger"
@@ -13,6 +14,7 @@ export interface RenderedWelcomeEmail {
   subject: string
   html: string
   text: string
+  attachments: EmailInlineAttachment[]
 }
 
 /**
@@ -27,7 +29,7 @@ export async function renderEmailStep(payload: EmailWelcomePayload): Promise<Ren
   const replyTo = process.env.EMAIL_REPLY_TO?.trim() || undefined
 
   const locale = await resolveUserLocale(payload.user_id)
-  const { subject, html, text } = renderWelcomeEmail({
+  const { subject, html, text, attachments } = renderWelcomeEmail({
     locale,
     firstName: payload.first_name,
     appUrl: resolveAppUrl(),
@@ -43,5 +45,6 @@ export async function renderEmailStep(payload: EmailWelcomePayload): Promise<Ren
     subject,
     html,
     text,
+    attachments,
   }
 }

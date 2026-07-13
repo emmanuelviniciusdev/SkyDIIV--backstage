@@ -69,6 +69,40 @@ describe("ResendProvider", () => {
     const body = JSON.parse(init.body as string) as Record<string, unknown>
     expect(body).not.toHaveProperty("text")
     expect(body).not.toHaveProperty("reply_to")
+    expect(body).not.toHaveProperty("attachments")
+  })
+
+  it("forwards inline attachments with content_id for cid: images", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "msg-2" }), { status: 200 }),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await new ResendProvider().send({
+      to: "jane@example.com",
+      from: "no-reply@skydiiv.space",
+      subject: "you're in — SkyDIIV",
+      html: '<img src="cid:skydiiv-icon" />',
+      attachments: [
+        {
+          filename: "icon--colorful.png",
+          content: "aGVsbG8=",
+          contentId: "skydiiv-icon",
+        },
+      ],
+    })
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    const body = JSON.parse(init.body as string) as {
+      attachments: Array<{ filename: string; content: string; content_id: string }>
+    }
+    expect(body.attachments).toEqual([
+      {
+        filename: "icon--colorful.png",
+        content: "aGVsbG8=",
+        content_id: "skydiiv-icon",
+      },
+    ])
   })
 
   it("honours RESEND_API_URL override", async () => {

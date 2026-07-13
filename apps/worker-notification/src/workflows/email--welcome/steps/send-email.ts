@@ -27,6 +27,7 @@ export async function sendEmailStep(
       subject: email.subject,
       html: email.html,
       text: email.text,
+      attachments: email.attachments,
       ...(email.replyTo ? { replyTo: email.replyTo } : {}),
     })
 
