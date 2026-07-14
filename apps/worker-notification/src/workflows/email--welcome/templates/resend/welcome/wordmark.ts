@@ -17,5 +17,5 @@ export function buildWordmarkHtml(fontFamily: string): string {
     return `<span style="display:inline-block;color:${top};background:linear-gradient(180deg,${top} 0%,${bottom} 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;font-family:${fontFamily};font-weight:300;">${ch}</span>`
   }).join("")
 
-  return `<span style="display:inline-block;font-family:${fontFamily};font-size:15px;font-weight:300;letter-spacing:0.3em;text-transform:lowercase;line-height:1;">${letters}</span>`
+  return `<span style="display:inline-block;font-family:${fontFamily};font-size:28px;font-weight:300;letter-spacing:0.3em;text-transform:lowercase;line-height:1;">${letters}</span>`
 }

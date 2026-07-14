@@ -9,25 +9,28 @@ describe("welcome email copy", () => {
   it("renders en-US copy", () => {
     const copy = getWelcomeEmailCopy("en-US", "Jane")
     expect(copy.greeting).toBe("hey, Jane.")
-    expect(copy.welcome).toBe("welcome to skydiiv — glad you made it here.")
-    expect(copy.bodyLine1).toBe("start by adding your pieces. the more your wardrobe grows,")
-    expect(copy.bodyLine2).toBe("the better the app gets at knowing your style.")
-    expect(copy.bodyLine3).toBe("there's no rush — just build it at your own pace.")
-    expect(copy.cta).toBe("start building your wardrobe")
+    expect(copy.welcome).toBe("welcome to SkyDIIV.")
+    expect(copy.bodyParagraphs).toHaveLength(4)
+    expect(copy.bodyParagraphs[0]).toBe("having too many pieces and nothing to wear is a paradox we solve.")
+    expect(copy.closingLine).toBe("absolute clarity about your wardrobe.")
+    expect(copy.cta).toBe("start now")
   })
 
   it("renders pt-BR copy", () => {
     const copy = getWelcomeEmailCopy("pt-BR", "Ana")
     expect(copy.greeting).toBe("oi, Ana.")
-    expect(copy.welcome).toBe("bem-vindo(a) ao skydiiv — que bom que você chegou.")
-    expect(copy.cta).toBe("começar seu guarda-roupa")
+    expect(copy.welcome).toBe("bem-vindx ao SkyDIIV.")
+    expect(copy.bodyParagraphs[0]).toBe("ter peças de sobra e nada para vestir é um paradoxo que a gente resolve.")
+    expect(copy.bodyParagraphs[1]).toContain("SkyDIIVRS ao redor do mundo")
+    expect(copy.closingLine).toBe("clareza absoluta sobre o seu guarda-roupa.")
+    expect(copy.cta).toBe("começar agora")
   })
 
   it("renders es-PE copy", () => {
     const copy = getWelcomeEmailCopy("es-PE", "María")
     expect(copy.greeting).toBe("hola, María.")
-    expect(copy.welcome).toBe("bienvenido(a) a skydiiv — qué bueno que llegaste.")
-    expect(copy.cta).toBe("empezar tu guardarropa")
+    expect(copy.welcome).toBe("bienvenidx a SkyDIIV.")
+    expect(copy.cta).toBe("empezar ahora")
   })
 
   it("omits the name when firstName is missing", () => {

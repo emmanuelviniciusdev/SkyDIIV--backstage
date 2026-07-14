@@ -41,24 +41,32 @@ function buildPlainText(copy: WelcomeEmailCopy, ctaUrl: string): string {
     "",
     copy.welcome,
     "",
-    copy.bodyLine1,
-    copy.bodyLine2,
-    copy.bodyLine3,
+    ...copy.bodyParagraphs,
+    "",
+    copy.closingLine,
     "",
     `${copy.cta}: ${ctaUrl}`,
-    "",
-    copy.signoff,
   ].join("\n")
 }
 
 function buildHeaderHtml(): string {
   const wordmark = buildWordmarkHtml(FONT_CSS)
-  return `<p style="margin:0 0 36px 0;">${wordmark}</p>`
+  return `<p style="margin:0 0 40px 0;">${wordmark}</p>`
+}
+
+function buildBodyParagraphsHtml(copy: WelcomeEmailCopy): string {
+  return copy.bodyParagraphs
+    .map(
+      (paragraph) =>
+        `<p style="margin:0 0 18px 0;">${escapeHtml(paragraph)}</p>`,
+    )
+    .join("\n                ")
 }
 
 function buildHtml(copy: WelcomeEmailCopy, ctaUrl: string, locale: Locale): string {
   const title = escapeHtml(WELCOME_EMAIL_SUBJECT)
   const header = buildHeaderHtml()
+  const bodyParagraphs = buildBodyParagraphsHtml(copy)
 
   return `<!DOCTYPE html>
 <html lang="${locale}">
@@ -75,22 +83,20 @@ function buildHtml(copy: WelcomeEmailCopy, ctaUrl: string, locale: Locale): stri
   <body style="margin:0;padding:0;background-color:${C.background};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${C.background};">
       <tr>
-        <td align="center" style="padding:56px 24px;">
-          <table role="presentation" width="440" cellpadding="0" cellspacing="0" border="0" style="width:440px;max-width:100%;">
+        <td align="left" style="padding:56px 24px;">
+          <table role="presentation" width="440" cellpadding="0" cellspacing="0" border="0" align="left" style="width:440px;max-width:100%;">
             <tr>
-              <td style="font-family:${FONT_CSS};font-size:16px;font-weight:300;line-height:1.75;color:${C.foreground};text-transform:lowercase;">
+              <td align="left" style="font-family:${FONT_CSS};font-size:16px;font-weight:300;line-height:1.75;color:${C.foreground};text-transform:lowercase;text-align:left;">
                 ${header}
                 <p style="margin:0 0 18px 0;">${escapeHtml(copy.greeting)}</p>
                 <p style="margin:0 0 18px 0;">${escapeHtml(copy.welcome)}</p>
-                <p style="margin:0 0 4px 0;">${escapeHtml(copy.bodyLine1)}</p>
-                <p style="margin:0 0 4px 0;">${escapeHtml(copy.bodyLine2)}</p>
-                <p style="margin:0 0 28px 0;">${escapeHtml(copy.bodyLine3)}</p>
+                ${bodyParagraphs}
+                <p style="margin:0 0 28px 0;">${escapeHtml(copy.closingLine)}</p>
                 <p style="margin:0 0 32px 0;">
                   <a href="${ctaUrl}" target="_blank" style="display:inline-block;background-color:${C.primary};color:${C.primaryFg};font-family:${FONT_CSS};font-size:11px;font-weight:300;letter-spacing:0.18em;text-transform:lowercase;text-decoration:none;padding:12px 22px;border-radius:4px;">
                     ${escapeHtml(copy.cta)}
                   </a>
                 </p>
-                <p style="margin:0;color:${C.muted};">${escapeHtml(copy.signoff)}</p>
               </td>
             </tr>
           </table>

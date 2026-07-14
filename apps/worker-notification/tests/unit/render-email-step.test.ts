@@ -41,7 +41,7 @@ describe("renderEmailStep", () => {
     expect(email.from).toBe("SkyDIIV <no-reply@skydiiv.space>")
     expect(email.subject).toBe("you're in — SkyDIIV")
     expect(email.html).toContain("hey, Jane.")
-    expect(email.text).toContain("start building your wardrobe")
+    expect(email.text).toContain("start now")
     expect(email.replyTo).toBeUndefined()
   })
 
@@ -49,7 +49,7 @@ describe("renderEmailStep", () => {
     mockResolveUserLocale.mockResolvedValueOnce("pt-BR")
     const email = await renderEmailStep(payload)
     expect(email.html).toContain("oi, Jane.")
-    expect(email.html).toContain("começar seu guarda-roupa")
+    expect(email.html).toContain("começar agora")
   })
 
   it("includes the Reply-To when EMAIL_REPLY_TO is set", async () => {
