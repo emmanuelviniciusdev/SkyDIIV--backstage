@@ -15,7 +15,8 @@ describe("renderWelcomeEmail", () => {
       firstName: "Jane",
       appUrl: "https://skydiiv.space/",
     })
-    expect(html).toContain("fonts.googleapis.com/css2?family=Inter")
+    expect(html).toContain("color:#C2BCA8")
+    expect(html).toContain('class="email-text"')
     expect(html).toContain("#AC7C76")
     expect(html).toContain("font-size:28px")
     expect(html).not.toContain("cid:")
