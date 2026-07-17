@@ -1,5 +1,6 @@
 # Script outputs — generated at runtime, never committed
 **/output.txt
+**/output.json
 
 # Python virtual environments created by uv
 **/.venv

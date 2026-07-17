@@ -1,0 +1,9 @@
+[project]
+name = "poc--web-scraper-shopping-suggestions"
+version = "0.1.0"
+description = "PoC web scraper for shopping suggestions in Brazilian marketplaces"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "playwright>=1.61.0",
+]
