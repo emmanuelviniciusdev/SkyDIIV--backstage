@@ -36,7 +36,7 @@ def _format_price(amount: float | int | None) -> str:
     return f"R$ {float(amount):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def _photo_url(photo_id: str, size: str = "828x828") -> str:
+def _photo_url(photo_id: str, size: str = "1200x1200") -> str:
     return f"{_PHOTO_BASE}/{size}/{photo_id}"
 
 
