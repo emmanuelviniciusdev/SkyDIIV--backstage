@@ -1,0 +1,427 @@
+name: Deploy — Consumer Shopping Suggestions
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - staging
+    paths:
+      - "apps/consumer-shopping-suggestions/**"
+      - ".github/workflows/deploy-consumer-shopping-suggestions.yml"
+  pull_request:
+    branches:
+      - main
+      - staging
+    paths:
+      - "apps/consumer-shopping-suggestions/**"
+
+concurrency:
+  group: consumer-shopping-suggestions-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/consumer-shopping-suggestions
+
+jobs:
+  # ── CI: lint + test + build ──────────────────────────────────────────────────
+  ci:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/consumer-shopping-suggestions/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+  # ── Deploy: Staging ──────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy → Staging (Oracle Always Free)
+    needs: ci
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging')
+    environment:
+      name: staging
+    env:
+      IPV6_COUNT: ${{ vars.IPV6_COUNT }}
+      PROXY_BASE_PORT: ${{ vars.PROXY_BASE_PORT }}
+      INSTANCE_OCPUS: ${{ vars.INSTANCE_OCPUS }}
+      INSTANCE_MEMORY_GB: ${{ vars.INSTANCE_MEMORY_GB }}
+      AVAILABILITY_DOMAIN_INDEX: ${{ vars.AVAILABILITY_DOMAIN_INDEX }}
+      INSTANCE_SHAPE: ${{ vars.INSTANCE_SHAPE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/consumer-shopping-suggestions/package-lock.json
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Resolve infra defaults
+        id: infra
+        run: |
+          echo "ipv6_count=${IPV6_COUNT:-4}" >> "$GITHUB_OUTPUT"
+          echo "proxy_base_port=${PROXY_BASE_PORT:-11080}" >> "$GITHUB_OUTPUT"
+          echo "instance_ocpus=${INSTANCE_OCPUS:-2}" >> "$GITHUB_OUTPUT"
+          echo "instance_memory_gb=${INSTANCE_MEMORY_GB:-12}" >> "$GITHUB_OUTPUT"
+          echo "ad_index=${AVAILABILITY_DOMAIN_INDEX:-0}" >> "$GITHUB_OUTPUT"
+          echo "instance_shape=${INSTANCE_SHAPE:-VM.Standard.A1.Flex}" >> "$GITHUB_OUTPUT"
+
+      - name: Install, build & pack
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+          chmod +x deploy/*.sh
+          tar -czf consumer-shopping-suggestions.tgz \
+            package.json package-lock.json dist deploy .env.example
+
+      - name: Write OCI API key
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        run: |
+          umask 077
+          printf '%s\n' "${{ secrets.OCI_API_PRIVATE_KEY }}" > oci_api_key.pem
+
+      - name: Restore Terraform state
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/consumer-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-css-staging-${{ github.repository }}
+          restore-keys: |
+            tfstate-css-staging-
+
+      - name: Terraform Init
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        run: |
+          if [ -n "${{ secrets.TF_BACKEND_HCL }}" ]; then
+            printf '%s\n' "${{ secrets.TF_BACKEND_HCL }}" > backend.hcl
+            terraform init -input=false -reconfigure -backend-config=backend.hcl
+          else
+            terraform init -input=false -backend=false
+          fi
+
+      - name: Terraform Apply (Always Free VM + IPv6 pool)
+        id: tf
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ipv6_count: ${{ steps.infra.outputs.ipv6_count }}
+          TF_VAR_proxy_base_port: ${{ steps.infra.outputs.proxy_base_port }}
+          TF_VAR_instance_ocpus: ${{ steps.infra.outputs.instance_ocpus }}
+          TF_VAR_instance_memory_in_gbs: ${{ steps.infra.outputs.instance_memory_gb }}
+          TF_VAR_availability_domain_index: ${{ steps.infra.outputs.ad_index }}
+          TF_VAR_instance_shape: ${{ steps.infra.outputs.instance_shape }}
+          TF_VAR_environment: staging
+        run: |
+          terraform apply -auto-approve -input=false
+          terraform output -raw ipv6_pool_file > /tmp/ipv6-addresses.txt
+          {
+            echo "instance_public_ip=$(terraform output -raw instance_public_ip)"
+            echo "ssh_user=$(terraform output -raw ssh_user)"
+            echo "instance_ocid=$(terraform output -raw instance_ocid)"
+          } >> "$GITHUB_OUTPUT"
+          echo "VM $(terraform output -raw instance_ocid) @ $(terraform output -raw instance_public_ip)"
+          echo "IPv6 pool:"
+          cat /tmp/ipv6-addresses.txt
+
+      - name: Save Terraform state
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: apps/consumer-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-css-staging-${{ github.repository }}-${{ github.run_id }}
+
+      - name: Wait for SSH
+        env:
+          HOST: ${{ steps.tf.outputs.instance_public_ip }}
+        run: |
+          echo "Waiting for SSH on ${HOST}:22 ..."
+          for i in $(seq 1 60); do
+            if nc -z -w 3 "$HOST" 22; then
+              echo "SSH is up"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for SSH" >&2
+          exit 1
+
+      - name: Stage SCP artifacts
+        run: |
+          mkdir -p /tmp/skydiiv-upload
+          cp consumer-shopping-suggestions.tgz /tmp/skydiiv-upload/
+          cp /tmp/ipv6-addresses.txt /tmp/skydiiv-upload/
+
+      - name: Upload release + IPv6 pool to Oracle VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ steps.tf.outputs.instance_public_ip }}
+          username: ${{ steps.tf.outputs.ssh_user }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          source: /tmp/skydiiv-upload/consumer-shopping-suggestions.tgz,/tmp/skydiiv-upload/ipv6-addresses.txt
+          target: /tmp/skydiiv-deploy/
+          strip_components: 2
+          overwrite: true
+
+      - name: Remote deploy (fully automated)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          PROXY_BASE_PORT: ${{ steps.infra.outputs.proxy_base_port }}
+        with:
+          host: ${{ steps.tf.outputs.instance_public_ip }}
+          username: ${{ steps.tf.outputs.ssh_user }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          envs: PROXY_BASE_PORT
+          script: |
+            set -euo pipefail
+            sudo mkdir -p /etc/skydiiv /var/lib/skydiiv/proxy-pool /opt/skydiiv/consumer-shopping-suggestions
+
+            if [ -n "${{ secrets.CONSUMER_SHOPPING_SUGGESTIONS_ENV }}" ]; then
+              sudo tee /etc/skydiiv/consumer-shopping-suggestions.env >/dev/null <<'EOF'
+            ${{ secrets.CONSUMER_SHOPPING_SUGGESTIONS_ENV }}
+            EOF
+              sudo chmod 600 /etc/skydiiv/consumer-shopping-suggestions.env
+            else
+              sudo touch /etc/skydiiv/consumer-shopping-suggestions.env
+              sudo chmod 600 /etc/skydiiv/consumer-shopping-suggestions.env
+            fi
+
+            IPV6_SRC="$(find /tmp/skydiiv-deploy -name 'ipv6-addresses.txt' | head -n1)"
+            TARBALL="$(find /tmp/skydiiv-deploy -name 'consumer-shopping-suggestions.tgz' | head -n1)"
+            test -n "${IPV6_SRC}" && test -n "${TARBALL}"
+
+            sudo install -m 644 "${IPV6_SRC}" /var/lib/skydiiv/proxy-pool/ipv6-addresses.txt
+            sudo tar -xzf "${TARBALL}" -C /opt/skydiiv/consumer-shopping-suggestions
+
+            cd /opt/skydiiv/consumer-shopping-suggestions
+            sudo PROXY_BASE_PORT="${PROXY_BASE_PORT}" \
+              IPV6_POOL_FILE=/var/lib/skydiiv/proxy-pool/ipv6-addresses.txt \
+              bash deploy/remote-deploy.sh
+
+      - name: Cleanup OCI key
+        if: always()
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        run: rm -f oci_api_key.pem backend.hcl
+
+  # ── Deploy: Production ───────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy → Production (Oracle Always Free)
+    needs: ci
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    environment:
+      name: production
+    env:
+      IPV6_COUNT: ${{ vars.IPV6_COUNT }}
+      PROXY_BASE_PORT: ${{ vars.PROXY_BASE_PORT }}
+      INSTANCE_OCPUS: ${{ vars.INSTANCE_OCPUS }}
+      INSTANCE_MEMORY_GB: ${{ vars.INSTANCE_MEMORY_GB }}
+      AVAILABILITY_DOMAIN_INDEX: ${{ vars.AVAILABILITY_DOMAIN_INDEX }}
+      INSTANCE_SHAPE: ${{ vars.INSTANCE_SHAPE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/consumer-shopping-suggestions/package-lock.json
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Resolve infra defaults
+        id: infra
+        run: |
+          echo "ipv6_count=${IPV6_COUNT:-4}" >> "$GITHUB_OUTPUT"
+          echo "proxy_base_port=${PROXY_BASE_PORT:-11080}" >> "$GITHUB_OUTPUT"
+          echo "instance_ocpus=${INSTANCE_OCPUS:-2}" >> "$GITHUB_OUTPUT"
+          echo "instance_memory_gb=${INSTANCE_MEMORY_GB:-12}" >> "$GITHUB_OUTPUT"
+          echo "ad_index=${AVAILABILITY_DOMAIN_INDEX:-0}" >> "$GITHUB_OUTPUT"
+          echo "instance_shape=${INSTANCE_SHAPE:-VM.Standard.A1.Flex}" >> "$GITHUB_OUTPUT"
+
+      - name: Install, build & pack
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+          chmod +x deploy/*.sh
+          tar -czf consumer-shopping-suggestions.tgz \
+            package.json package-lock.json dist deploy .env.example
+
+      - name: Write OCI API key
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        run: |
+          umask 077
+          printf '%s\n' "${{ secrets.OCI_API_PRIVATE_KEY }}" > oci_api_key.pem
+
+      - name: Restore Terraform state
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/consumer-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-css-production-${{ github.repository }}
+          restore-keys: |
+            tfstate-css-production-
+
+      - name: Terraform Init
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        run: |
+          if [ -n "${{ secrets.TF_BACKEND_HCL }}" ]; then
+            printf '%s\n' "${{ secrets.TF_BACKEND_HCL }}" > backend.hcl
+            terraform init -input=false -reconfigure -backend-config=backend.hcl
+          else
+            terraform init -input=false -backend=false
+          fi
+
+      - name: Terraform Apply (Always Free VM + IPv6 pool)
+        id: tf
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ipv6_count: ${{ steps.infra.outputs.ipv6_count }}
+          TF_VAR_proxy_base_port: ${{ steps.infra.outputs.proxy_base_port }}
+          TF_VAR_instance_ocpus: ${{ steps.infra.outputs.instance_ocpus }}
+          TF_VAR_instance_memory_in_gbs: ${{ steps.infra.outputs.instance_memory_gb }}
+          TF_VAR_availability_domain_index: ${{ steps.infra.outputs.ad_index }}
+          TF_VAR_instance_shape: ${{ steps.infra.outputs.instance_shape }}
+          TF_VAR_environment: production
+        run: |
+          terraform apply -auto-approve -input=false
+          terraform output -raw ipv6_pool_file > /tmp/ipv6-addresses.txt
+          {
+            echo "instance_public_ip=$(terraform output -raw instance_public_ip)"
+            echo "ssh_user=$(terraform output -raw ssh_user)"
+            echo "instance_ocid=$(terraform output -raw instance_ocid)"
+          } >> "$GITHUB_OUTPUT"
+          echo "VM $(terraform output -raw instance_ocid) @ $(terraform output -raw instance_public_ip)"
+          echo "IPv6 pool:"
+          cat /tmp/ipv6-addresses.txt
+
+      - name: Save Terraform state
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: apps/consumer-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-css-production-${{ github.repository }}-${{ github.run_id }}
+
+      - name: Wait for SSH
+        env:
+          HOST: ${{ steps.tf.outputs.instance_public_ip }}
+        run: |
+          echo "Waiting for SSH on ${HOST}:22 ..."
+          for i in $(seq 1 60); do
+            if nc -z -w 3 "$HOST" 22; then
+              echo "SSH is up"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for SSH" >&2
+          exit 1
+
+      - name: Stage SCP artifacts
+        run: |
+          mkdir -p /tmp/skydiiv-upload
+          cp consumer-shopping-suggestions.tgz /tmp/skydiiv-upload/
+          cp /tmp/ipv6-addresses.txt /tmp/skydiiv-upload/
+
+      - name: Upload release + IPv6 pool to Oracle VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ steps.tf.outputs.instance_public_ip }}
+          username: ${{ steps.tf.outputs.ssh_user }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          source: /tmp/skydiiv-upload/consumer-shopping-suggestions.tgz,/tmp/skydiiv-upload/ipv6-addresses.txt
+          target: /tmp/skydiiv-deploy/
+          strip_components: 2
+          overwrite: true
+
+      - name: Remote deploy (fully automated)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          PROXY_BASE_PORT: ${{ steps.infra.outputs.proxy_base_port }}
+        with:
+          host: ${{ steps.tf.outputs.instance_public_ip }}
+          username: ${{ steps.tf.outputs.ssh_user }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          envs: PROXY_BASE_PORT
+          script: |
+            set -euo pipefail
+            sudo mkdir -p /etc/skydiiv /var/lib/skydiiv/proxy-pool /opt/skydiiv/consumer-shopping-suggestions
+
+            if [ -n "${{ secrets.CONSUMER_SHOPPING_SUGGESTIONS_ENV }}" ]; then
+              sudo tee /etc/skydiiv/consumer-shopping-suggestions.env >/dev/null <<'EOF'
+            ${{ secrets.CONSUMER_SHOPPING_SUGGESTIONS_ENV }}
+            EOF
+              sudo chmod 600 /etc/skydiiv/consumer-shopping-suggestions.env
+            else
+              sudo touch /etc/skydiiv/consumer-shopping-suggestions.env
+              sudo chmod 600 /etc/skydiiv/consumer-shopping-suggestions.env
+            fi
+
+            IPV6_SRC="$(find /tmp/skydiiv-deploy -name 'ipv6-addresses.txt' | head -n1)"
+            TARBALL="$(find /tmp/skydiiv-deploy -name 'consumer-shopping-suggestions.tgz' | head -n1)"
+            test -n "${IPV6_SRC}" && test -n "${TARBALL}"
+
+            sudo install -m 644 "${IPV6_SRC}" /var/lib/skydiiv/proxy-pool/ipv6-addresses.txt
+            sudo tar -xzf "${TARBALL}" -C /opt/skydiiv/consumer-shopping-suggestions
+
+            cd /opt/skydiiv/consumer-shopping-suggestions
+            sudo PROXY_BASE_PORT="${PROXY_BASE_PORT}" \
+              IPV6_POOL_FILE=/var/lib/skydiiv/proxy-pool/ipv6-addresses.txt \
+              bash deploy/remote-deploy.sh
+
+      - name: Cleanup OCI key
+        if: always()
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        run: rm -f oci_api_key.pem backend.hcl

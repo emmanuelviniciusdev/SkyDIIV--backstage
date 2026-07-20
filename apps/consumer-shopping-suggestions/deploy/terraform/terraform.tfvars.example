@@ -1,0 +1,25 @@
+tenancy_ocid     = "ocid1.tenancy.oc1..aaaa..."
+user_ocid        = "ocid1.user.oc1..aaaa..."
+fingerprint      = "aa:bb:cc:..."
+private_key_path = "/tmp/oci_api_key.pem"
+region           = "sa-saopaulo-1"
+compartment_ocid = "ocid1.tenancy.oc1..aaaa..." # often the tenancy OCID on free accounts
+ssh_public_key   = "ssh-ed25519 AAAA... deploy@skydiiv"
+
+environment               = "production"
+availability_domain_index = 0
+
+# Always Free Ampere A1 (default). Free accounts: stay at 2 OCPU / 12 GB.
+instance_shape         = "VM.Standard.A1.Flex"
+instance_ocpus         = 2
+instance_memory_in_gbs = 12
+boot_volume_size_in_gbs = 50
+
+# Alternative Always Free AMD micro (uncomment to use instead of Ampere):
+# instance_shape = "VM.Standard.E2.1.Micro"
+
+operating_system         = "Canonical Ubuntu"
+operating_system_version = "24.04"
+
+ipv6_count      = 4
+proxy_base_port = 11080

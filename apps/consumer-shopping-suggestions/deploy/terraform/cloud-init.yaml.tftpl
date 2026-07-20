@@ -1,0 +1,12 @@
+#cloud-config
+# Minimal bootstrap — application install is handled by remote-deploy.sh.
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - build-essential
+
+runcmd:
+  - mkdir -p /opt/skydiiv /etc/skydiiv /var/lib/skydiiv
+  - echo "cloud-init ready for consumer-shopping-suggestions (${ssh_user})" > /var/log/skydiiv-cloud-init.ready

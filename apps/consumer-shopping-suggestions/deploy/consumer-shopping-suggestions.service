@@ -1,0 +1,28 @@
+[Unit]
+Description=SkyDIIV Shopping Suggestions Consumer
+After=network-online.target skydiiv-proxy-pool.service
+Wants=network-online.target
+Requires=skydiiv-proxy-pool.service
+
+[Service]
+Type=simple
+User=skydiiv
+Group=skydiiv
+WorkingDirectory=/opt/skydiiv/consumer-shopping-suggestions
+EnvironmentFile=/etc/skydiiv/consumer-shopping-suggestions.env
+Environment=CAMOUFOX_INSTALL_DIR=/opt/camoufox
+ExecStart=/usr/bin/node dist/main.js
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/skydiiv/consumer-shopping-suggestions /opt/camoufox /var/lib/skydiiv
+
+[Install]
+WantedBy=multi-user.target

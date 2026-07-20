@@ -1,0 +1,51 @@
+# Local development stack for consumer-shopping-suggestions.
+#
+# Quick start:
+#   cp .env.docker.example .env.docker
+#   docker compose up --build
+#
+# Publish a test event (another terminal):
+#   ./scripts/publish-test-event.sh
+#
+# Redis only (run the app on the host with npm run dev):
+#   docker compose up redis
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env.docker
+        required: false
+    environment:
+      # Defaults when .env.docker is missing
+      REDIS_URL: redis://redis:6379
+      REDIS_STREAM_KEY: shopping-suggestions
+      REDIS_CONSUMER_GROUP: shopping-suggestions-consumers
+      REDIS_CONSUMER_NAME: consumer-1
+      CONSUMER_CONCURRENCY: "2"
+      CAMOUFOX_HEADLESS: "true"
+      CAMOUFOX_INSTALL_DIR: /opt/camoufox
+      LOG_LEVEL: DEBUG
+    depends_on:
+      redis:
+        condition: service_healthy
+    shm_size: "2gb"
+    restart: unless-stopped
+
+volumes:
+  redis-data:
