@@ -7,12 +7,12 @@ Cloudflare Worker that implements the processor side of SkyDIIV's Transactional 
 | `POST /process-outbox-event` | Process one outbox event by ID | [docs/PROCESS_OUTBOX_EVENT.md](docs/PROCESS_OUTBOX_EVENT.md) |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
-Upstream publishing is handled by the **SkyDIIV web app**, which inserts a row into `outbox_events` inside a database transaction, then publishes the row's ID to QStash. This worker is the sole consumer.
+Upstream publishing is handled by the **SkyDIIV web app**, which inserts a row into `outbox_events` (with `event_id` referencing the `events` catalog) inside a database transaction, then publishes the row's ID to QStash. This worker is the sole consumer.
 
 ```mermaid
 flowchart LR
     WEB["SkyDIIV web app"]
-    DB[("outbox_events\n(Neon PostgreSQL)")]
+    DB[("events + outbox_events\n(Neon PostgreSQL)")]
     MQ["QStash"]
     WORKER["worker-outbox-events\nPOST /process-outbox-event"]
     REDIS[("Redis\nprocessing lock")]
@@ -22,7 +22,7 @@ flowchart LR
     WEB -->|"publishJSON({ outboxEventId })"| MQ
     MQ -->|"POST { outboxEventId }"| WORKER
     WORKER <-->|"acquire / release lock"| REDIS
-    WORKER -->|"SELECT + UPDATE status"| DB
+    WORKER -->|"SELECT JOIN + UPDATE status"| DB
     WORKER -->|"publishJSON(payload)"| DS
 ```
 
@@ -35,8 +35,8 @@ flowchart LR
 | Runtime | [Cloudflare Workers](https://developers.cloudflare.com/workers/) (`nodejs_compat`) | Hosts this worker |
 | Language | TypeScript 5 (strict) | Implementation |
 | Inbound trigger | [Upstash QStash](https://upstash.com/docs/qstash) + [Upstash Workflow](https://upstash.com/docs/workflow) | Delivers signed `{ outboxEventId }` messages; durable step retries |
-| Downstream dispatch | [Upstash QStash](https://upstash.com/docs/qstash) (`@upstash/qstash`) | Publishes event payload to `worker-sync` / `worker-ai-workflows` |
-| Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Reads and updates status on rows in `outbox_events` |
+| Downstream dispatch | [Upstash QStash](https://upstash.com/docs/qstash) (`@upstash/qstash`) | Publishes event payload to `worker-sync` / `worker-notification` |
+| Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Joins `outbox_events` ↔ `events`; updates status |
 | Processing lock | [Upstash Redis](https://upstash.com/docs/redis) (REST API) | Per-event lock that prevents concurrent duplicate dispatches |
 | Validation | [Zod](https://zod.dev/) | Request body validation |
 | Dev / deploy | Wrangler 4 | Local dev and Cloudflare deployment |
@@ -62,14 +62,14 @@ flowchart LR
 │       ├── logger.ts                       # Structured JSON logger
 │       ├── workflow-base-url.ts            # WORKER_OUTBOX_EVENTS_URL resolver
 │       ├── qstash.ts                       # QStash client singleton
-│       ├── dispatcher.ts                   # Routes flow → downstream worker via QStash
+│       ├── dispatcher.ts                   # Routes (event_name, broker_name) → downstream via QStash
 │       ├── downstream-urls.ts              # URL resolvers for downstream workers
 │       ├── cache/
 │       │   ├── redis.ts                    # Upstash REST primitives (exists, set, del)
 │       │   └── outbox-processing-cache.ts  # Per-event processing lock
 │       └── db/
 │           ├── client.ts                   # postgres.js singleton
-│           └── outbox-events.repository.ts # findById + updateStatus
+│           └── outbox-events.repository.ts # findById (JOIN events) + updateStatus
 ├── tests/unit/
 │   ├── index.test.ts
 │   ├── workflows-registry.test.ts
@@ -88,19 +88,24 @@ flowchart LR
 
 ---
 
-## Adding a New Flow
+## Adding a New Event
 
-1. Add the new flow name to `OUTBOX_FLOWS` in `src/lib/dispatcher.ts` and add a `case` to the `dispatch()` switch:
+1. Seed the new event in the SkyDIIV web `events` catalog and add it to `EVENTS` in `app/lib/outbox.ts`.
+
+2. Add the new `(event_name, broker_name)` pair to `OUTBOX_ROUTES` in `src/lib/dispatcher.ts` and add a `case` to the `dispatch()` switch:
 
 ```ts
-case OUTBOX_FLOWS.MY_NEW_FLOW: {
+case outboxRouteKey(
+  OUTBOX_ROUTES.MY_NEW_EVENT_QSTASH.eventName,
+  OUTBOX_ROUTES.MY_NEW_EVENT_QSTASH.brokerName,
+): {
   const url = resolveMyWorkerUrl("/my-endpoint")
   await client.publishJSON({ url, body: event.payload })
   break
 }
 ```
 
-2. If the downstream worker is new, add a URL resolver in `src/lib/downstream-urls.ts`:
+3. If the downstream worker is new, add a URL resolver in `src/lib/downstream-urls.ts`:
 
 ```ts
 export function resolveMyWorkerUrl(path: string): string {
@@ -108,11 +113,11 @@ export function resolveMyWorkerUrl(path: string): string {
 }
 ```
 
-3. Add the new `MY_WORKER_URL` secret to `wrangler.toml`, `.env.example`, and the GitHub Actions workflow.
+4. Add the new `MY_WORKER_URL` secret to `wrangler.toml`, `.env.example`, and the GitHub Actions environment secrets.
 
-4. Add a test case in `tests/unit/dispatcher.test.ts`.
+5. Add a test case in `tests/unit/dispatcher.test.ts`.
 
-5. Update `docs/PROCESS_OUTBOX_EVENT.md` if any routing or configuration details change.
+6. Update `docs/PROCESS_OUTBOX_EVENT.md` if any routing or configuration details change.
 
 ---
 
@@ -135,7 +140,7 @@ export function resolveMyWorkerUrl(path: string): string {
 - Upstash QStash account (signing keys + publish token)
 - Upstash Redis instance (shared with the SkyDIIV web app; used for the processing lock)
 - Neon PostgreSQL database (shared with the SkyDIIV web app)
-- Deployed downstream workers (`worker-sync`, `worker-ai-workflows`)
+- Deployed downstream workers (`worker-sync`, `worker-notification`)
 
 ### Local Development
 
@@ -188,15 +193,13 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `WORKER_OUTBOX_EVENTS_URL` | This worker's origin for Upstash Workflow step callbacks |
 | `DATABASE_URL` | Reading and updating status on rows in `outbox_events` |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Processing lock (or `REDIS_URL` as alternative) |
-| `WORKER_SYNC_URL` | Dispatch target for flow `sync-language` |
-| `WORKER_AI_WORKFLOWS_URL` | Dispatch target for flow `generate-weekly-outfits` |
-| `WORKER_NOTIFICATION_URL` | Dispatch target for flow `email--welcome` |
+| `WORKER_SYNC_URL` | Dispatch target for event `language-changed` |
+| `WORKER_NOTIFICATION_URL` | Dispatch target for event `user-account-created` |
 
-`WORKER_SYNC_URL`, `WORKER_AI_WORKFLOWS_URL`, and `WORKER_NOTIFICATION_URL` are the worker origins only (no path). The dispatcher appends the endpoint path automatically:
+`WORKER_SYNC_URL` and `WORKER_NOTIFICATION_URL` are the worker origins only (no path). The dispatcher appends the endpoint path automatically:
 
 ```
 {WORKER_SYNC_URL}/sync/language
-{WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits
 {WORKER_NOTIFICATION_URL}/email--welcome
 ```
 
@@ -231,5 +234,4 @@ wrangler deployments list
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (processing lock) |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
 | `WORKER_SYNC_URL` | `worker-sync` origin (no path) |
-| `WORKER_AI_WORKFLOWS_URL` | `worker-ai-workflows` origin (no path) |
 | `WORKER_NOTIFICATION_URL` | `worker-notification` origin (no path) |

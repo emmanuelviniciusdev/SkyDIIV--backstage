@@ -5,7 +5,11 @@ import type { DispatchOutboxEventResult } from "../types"
 
 export async function dispatchOutboxEventStep(event: OutboxEventRow): Promise<DispatchOutboxEventResult> {
   const log = createLogger("dispatch-event")
-  log.info("Step started", { outboxEventId: event.id, flow: event.flow, event: event.event })
+  log.info("Step started", {
+    outboxEventId: event.id,
+    eventId: event.event_id,
+    eventName: event.event_name,
+  })
 
   try {
     await dispatch(event)
@@ -13,7 +17,12 @@ export async function dispatchOutboxEventStep(event: OutboxEventRow): Promise<Di
     return { ok: true }
   } catch (err) {
     const error = String(err)
-    log.error("Step failed", { outboxEventId: event.id, flow: event.flow, event: event.event, error })
+    log.error("Step failed", {
+      outboxEventId: event.id,
+      eventId: event.event_id,
+      eventName: event.event_name,
+      error,
+    })
     return { ok: false, error }
   }
 }

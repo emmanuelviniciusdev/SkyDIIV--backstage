@@ -8,10 +8,6 @@ export function resolveWorkerSyncUrl(path: string): string {
   return resolveWorkerUrl("WORKER_SYNC_URL", path)
 }
 
-export function resolveWorkerAiWorkflowsUrl(path: string): string {
-  return resolveWorkerUrl("WORKER_AI_WORKFLOWS_URL", path)
-}
-
 export function resolveWorkerNotificationUrl(path: string): string {
   return resolveWorkerUrl("WORKER_NOTIFICATION_URL", path)
 }

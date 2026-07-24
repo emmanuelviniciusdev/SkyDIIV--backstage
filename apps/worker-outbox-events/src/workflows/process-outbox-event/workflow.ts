@@ -120,8 +120,8 @@ export const processOutboxEventWorkflow = createWorkflow<
   const result: ProcessOutboxEventResult = {
     processed: true,
     outboxEventId,
-    flow: event.flow,
-    event: event.event,
+    eventId: event.event_id,
+    eventName: event.event_name,
   }
 
   log.info("Workflow completed", result)

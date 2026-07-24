@@ -6,7 +6,7 @@
  *
  * Usage:
  *   const log = createLogger("process-outbox-event")
- *   log.info("Event dispatched", { outboxEventId: "abc", flow: "sync-language" })
+ *   log.info("Event dispatched", { outboxEventId: "abc", eventName: "language-changed" })
  *   log.error("Dispatch failed", { error: err.message })
  */
 

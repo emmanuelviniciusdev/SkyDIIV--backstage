@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 /**
  * Unit tests for the outbox event dispatcher.
  * Mocks the QStash client and downstream URL resolvers to verify
- * correct routing per flow and error propagation on unknown flows.
+ * correct routing per (event_name, broker_name) and error propagation.
  */
 
 const { mockPublishJSON } = vi.hoisted(() => ({
@@ -14,15 +14,16 @@ vi.mock("../../src/lib/qstash", () => ({
   getQStashClient: vi.fn(() => ({ publishJSON: mockPublishJSON })),
 }))
 
-import { dispatch, OUTBOX_FLOWS } from "../../src/lib/dispatcher"
+import { dispatch, OUTBOX_ROUTES, BROKER_NAMES, outboxRouteKey } from "../../src/lib/dispatcher"
 import type { OutboxEventRow } from "../../src/lib/db/outbox-events.repository"
 
 function makeEvent(overrides: Partial<OutboxEventRow> = {}): OutboxEventRow {
   return {
     id: "evt-uuid-1",
-    flow: "sync-language",
-    event: "language-changed",
-    payload: { userId: "user-1", oldLocale: "en", newLocale: "pt" },
+    event_id: "e78e3646-c18f-48d1-a63c-cebfc2c77730",
+    event_name: OUTBOX_ROUTES.LANGUAGE_CHANGED_QSTASH.eventName,
+    broker_name: OUTBOX_ROUTES.LANGUAGE_CHANGED_QSTASH.brokerName,
+    payload: { userid: "user-1", old_language: "en", new_language: "pt" },
     status: "PENDING",
     created_at: new Date(),
     created_by: null,
@@ -32,19 +33,27 @@ function makeEvent(overrides: Partial<OutboxEventRow> = {}): OutboxEventRow {
   }
 }
 
+describe("outboxRouteKey", () => {
+  it("joins event_name and broker_name", () => {
+    expect(outboxRouteKey("language-changed", "QStash")).toBe("language-changed::QStash")
+  })
+})
+
 describe("dispatch", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     process.env.WORKER_SYNC_URL = "https://worker-sync.example.workers.dev"
-    process.env.WORKER_AI_WORKFLOWS_URL = "https://worker-ai-workflows.example.workers.dev"
     process.env.WORKER_NOTIFICATION_URL = "https://worker-notification.example.workers.dev"
   })
 
-  // ── sync-language ──────────────────────────────────────────────────────────
+  // ── language-changed + QStash ──────────────────────────────────────────────
 
-  it("publishes to worker-sync /sync/language for sync-language flow", async () => {
+  it("publishes to worker-sync /sync/language for language-changed on QStash", async () => {
     mockPublishJSON.mockResolvedValueOnce({})
-    const event = makeEvent({ flow: OUTBOX_FLOWS.SYNC_LANGUAGE })
+    const event = makeEvent({
+      event_name: OUTBOX_ROUTES.LANGUAGE_CHANGED_QSTASH.eventName,
+      broker_name: BROKER_NAMES.QSTASH,
+    })
 
     await dispatch(event)
 
@@ -55,47 +64,23 @@ describe("dispatch", () => {
     })
   })
 
-  it("forwards the outbox event payload verbatim for sync-language", async () => {
+  it("forwards the outbox event payload verbatim for language-changed", async () => {
     mockPublishJSON.mockResolvedValueOnce({})
-    const payload = { userId: "user-42", oldLocale: "en", newLocale: "es" }
-    const event = makeEvent({ flow: OUTBOX_FLOWS.SYNC_LANGUAGE, payload })
-
-    await dispatch(event)
-
-    expect(mockPublishJSON.mock.calls[0]![0]).toMatchObject({ body: payload })
-  })
-
-  // ── generate-weekly-outfits ────────────────────────────────────────────────
-
-  it("publishes to worker-ai-workflows /generate-weekly-outfits for generate-weekly-outfits flow", async () => {
-    mockPublishJSON.mockResolvedValueOnce({})
+    const payload = { userid: "user-42", old_language: "en", new_language: "es" }
     const event = makeEvent({
-      flow: OUTBOX_FLOWS.GENERATE_WEEKLY_OUTFITS,
-      payload: { userId: "user-2" },
+      event_name: OUTBOX_ROUTES.LANGUAGE_CHANGED_QSTASH.eventName,
+      broker_name: BROKER_NAMES.QSTASH,
+      payload,
     })
-
-    await dispatch(event)
-
-    expect(mockPublishJSON).toHaveBeenCalledOnce()
-    expect(mockPublishJSON).toHaveBeenCalledWith({
-      url: "https://worker-ai-workflows.example.workers.dev/generate-weekly-outfits",
-      body: { userId: "user-2" },
-    })
-  })
-
-  it("forwards the outbox event payload verbatim for generate-weekly-outfits", async () => {
-    mockPublishJSON.mockResolvedValueOnce({})
-    const payload = { userId: "user-99" }
-    const event = makeEvent({ flow: OUTBOX_FLOWS.GENERATE_WEEKLY_OUTFITS, payload })
 
     await dispatch(event)
 
     expect(mockPublishJSON.mock.calls[0]![0]).toMatchObject({ body: payload })
   })
 
-  // ── email--welcome ─────────────────────────────────────────────────────────
+  // ── user-account-created + QStash ──────────────────────────────────────────
 
-  it("publishes to worker-notification /email--welcome for email--welcome flow", async () => {
+  it("publishes to worker-notification /email--welcome for user-account-created on QStash", async () => {
     mockPublishJSON.mockResolvedValueOnce({})
     const payload = {
       user_id: "user-3",
@@ -103,7 +88,12 @@ describe("dispatch", () => {
       last_name: "Doe",
       email: "jane@example.com",
     }
-    const event = makeEvent({ flow: OUTBOX_FLOWS.EMAIL_WELCOME, payload })
+    const event = makeEvent({
+      event_id: "5fddc99f-6345-4bce-9c25-d985f1191c7d",
+      event_name: OUTBOX_ROUTES.USER_ACCOUNT_CREATED_QSTASH.eventName,
+      broker_name: BROKER_NAMES.QSTASH,
+      payload,
+    })
 
     await dispatch(event)
 
@@ -116,7 +106,10 @@ describe("dispatch", () => {
 
   it("throws when WORKER_NOTIFICATION_URL is not set", async () => {
     delete process.env.WORKER_NOTIFICATION_URL
-    const event = makeEvent({ flow: OUTBOX_FLOWS.EMAIL_WELCOME })
+    const event = makeEvent({
+      event_name: OUTBOX_ROUTES.USER_ACCOUNT_CREATED_QSTASH.eventName,
+      broker_name: BROKER_NAMES.QSTASH,
+    })
 
     await expect(dispatch(event)).rejects.toThrow(
       "WORKER_NOTIFICATION_URL environment variable is not set",
@@ -124,12 +117,26 @@ describe("dispatch", () => {
     expect(mockPublishJSON).not.toHaveBeenCalled()
   })
 
-  // ── Unknown flow ───────────────────────────────────────────────────────────
+  // ── Unknown / mismatched routes ────────────────────────────────────────────
 
-  it("throws for an unknown flow and does not call publishJSON", async () => {
-    const event = makeEvent({ flow: "unsupported-flow" })
+  it("throws for an unknown event_name and does not call publishJSON", async () => {
+    const event = makeEvent({ event_name: "unsupported-event", broker_name: BROKER_NAMES.QSTASH })
 
-    await expect(dispatch(event)).rejects.toThrow("Unknown outbox flow: unsupported-flow")
+    await expect(dispatch(event)).rejects.toThrow(
+      "Unknown outbox route: event_name=unsupported-event, broker_name=QStash",
+    )
+    expect(mockPublishJSON).not.toHaveBeenCalled()
+  })
+
+  it("throws when event_name is known but broker_name does not match", async () => {
+    const event = makeEvent({
+      event_name: OUTBOX_ROUTES.LANGUAGE_CHANGED_QSTASH.eventName,
+      broker_name: "Kafka",
+    })
+
+    await expect(dispatch(event)).rejects.toThrow(
+      "Unknown outbox route: event_name=language-changed, broker_name=Kafka",
+    )
     expect(mockPublishJSON).not.toHaveBeenCalled()
   })
 
@@ -137,7 +144,10 @@ describe("dispatch", () => {
 
   it("propagates QStash publish errors", async () => {
     mockPublishJSON.mockRejectedValueOnce(new Error("QStash unavailable"))
-    const event = makeEvent({ flow: OUTBOX_FLOWS.SYNC_LANGUAGE })
+    const event = makeEvent({
+      event_name: OUTBOX_ROUTES.LANGUAGE_CHANGED_QSTASH.eventName,
+      broker_name: BROKER_NAMES.QSTASH,
+    })
 
     await expect(dispatch(event)).rejects.toThrow("QStash unavailable")
   })
@@ -146,19 +156,12 @@ describe("dispatch", () => {
 
   it("throws when WORKER_SYNC_URL is not set", async () => {
     delete process.env.WORKER_SYNC_URL
-    const event = makeEvent({ flow: OUTBOX_FLOWS.SYNC_LANGUAGE })
+    const event = makeEvent({
+      event_name: OUTBOX_ROUTES.LANGUAGE_CHANGED_QSTASH.eventName,
+      broker_name: BROKER_NAMES.QSTASH,
+    })
 
     await expect(dispatch(event)).rejects.toThrow("WORKER_SYNC_URL environment variable is not set")
-    expect(mockPublishJSON).not.toHaveBeenCalled()
-  })
-
-  it("throws when WORKER_AI_WORKFLOWS_URL is not set", async () => {
-    delete process.env.WORKER_AI_WORKFLOWS_URL
-    const event = makeEvent({ flow: OUTBOX_FLOWS.GENERATE_WEEKLY_OUTFITS })
-
-    await expect(dispatch(event)).rejects.toThrow(
-      "WORKER_AI_WORKFLOWS_URL environment variable is not set",
-    )
     expect(mockPublishJSON).not.toHaveBeenCalled()
   })
 })

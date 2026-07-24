@@ -56,9 +56,10 @@ import "../../src/workflows/process-outbox-event/workflow"
 
 const mockEvent = {
   id: "evt-uuid-1",
-  flow: "sync-language",
-  event: "language-changed",
-  payload: { userId: "user-1" },
+  event_id: "e78e3646-c18f-48d1-a63c-cebfc2c77730",
+  event_name: "language-changed",
+  broker_name: "QStash",
+  payload: { userid: "user-1", old_language: "en", new_language: "pt" },
   status: "PENDING" as const,
   created_at: new Date(),
   created_by: null,
@@ -141,8 +142,8 @@ describe("processOutboxEventWorkflow", () => {
     await expect(runWorkflow({ outboxEventId: "evt-uuid-1" })).resolves.toEqual({
       processed: true,
       outboxEventId: "evt-uuid-1",
-      flow: "sync-language",
-      event: "language-changed",
+      eventId: "e78e3646-c18f-48d1-a63c-cebfc2c77730",
+      eventName: "language-changed",
     })
 
     expect(mocks.run).toHaveBeenCalledWith("dispatch-event", expect.any(Function))

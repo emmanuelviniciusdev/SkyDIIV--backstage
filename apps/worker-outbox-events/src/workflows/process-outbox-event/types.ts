@@ -13,8 +13,8 @@ export type ProcessOutboxEventResult =
   | {
       processed: true
       outboxEventId: string
-      flow: string
-      event: string
+      eventId: string
+      eventName: string
     }
   | {
       processed: false

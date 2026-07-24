@@ -22,7 +22,6 @@ invocation_logs = true
 #   wrangler secret put UPSTASH_REDIS_REST_URL
 #   wrangler secret put UPSTASH_REDIS_REST_TOKEN
 #   wrangler secret put WORKER_SYNC_URL
-#   wrangler secret put WORKER_AI_WORKFLOWS_URL
 #   wrangler secret put WORKER_NOTIFICATION_URL
 #
 # ── Staging / preview environment ─────────────────────────────────────────────

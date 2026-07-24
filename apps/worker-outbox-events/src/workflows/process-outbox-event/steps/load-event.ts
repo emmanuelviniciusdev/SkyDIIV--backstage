@@ -21,6 +21,10 @@ export async function loadOutboxEventStep(outboxEventId: string): Promise<LoadOu
     return { kind: "skip", reason: "already-processed", status: event.status }
   }
 
-  log.info("Step completed", { outboxEventId, flow: event.flow, event: event.event })
+  log.info("Step completed", {
+    outboxEventId,
+    eventId: event.event_id,
+    eventName: event.event_name,
+  })
   return { kind: "ready", event }
 }

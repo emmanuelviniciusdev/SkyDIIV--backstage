@@ -1,6 +1,6 @@
 # Process Outbox Event
 
-This document describes the **process-outbox-event** handler end to end: how it is triggered, what each step does, the processing lock strategy, routing by flow, and how it integrates with the SkyDIIV web app and downstream workers.
+This document describes the **process-outbox-event** handler end to end: how it is triggered, what each step does, the processing lock strategy, routing by `(event_name, broker_name)` from the `events` catalog, and how it integrates with the SkyDIIV web app and downstream workers.
 
 ---
 
@@ -22,14 +22,14 @@ It is the consumer side of SkyDIIV's Transactional Outbox Pattern. The SkyDIIV w
 graph TD
     WEB["SkyDIIV web app\n(route handler)"]
     TX["prisma.$transaction()\n[business write + outbox INSERT]"]
-    DB[("outbox_events\nNeon PostgreSQL")]
+    DB[("events + outbox_events\nNeon PostgreSQL")]
     MQ["QStash\npublishJSON({ outboxEventId })"]
     WORKER["worker-outbox-events\nPOST /process-outbox-event"]
     REDIS[("Redis\noutbox-processing:{id}")]
 
     WORKER --> S1["1. acquire-lock\n(SET NX EX 300)"]
     S1 -->|"lock held"| SKIP["already-processing\n(skip)"]
-    S1 -->|"acquired"| S2["2. load-event\n(SELECT)"]
+    S1 -->|"acquired"| S2["2. load-event\n(SELECT JOIN events)"]
     S2 -->|"not found / terminal"| S2A["release-lock\nnot-found / already-processed"]
     S2 -->|"PENDING"| S3["3. dispatch-event\n(publishJSON)"]
     S3 -->|"dispatch error"| S3B["mark-error → release-lock\n500"]
@@ -40,7 +40,7 @@ graph TD
     WEB --> TX --> DB
     WEB --> MQ --> WORKER
     WORKER <--> REDIS
-    WORKER -->|"SELECT + UPDATE status"| DB
+    WORKER -->|"SELECT JOIN + UPDATE status"| DB
     WORKER -->|"publishJSON(payload)"| DS["Downstream worker"]
 ```
 
@@ -93,12 +93,23 @@ Atomically sets `outbox-processing:{outboxEventId}` in Redis with a **5-minute T
 
 **Source:** `steps/load-event.ts`
 
-Queries `outbox_events` for the row with the given ID:
+Queries `outbox_events` joined with the `events` catalog for the row with the given ID:
 
 ```sql
-SELECT id, flow, event, payload, status, created_at, created_by, updated_at, updated_by
-FROM outbox_events
-WHERE id = $1
+SELECT
+  oe.id,
+  oe.event_id,
+  e.event_name,
+  e.broker_name,
+  oe.payload,
+  oe.status,
+  oe.created_at,
+  oe.created_by,
+  oe.updated_at,
+  oe.updated_by
+FROM outbox_events oe
+INNER JOIN events e ON e.id = oe.event_id
+WHERE oe.id = $1
 LIMIT 1
 ```
 
@@ -112,13 +123,13 @@ LIMIT 1
 
 **Source:** `steps/dispatch-event.ts`
 
-Calls `dispatch(event)` in `src/lib/dispatcher.ts`, which switches on `event.flow` and publishes `event.payload` verbatim to the registered downstream worker via QStash.
+Calls `dispatch(event)` in `src/lib/dispatcher.ts`, which switches on `(event.event_name, event.broker_name)` from the `events` catalog and publishes `event.payload` verbatim to the registered downstream worker via QStash.
 
 The `payload` stored in `outbox_events` is forwarded as-is — it carries exactly the fields the downstream worker expects.
 
 This step returns `{ ok: true }` or `{ ok: false, error }` without throwing, so its outcome is cached as a durable step result. A workflow retry after a failed downstream publish does **not** re-run a step that already returned `{ ok: true }`.
 
-- Unknown flow or QStash publish error → `mark-error` → `release-lock` → `500 Internal Server Error`
+- Unknown route or QStash publish error → `mark-error` → `release-lock` → `500 Internal Server Error`
 
 ---
 
@@ -172,17 +183,16 @@ export type ProcessOutboxEventPayload = {
 
 ---
 
-## Routing by Flow
+## Routing by Event Name + Broker Name
 
-Routing logic lives in `src/lib/dispatcher.ts`. The `dispatch()` function switches on `event.flow` — read directly from the database row — and publishes `event.payload` verbatim to the corresponding downstream worker endpoint.
+Routing logic lives in `src/lib/dispatcher.ts`. The `dispatch()` function switches on the composite `(event_name, broker_name)` pair — joined from the `events` catalog (unique on that pair) — and publishes `event.payload` verbatim to the corresponding downstream worker endpoint.
 
-| `flow` | Downstream worker | Endpoint | URL secret |
-|---|---|---|---|
-| `sync-language` | `worker-sync` | `POST /sync/language` | `WORKER_SYNC_URL` |
-| `generate-weekly-outfits` | `worker-ai-workflows` | `POST /generate-weekly-outfits` | `WORKER_AI_WORKFLOWS_URL` |
-| `email--welcome` | `worker-notification` | `POST /email--welcome` | `WORKER_NOTIFICATION_URL` |
+| `event_name` | `broker_name` | Downstream worker | Endpoint | URL secret |
+|---|---|---|---|---|
+| `language-changed` | `QStash` | `worker-sync` | `POST /sync/language` | `WORKER_SYNC_URL` |
+| `user-account-created` | `QStash` | `worker-notification` | `POST /email--welcome` | `WORKER_NOTIFICATION_URL` |
 
-To add a new flow, see [Adding a New Flow](../README.md#adding-a-new-flow) in the main README.
+Catalog IDs, names, and brokers must stay in sync with the SkyDIIV web app (`EVENTS` / `BROKER_NAMES` in `app/lib/outbox.ts`). To add a new route, see [Adding a New Event](../README.md#adding-a-new-event) in the main README.
 
 ---
 
@@ -195,8 +205,8 @@ To add a new flow, see [Adding a New Flow](../README.md#adding-a-new-flow) in th
 | Event already being processed (Redis lock present) | `200` | `{ processed: false, reason: "already-processing", outboxEventId }` |
 | Event not found in database | `200` | `{ processed: false, reason: "not-found", outboxEventId }` |
 | Event already processed (`SUCCESS` or `ERROR`) | `200` | `{ processed: false, reason: "already-processed", outboxEventId, status }` |
-| Dispatch failed (unknown flow or QStash error) | `500` | `Internal Server Error` |
-| Successfully processed | `200` | `{ processed: true, outboxEventId, flow, event }` |
+| Dispatch failed (unknown route or QStash error) | `500` | `Internal Server Error` |
+| Successfully processed | `200` | `{ processed: true, outboxEventId, eventId, eventName }` |
 
 ---
 
@@ -241,7 +251,7 @@ When dispatch fails, the handler marks the row `ERROR` before returning `500`. O
 | Redis SET NX failure | ✅ Fatal | Error propagates (unhandled; QStash retries) |
 | Outbox event not found | ❌ Non-fatal | `200 not-found` — lock released |
 | Outbox event already processed | ❌ Non-fatal | `200 already-processed` — lock released |
-| Unknown flow | ✅ Fatal | `ERROR` status set; `500` — lock released |
+| Unknown route | ✅ Fatal | `ERROR` status set; `500` — lock released |
 | QStash publish failure | ✅ Fatal | `ERROR` status set; `500` — lock released |
 | Database UPDATE failure (SUCCESS) | ✅ Fatal for step | Workflow retries `mark-success` only |
 | Database UPDATE failure (ERROR) | ✅ Fatal for step | Workflow retries `mark-error` only |
@@ -258,7 +268,7 @@ When dispatch fails, the handler marks the row `ERROR` before returning `500`. O
 
 ### Logging
 
-All steps emit structured JSON via `createLogger("process-outbox-event")`. Log fields include `outboxEventId`, `flow`, `event`, and `error` where applicable.
+All steps emit structured JSON via `createLogger("process-outbox-event")`. Log fields include `outboxEventId`, `eventId`, `eventName`, and `error` where applicable.
 
 ---
 
@@ -274,12 +284,12 @@ Set via `wrangler secret put <KEY>` (production) or `.dev.vars` (local):
 | `QSTASH_NEXT_SIGNING_KEY` | ✅ | Key rotation |
 | `QSTASH_URL` | — | QStash client (optional base URL override) |
 | `QSTASH_TOKEN` | ✅ | Downstream dispatch |
-| `DATABASE_URL` | ✅ | `outbox_events` SELECT + UPDATE |
+| `DATABASE_URL` | ✅ | `outbox_events` SELECT JOIN + UPDATE |
 | `WORKER_OUTBOX_EVENTS_URL` | ✅ | Upstash Workflow step callbacks (`serveMany` baseUrl) |
 | `UPSTASH_REDIS_REST_URL` | ✅ | Processing lock (or use `REDIS_URL`) |
 | `UPSTASH_REDIS_REST_TOKEN` | ✅ | Processing lock (or use `REDIS_URL`) |
 
-One downstream worker URL secret is required per registered flow in `src/lib/dispatcher.ts`. See the [Secrets](../README.md#secrets) section in the main README for the current list.
+One downstream worker URL secret is required per registered event in `src/lib/dispatcher.ts`. See the [Secrets](../README.md#secrets) section in the main README for the current list.
 
 ### Web app secrets (separate deployment)
 
@@ -321,14 +331,14 @@ apps/worker-outbox-events/
 │       ├── logger.ts                            # Structured JSON logger
 │       ├── workflow-base-url.ts                 # WORKER_OUTBOX_EVENTS_URL resolver
 │       ├── qstash.ts                            # QStash client singleton
-│       ├── dispatcher.ts                        # Flow → downstream routing
+│       ├── dispatcher.ts                        # (event_name, broker_name) → downstream routing
 │       ├── downstream-urls.ts                   # URL resolvers for downstream workers
 │       ├── cache/
 │       │   ├── redis.ts                         # Upstash REST primitives (exists / set / del)
 │       │   └── outbox-processing-cache.ts       # acquire / check / release lock
 │       └── db/
 │           ├── client.ts                        # postgres.js singleton
-│           └── outbox-events.repository.ts      # findById + updateStatus
+│           └── outbox-events.repository.ts      # findById (JOIN events) + updateStatus
 ```
 
 ---
@@ -344,7 +354,7 @@ Unit tests cover all critical paths:
 | `tests/unit/workflow-base-url.test.ts` | `WORKER_OUTBOX_EVENTS_URL` resolver |
 | `tests/unit/process-outbox-event-workflow.test.ts` | Workflow orchestration and step ordering |
 | `tests/unit/process-outbox-event-steps.test.ts` | Individual step implementations |
-| `tests/unit/dispatcher.test.ts` | Flow routing, payload forwarding, unknown flow error |
+| `tests/unit/dispatcher.test.ts` | (event_name, broker_name) routing, payload forwarding, unknown route error |
 | `tests/unit/outbox-events-repository.test.ts` | `findById` (found / not-found) and `updateStatus` |
 | `tests/unit/downstream-urls.test.ts` | URL composition and missing env var errors |
 | `tests/unit/outbox-processing-cache.test.ts` | Lock check, acquire, release |
@@ -372,7 +382,7 @@ sequenceDiagram
 
     WEB->>DB: BEGIN TRANSACTION
     WEB->>DB: [business write]
-    WEB->>DB: INSERT outbox_events (PENDING)
+    WEB->>DB: INSERT outbox_events (event_id, PENDING)
     WEB->>DB: COMMIT
     WEB->>MQ: publishJSON({ outboxEventId })
 
@@ -381,8 +391,8 @@ sequenceDiagram
     WORKER->>REDIS: SET outbox-processing:{id} 1 EX 300 NX
     REDIS-->>WORKER: OK (lock acquired)
     Note over WORKER: durable step: load-event
-    WORKER->>DB: SELECT * FROM outbox_events WHERE id = ?
-    DB-->>WORKER: event row (flow, event, payload, status=PENDING)
+    WORKER->>DB: SELECT oe.* + e.event_name FROM outbox_events JOIN events
+    DB-->>WORKER: row (event_name, payload, status=PENDING)
     Note over WORKER: durable step: dispatch-event
     WORKER->>MQ: publishJSON({ url: downstream, body: payload })
     MQ-->>WORKER: ok
@@ -397,7 +407,6 @@ sequenceDiagram
 
 ## Related Documentation
 
-- [`README.md`](../README.md) — worker setup, deployment, adding new flows
-- [`apps/worker-sync/README.md`](../../worker-sync/README.md) — `sync-language` workflow reference
-- [`apps/worker-ai-workflows/docs/WEEKLY_OUTFITS_WORKFLOW.md`](../../worker-ai-workflows/docs/WEEKLY_OUTFITS_WORKFLOW.md) — `generate-weekly-outfits` workflow reference
-- [`apps/worker-notification/docs/EMAIL_WELCOME_WORKFLOW.md`](../../worker-notification/docs/EMAIL_WELCOME_WORKFLOW.md) — `email--welcome` workflow reference
+- [`README.md`](../README.md) — worker setup, deployment, adding new events
+- [`apps/worker-sync/README.md`](../../worker-sync/README.md) — language sync workflow reference
+- [`apps/worker-notification/docs/EMAIL_WELCOME_WORKFLOW.md`](../../worker-notification/docs/EMAIL_WELCOME_WORKFLOW.md) — welcome email workflow reference

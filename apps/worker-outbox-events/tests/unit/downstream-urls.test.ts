@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import {
   resolveWorkerSyncUrl,
-  resolveWorkerAiWorkflowsUrl,
   resolveWorkerNotificationUrl,
 } from "../../src/lib/downstream-urls"
 
@@ -44,24 +43,6 @@ describe("resolveWorkerSyncUrl", () => {
     process.env.WORKER_SYNC_URL = "   "
     expect(() => resolveWorkerSyncUrl("/sync/language")).toThrow(
       "WORKER_SYNC_URL environment variable is not set",
-    )
-  })
-})
-
-describe("resolveWorkerAiWorkflowsUrl", () => {
-  beforeEach(() => {
-    process.env.WORKER_AI_WORKFLOWS_URL = "https://worker-ai-workflows.example.workers.dev"
-  })
-
-  it("returns the full URL by joining the base and path", () => {
-    const url = resolveWorkerAiWorkflowsUrl("/generate-weekly-outfits")
-    expect(url).toBe("https://worker-ai-workflows.example.workers.dev/generate-weekly-outfits")
-  })
-
-  it("throws when WORKER_AI_WORKFLOWS_URL is not set", () => {
-    delete process.env.WORKER_AI_WORKFLOWS_URL
-    expect(() => resolveWorkerAiWorkflowsUrl("/generate-weekly-outfits")).toThrow(
-      "WORKER_AI_WORKFLOWS_URL environment variable is not set",
     )
   })
 })

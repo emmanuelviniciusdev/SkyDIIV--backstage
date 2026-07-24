@@ -16,9 +16,10 @@ describe("SqlOutboxEventsRepository", () => {
     it("returns the outbox event row when found", async () => {
       const row = {
         id: "evt-uuid-1",
-        flow: "sync-language",
-        event: "language-changed",
-        payload: { userId: "user-1", oldLocale: "en", newLocale: "pt" },
+        event_id: "e78e3646-c18f-48d1-a63c-cebfc2c77730",
+        event_name: "language-changed",
+        broker_name: "QStash",
+        payload: { userid: "user-1", old_language: "en", new_language: "pt" },
         status: "PENDING",
         created_at: new Date("2026-01-01"),
         created_by: "user@example.com",
