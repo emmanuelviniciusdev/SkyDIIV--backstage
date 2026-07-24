@@ -1,3 +1,5 @@
+import type { SearchParamsJson } from "../entities/search-params.js"
+
 export type ScrapingStatus = "SUCCESS" | "ERROR"
 
 /**
@@ -7,7 +9,8 @@ export type ScrapingStatus = "SUCCESS" | "ERROR"
 export type ScrapingMetadata = {
   scrapedAt: string
   marketplace: string
-  searchTerm: string
+  /** Full search criteria used for this scrape attempt. */
+  searchParams: SearchParamsJson
   /** Pure values as returned by the scraper (before DB coercion). */
   raw?: {
     title: string | null

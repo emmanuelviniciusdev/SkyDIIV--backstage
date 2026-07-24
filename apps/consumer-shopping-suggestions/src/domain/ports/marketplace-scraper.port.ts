@@ -1,10 +1,11 @@
 import type { ScrapedProduct } from "../entities/scraped-product.js"
+import type { SearchParams } from "../entities/search-params.js"
 
 /**
  * Input for a marketplace scrape operation.
  */
 export interface MarketplaceScrapeInput {
-  searchTerms: string[]
+  searchParams: SearchParams[]
   userId: string
 }
 
@@ -17,7 +18,7 @@ export interface MarketplaceScraperPort {
   readonly marketplace: string
 
   /**
-   * Scrapes clothing suggestions for the given search terms.
+   * Scrapes clothing suggestions for the given search params.
    * Must apply human-like delays between requests internally.
    */
   scrape(input: MarketplaceScrapeInput): Promise<ScrapedProduct[]>

@@ -19,8 +19,17 @@ describe("CloudflareQueuesConsumer", () => {
   it("pulls messages and maps event/payload into broker fields", async () => {
     const payload = {
       marketplace: "enjoei",
-      userid: "user-1",
-      search_terms: ["vestido"],
+      userId: "user-1",
+      searchParams: [
+        {
+          searchTerm: "vestido",
+          gender: null,
+          topSize: null,
+          bottomSize: null,
+          footSize: null,
+          brand: null,
+        },
+      ],
     }
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -81,7 +90,20 @@ describe("CloudflareQueuesConsumer", () => {
   it("decodes base64 JSON bodies", async () => {
     const envelope = {
       event: "scrape-shopping-suggestions",
-      payload: { marketplace: "enjoei", userid: "u1", search_terms: ["x"] },
+      payload: {
+        marketplace: "enjoei",
+        userId: "u1",
+        searchParams: [
+          {
+            searchTerm: "x",
+            gender: null,
+            topSize: null,
+            bottomSize: null,
+            footSize: null,
+            brand: null,
+          },
+        ],
+      },
     }
     const encoded = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64")
 

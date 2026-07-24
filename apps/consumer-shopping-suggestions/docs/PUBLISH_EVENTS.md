@@ -27,7 +27,7 @@ production default is **10 minutes**).
 
 | `event` | Payload (summary) | Doc |
 |---|---|---|
-| `scrape-shopping-suggestions` | `marketplace`, `userid`, `search_terms[]` | [SCRAPE_SHOPPING_SUGGESTIONS.md](./SCRAPE_SHOPPING_SUGGESTIONS.md) |
+| `scrape-shopping-suggestions` | `marketplace`, `userId`, `searchParams[]` | [SCRAPE_SHOPPING_SUGGESTIONS.md](./SCRAPE_SHOPPING_SUGGESTIONS.md) |
 
 Unknown `event` names are rejected (logged + ACKed by the runner).
 
@@ -62,7 +62,15 @@ chmod +x scripts/*.sh
 # Uses ./.env (EVENT defaults to scrape-shopping-suggestions)
 ./scripts/publish-event.sh
 
+# Preferred: one SearchParams object per term (filters can differ per entry)
+SEARCH_PARAMS='[
+  {"searchTerm":"vestido floral","gender":"Female","topSize":"M","bottomSize":"40","footSize":"38","brand":"Zara"},
+  {"searchTerm":"jaqueta","gender":"Male","topSize":"G","bottomSize":null,"footSize":null,"brand":null}
+]' USER_ID=user-42 ./scripts/publish-event.sh
+
+# Fallback shorthand: shared filters applied to every TERMS entry
 MARKETPLACE=enjoei USER_ID=user-42 TERMS="vestido floral,jaqueta" \
+  GENDER=Female TOP_SIZE=M BOTTOM_SIZE=40 FOOT_SIZE=38 \
   ./scripts/publish-event.sh
 
 # Explicit event name (default is scrape-shopping-suggestions)
@@ -83,8 +91,17 @@ The script `POST`s to:
     "event": "scrape-shopping-suggestions",
     "payload": {
       "marketplace": "enjoei",
-      "userid": "user-42",
-      "search_terms": ["vestido floral"]
+      "userId": "user-42",
+      "searchParams": [
+        {
+          "searchTerm": "vestido floral",
+          "gender": "Female",
+          "topSize": "M",
+          "bottomSize": "40",
+          "footSize": "38",
+          "brand": null
+        }
+      ]
     }
   },
   "content_type": "json"
@@ -108,8 +125,17 @@ curl -sS -X POST \
       "event": "scrape-shopping-suggestions",
       "payload": {
         "marketplace": "enjoei",
-        "userid": "user-42",
-        "search_terms": ["vestido floral"]
+        "userId": "user-42",
+        "searchParams": [
+          {
+            "searchTerm": "vestido floral",
+            "gender": "Female",
+            "topSize": "M",
+            "bottomSize": "40",
+            "footSize": "38",
+            "brand": null
+          }
+        ]
       }
     },
     "content_type": "json"
@@ -149,7 +175,7 @@ sequenceDiagram
 | `success: false` | Invalid push body |
 | Published, no processing | Consumer stopped / VM STOPPED / still inside poll interval |
 | `No handler registered` | Typo in `event`, or handler not wired in `main.ts` |
-| Scrape ACK with no products | `userid` has no `wardrobe_panorama` |
+| Scrape ACK with no products | `userId` has no `wardrobe_panorama` |
 
 ## Produce from another service
 
@@ -168,8 +194,17 @@ const res = await fetch(
         event: "scrape-shopping-suggestions",
         payload: {
           marketplace: "enjoei",
-          userid: "user-42",
-          search_terms: ["vestido floral"],
+          userId: "user-42",
+          searchParams: [
+            {
+              searchTerm: "vestido floral",
+              gender: "Female",
+              topSize: "M",
+              bottomSize: "40",
+              footSize: "38",
+              brand: null,
+            },
+          ],
         },
       },
     }),

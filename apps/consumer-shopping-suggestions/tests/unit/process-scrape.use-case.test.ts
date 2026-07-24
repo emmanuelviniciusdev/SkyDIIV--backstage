@@ -5,6 +5,7 @@ import type { Logger } from "../../src/domain/ports/logger.port.js"
 import type { MarketplaceScraperPort } from "../../src/domain/ports/marketplace-scraper.port.js"
 import type { ScrapedProductsRepositoryPort } from "../../src/domain/ports/scraped-products.repository.port.js"
 import type { WardrobePanoramaRepositoryPort } from "../../src/domain/ports/wardrobe-panorama.repository.port.js"
+import { searchParams } from "../helpers/search-params.js"
 
 function silentLogger(): Logger {
   return {
@@ -31,6 +32,13 @@ function createDeps(overrides?: {
           url: "https://www.enjoei.com.br/p/vestido",
           imageUrl: null,
           searchTerm: "vestido",
+          searchParams: searchParams("vestido", {
+            gender: "Female",
+            topSize: "M",
+            bottomSize: "40",
+            footSize: "38",
+            brand: "Zara",
+          }),
         },
       ])
 
@@ -88,14 +96,22 @@ describe("ProcessScrapeShoppingSuggestionsUseCase", () => {
       setNewShoppingSuggestionsNotification,
     } = createDeps()
 
+    const params = searchParams("vestido", {
+      gender: "Female",
+      topSize: "M",
+      bottomSize: "40",
+      footSize: "38",
+      brand: "Zara",
+    })
+
     const result = await useCase.execute({
       marketplace: "Enjoei",
-      userid: "user-42",
-      search_terms: ["vestido"],
+      userId: "user-42",
+      searchParams: [params],
     })
 
     expect(scrape).toHaveBeenCalledWith({
-      searchTerms: ["vestido"],
+      searchParams: [params],
       userId: "user-42",
     })
     expect(result.products).toHaveLength(1)
@@ -117,7 +133,7 @@ describe("ProcessScrapeShoppingSuggestionsUseCase", () => {
           scrapingStatus: "SUCCESS",
           scrapingMetadata: expect.objectContaining({
             marketplace: "enjoei",
-            searchTerm: "vestido",
+            searchParams: params,
             raw: expect.objectContaining({
               price: 89.9,
               imageUrl: null,
@@ -137,8 +153,8 @@ describe("ProcessScrapeShoppingSuggestionsUseCase", () => {
     await expect(
       useCase.execute({
         marketplace: "enjoei",
-        userid: "user-missing",
-        search_terms: ["vestido"],
+        userId: "user-missing",
+        searchParams: [searchParams("vestido")],
       }),
     ).rejects.toThrow(/panorama not found/)
 
@@ -157,8 +173,8 @@ describe("ProcessScrapeShoppingSuggestionsUseCase", () => {
 
     const result = await useCase.execute({
       marketplace: "enjoei",
-      userid: "user-42",
-      search_terms: ["vestido", "jaqueta"],
+      userId: "user-42",
+      searchParams: [searchParams("vestido"), searchParams("jaqueta")],
     })
 
     expect(result.products).toEqual([])
@@ -171,6 +187,7 @@ describe("ProcessScrapeShoppingSuggestionsUseCase", () => {
           scrapingStatus: "ERROR",
           imageUrl: "https://assets.skydiiv.space/placeholder--scraped-product.png",
           scrapingMetadata: expect.objectContaining({
+            searchParams: searchParams("vestido"),
             error: expect.objectContaining({ message: "browser crashed" }),
           }),
         }),
@@ -194,8 +211,8 @@ describe("ProcessScrapeShoppingSuggestionsUseCase", () => {
 
     const result = await useCase.execute({
       marketplace: "unknown",
-      userid: "u1",
-      search_terms: ["x"],
+      userId: "u1",
+      searchParams: [searchParams("x")],
     })
 
     expect(result.products).toEqual([])

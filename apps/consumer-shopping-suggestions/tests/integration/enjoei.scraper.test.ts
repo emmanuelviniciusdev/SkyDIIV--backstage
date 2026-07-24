@@ -8,6 +8,7 @@ import type { DelayPort } from "../../src/domain/ports/delay.port.js"
 import type { ProxyRotatorPort } from "../../src/domain/ports/proxy-rotator.port.js"
 import type { Logger } from "../../src/domain/ports/logger.port.js"
 import { EnjoeiScraper } from "../../src/infrastructure/scraping/marketplaces/enjoei.scraper.js"
+import { searchParams } from "../helpers/search-params.js"
 
 function silentLogger(): Logger {
   return {
@@ -19,7 +20,7 @@ function silentLogger(): Logger {
 }
 
 describe("EnjoeiScraper (integration with fake browser)", () => {
-  it("returns the top product for each search term", async () => {
+  it("returns the top product for each search params entry", async () => {
     const delayCalls: number[] = []
     const delay: DelayPort = {
       humanDelay: async () => {
@@ -80,11 +81,15 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
       delay,
       proxyRotator,
       logger: silentLogger(),
-      buildSearchUrl: (term) => `https://www.enjoei.com.br/s/?q=${term}`,
+      buildSearchUrl: (params) =>
+        `https://www.enjoei.com.br/s/?q=${params.searchTerm}`,
     })
 
     const products = await scraper.scrape({
-      searchTerms: ["jaqueta jeans youcom", "vestido floral"],
+      searchParams: [
+        searchParams("jaqueta jeans youcom"),
+        searchParams("vestido floral"),
+      ],
       userId: "user-9",
     })
 
@@ -103,7 +108,51 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
     expect(products[1]?.searchTerm).toBe("vestido floral")
   })
 
-  it("skips a term when no product card is found", async () => {
+  it("uses the default URL builder with gender and size filters", async () => {
+    const visitedUrls: string[] = []
+
+    const scraper = new EnjoeiScraper({
+      browserFactory: {
+        launch: async () => ({
+          newPage: async () => ({
+            goto: async (url) => {
+              visitedUrls.push(url)
+            },
+            content: async () => "",
+            evaluate: async <T>() => null as T,
+            close: async () => {},
+          }),
+          close: async () => {},
+        }),
+      },
+      delay: { humanDelay: async () => {} },
+      proxyRotator: {
+        isEnabled: () => false,
+        next: () => {
+          throw new Error("unused")
+        },
+      },
+      logger: silentLogger(),
+    })
+
+    await scraper.scrape({
+      searchParams: [
+        searchParams("camiseta", {
+          gender: "Female",
+          topSize: "M",
+          bottomSize: "40",
+          footSize: "38",
+        }),
+      ],
+      userId: "u1",
+    })
+
+    expect(visitedUrls).toEqual([
+      "https://www.enjoei.com.br/s/?q=camiseta&dep=feminino&sc=m&sw=40&ss=38",
+    ])
+  })
+
+  it("skips an entry when no product card is found", async () => {
     const scraper = new EnjoeiScraper({
       browserFactory: {
         launch: async () => ({
@@ -127,7 +176,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
     })
 
     const products = await scraper.scrape({
-      searchTerms: ["produto inexistente xyz"],
+      searchParams: [searchParams("produto inexistente xyz")],
       userId: "u1",
     })
 
@@ -157,7 +206,10 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
       logger: silentLogger(),
     })
 
-    await scraper.scrape({ searchTerms: ["saia"], userId: "u1" })
+    await scraper.scrape({
+      searchParams: [searchParams("saia")],
+      userId: "u1",
+    })
 
     expect(launch).toHaveBeenCalledWith({ proxyUrl: "socks5://127.0.0.1:11080" })
   })

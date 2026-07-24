@@ -34,8 +34,25 @@ Envelope (shared by all events):
   "event": "scrape-shopping-suggestions",
   "payload": {
     "marketplace": "enjoei",
-    "userid": "user-uuid",
-    "search_terms": ["vestido floral", "jaqueta jeans"]
+    "userId": "user-uuid",
+    "searchParams": [
+      {
+        "searchTerm": "vestido floral",
+        "gender": "Female",
+        "topSize": "M",
+        "bottomSize": "40",
+        "footSize": "38",
+        "brand": "Zara"
+      },
+      {
+        "searchTerm": "jaqueta jeans",
+        "gender": "Female",
+        "topSize": "M, G",
+        "bottomSize": null,
+        "footSize": null,
+        "brand": null
+      }
+    ]
   }
 }
 ```
@@ -43,8 +60,19 @@ Envelope (shared by all events):
 | Field | Type | Description |
 |---|---|---|
 | `payload.marketplace` | string | Marketplace slug (`enjoei` today) |
-| `payload.userid` | string | User id (must have a `wardrobe_panorama`) |
-| `payload.search_terms` | string[] | ≥ 1 search term |
+| `payload.userId` | string | User id (must have a `wardrobe_panorama`) |
+| `payload.searchParams` | `SearchParams[]` | ≥ 1 search entry |
+
+### `SearchParams`
+
+| Field | Type | Description |
+|---|---|---|
+| `searchTerm` | string | Free-text query (≥ 1 char) |
+| `gender` | string \| null | SkyDIIV gender (`Female` / `Male` / `No preference`) → Enjoei `dep` |
+| `topSize` | string \| null | Top sizes (`"M"` or `"M, G"`) → Enjoei `sc` |
+| `bottomSize` | string \| null | Bottom sizes → Enjoei `sw` |
+| `footSize` | string \| null | Footwear sizes → Enjoei `ss` |
+| `brand` | string \| null | Brand name → Enjoei `b` (kebab-case slug) |
 
 Publish helper: `./scripts/publish-event.sh` (see [PUBLISH_EVENTS.md](./PUBLISH_EVENTS.md)).
 
@@ -68,7 +96,7 @@ sequenceDiagram
     R->>Router: route(event, payload)
     Router->>U: scrape-shopping-suggestions handler
     U->>DB: find wardrobe_panorama
-    U->>S: scrape(search_terms)
+    U->>S: scrape(searchParams)
     S-->>U: ScrapedProduct[]
     U->>DB: DELETE + INSERT scraped_products
     U->>WebRedis: DEL shopping-suggestions:{userId}
@@ -84,7 +112,7 @@ Defaults: batch **10**; poll **10 min** in production (local `.env.example` sugg
 | Outcome | `scraping_status` | Notes |
 |---|---|---|
 | Scrape OK | `SUCCESS` | One row per scraped product |
-| Scrape / marketplace error | `ERROR` | One row per `search_term` with error metadata; message is still ACKed |
+| Scrape / marketplace error | `ERROR` | One row per `searchParams` entry with error metadata; message is still ACKed |
 
 `scraping_metadata` (JSONB) always stores diagnostics, including raw scraper values
 before NOT NULL coercion. Default `image_url` when missing:
@@ -108,7 +136,11 @@ before NOT NULL coercion. Default `image_url` when missing:
 
 ## Enjoei scraping
 
-- Search URL: `https://www.enjoei.com.br/s/?q={term}`
+- Search URL: `https://www.enjoei.com.br/s/?q={term}&dep={gender}&b={brand}&sc={top}&sw={bottom}&ss={foot}`
+  - `dep` — department from gender (`Female` → `feminino`, `Male` → `masculino`; omitted for `No preference`)
+  - `b` — brand slug (kebab-case)
+  - `sc` / `sw` / `ss` — clothes / waist / shoes size filters (repeat params; sizes lowercased)
+- `scraping_metadata` stores the full `searchParams` object (not only `searchTerm`)
 - Browser: Camoufox (anti-detect Firefox) via `camoufox-js` + Playwright
 - Random delays between navigations (`SCRAPE_DELAY_MIN_MS` … `SCRAPE_DELAY_MAX_MS`)
 - Optional outbound proxy from the proxy rotator (`PROXY_URLS`, infra-provisioned)
@@ -139,7 +171,7 @@ Same broker and envelope — different `event` name + handler. See
 
 | Suite | Covers |
 |---|---|
-| `tests/unit/*` | Zod schemas, use case, router, delay, proxy, provider, config, cache, CF Queues adapter |
+| `tests/unit/*` | Zod schemas, use case, router, delay, proxy, provider, config, cache, CF Queues adapter, Enjoei URL builder |
 | `tests/integration/interval-pull-consumer.runner.test.ts` | Interval pull batching + ACK |
 | `tests/integration/enjoei.scraper.test.ts` | Scraper orchestration with fake browser |
 | `tests/integration/redis-stream.consumer.test.ts` | Unused Redis Streams adapter (not wired in runtime) |

@@ -102,8 +102,17 @@ describe("IntervalPullConsumerRunner (integration)", () => {
           event: SCRAPE_SHOPPING_SUGGESTIONS_EVENT,
           payload: JSON.stringify({
             marketplace: "enjoei",
-            userid: `user-${i}`,
-            search_terms: ["vestido"],
+            userId: `user-${i}`,
+            searchParams: [
+              {
+                searchTerm: "vestido",
+                gender: null,
+                topSize: null,
+                bottomSize: null,
+                footSize: null,
+                brand: null,
+              },
+            ],
           }),
         },
       })),
@@ -155,8 +164,17 @@ describe("IntervalPullConsumerRunner (integration)", () => {
           event: SCRAPE_SHOPPING_SUGGESTIONS_EVENT,
           payload: JSON.stringify({
             marketplace: "enjoei",
-            userid: "u1",
-            search_terms: ["x"],
+            userId: "u1",
+            searchParams: [
+              {
+                searchTerm: "x",
+                gender: null,
+                topSize: null,
+                bottomSize: null,
+                footSize: null,
+                brand: null,
+              },
+            ],
           }),
         },
       },

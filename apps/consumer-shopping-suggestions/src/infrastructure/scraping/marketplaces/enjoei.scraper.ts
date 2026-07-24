@@ -1,4 +1,5 @@
 import type { ScrapedProduct } from "../../../domain/entities/scraped-product.js"
+import type { SearchParams } from "../../../domain/entities/search-params.js"
 import type { BrowserFactoryPort } from "../../../domain/ports/browser-factory.port.js"
 import type { DelayPort } from "../../../domain/ports/delay.port.js"
 import type { Logger } from "../../../domain/ports/logger.port.js"
@@ -7,6 +8,7 @@ import type {
   MarketplaceScrapeInput,
   MarketplaceScraperPort,
 } from "../../../domain/ports/marketplace-scraper.port.js"
+import { buildEnjoeiSearchUrl } from "./enjoei-search-url.js"
 
 export interface EnjoeiScraperDeps {
   browserFactory: BrowserFactoryPort
@@ -14,7 +16,7 @@ export interface EnjoeiScraperDeps {
   proxyRotator: ProxyRotatorPort
   logger: Logger
   /** Injectable for tests — defaults to building the public Enjoei search URL. */
-  buildSearchUrl?: (term: string) => string
+  buildSearchUrl?: (params: SearchParams) => string
 }
 
 interface EnjoeiDomProduct {
@@ -24,8 +26,6 @@ interface EnjoeiDomProduct {
   url: string
   imageUrl: string | null
 }
-
-const ENJOEI_ORIGIN = "https://www.enjoei.com.br"
 
 /**
  * Browser-side extractor for the single most relevant product card.
@@ -94,17 +94,16 @@ const ENJOEI_EXTRACT_TOP_PRODUCT = `(() => {
 /**
  * Marketplace scraper for Enjoei (Brazilian second-hand clothing).
  *
- * Returns at most one product per search term — the top result under the
- * default "mais relevantes" ranking.
+ * Returns at most one product per search params entry — the top result under
+ * the default "mais relevantes" ranking, with optional gender/size filters.
  */
 export class EnjoeiScraper implements MarketplaceScraperPort {
   readonly marketplace = "enjoei"
 
-  private readonly buildSearchUrl: (term: string) => string
+  private readonly buildSearchUrl: (params: SearchParams) => string
 
   constructor(private readonly deps: EnjoeiScraperDeps) {
-    this.buildSearchUrl =
-      deps.buildSearchUrl ?? ((term) => `${ENJOEI_ORIGIN}/s/?q=${encodeURIComponent(term)}`)
+    this.buildSearchUrl = deps.buildSearchUrl ?? buildEnjoeiSearchUrl
   }
 
   async scrape(input: MarketplaceScrapeInput): Promise<ScrapedProduct[]> {
@@ -116,21 +115,26 @@ export class EnjoeiScraper implements MarketplaceScraperPort {
     const products: ScrapedProduct[] = []
 
     try {
-      for (let i = 0; i < input.searchTerms.length; i++) {
-        const term = input.searchTerms[i]!
+      for (let i = 0; i < input.searchParams.length; i++) {
+        const params = input.searchParams[i]!
 
         if (i > 0) {
           await this.deps.delay.humanDelay()
         }
 
-        this.deps.logger.info("Scraping Enjoei search term", {
+        this.deps.logger.info("Scraping Enjoei search", {
           userId: input.userId,
-          searchTerm: term,
+          searchTerm: params.searchTerm,
+          gender: params.gender,
+          topSize: params.topSize,
+          bottomSize: params.bottomSize,
+          footSize: params.footSize,
+          brand: params.brand,
         })
 
         const page = await browser.newPage()
         try {
-          const url = this.buildSearchUrl(term)
+          const url = this.buildSearchUrl(params)
           await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 })
 
           // Wait for product cards to hydrate past the skeleton state.
@@ -142,7 +146,8 @@ export class EnjoeiScraper implements MarketplaceScraperPort {
 
           if (!extracted) {
             this.deps.logger.warn("No relevant Enjoei product found", {
-              searchTerm: term,
+              searchTerm: params.searchTerm,
+              url,
             })
             continue
           }
@@ -154,12 +159,13 @@ export class EnjoeiScraper implements MarketplaceScraperPort {
             currency: extracted.currency,
             url: extracted.url,
             imageUrl: extracted.imageUrl,
-            searchTerm: term,
+            searchTerm: params.searchTerm,
+            searchParams: params,
           }
           products.push(product)
 
-          this.deps.logger.debug("Enjoei search term scrape output", {
-            searchTerm: term,
+          this.deps.logger.debug("Enjoei search scrape output", {
+            searchTerm: params.searchTerm,
             product,
           })
         } finally {
@@ -172,7 +178,7 @@ export class EnjoeiScraper implements MarketplaceScraperPort {
 
     this.deps.logger.debug("Enjoei scrape output", {
       userId: input.userId,
-      searchTerms: input.searchTerms,
+      searchParams: input.searchParams,
       productCount: products.length,
       products,
     })

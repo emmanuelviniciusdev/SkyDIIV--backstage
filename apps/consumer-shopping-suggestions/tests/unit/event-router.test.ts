@@ -37,15 +37,33 @@ describe("EventRouter", () => {
       event: SCRAPE_SHOPPING_SUGGESTIONS_EVENT,
       payload: JSON.stringify({
         marketplace: "enjoei",
-        userid: "u1",
-        search_terms: ["jaqueta"],
+        userId: "u1",
+        searchParams: [
+          {
+            searchTerm: "jaqueta",
+            gender: null,
+            topSize: null,
+            bottomSize: null,
+            footSize: null,
+            brand: null,
+          },
+        ],
       }),
     })
 
     expect(execute).toHaveBeenCalledWith({
       marketplace: "enjoei",
-      userid: "u1",
-      search_terms: ["jaqueta"],
+      userId: "u1",
+      searchParams: [
+        {
+          searchTerm: "jaqueta",
+          gender: null,
+          topSize: null,
+          bottomSize: null,
+          footSize: null,
+          brand: null,
+        },
+      ],
     })
   })
 

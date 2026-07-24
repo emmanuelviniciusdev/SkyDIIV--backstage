@@ -1,5 +1,12 @@
 import type { ScrapedProduct, ScrapeResult } from "../../domain/entities/scraped-product.js"
-import type { ScrapeShoppingSuggestionsPayload } from "../../domain/events/scrape-shopping-suggestions.event.js"
+import {
+  toSearchParamsJson,
+  type SearchParams,
+} from "../../domain/entities/search-params.js"
+import {
+  toSearchParams,
+  type ScrapeShoppingSuggestionsPayload,
+} from "../../domain/events/scrape-shopping-suggestions.event.js"
 import type { CachePort } from "../../domain/ports/cache.port.js"
 import type { Logger } from "../../domain/ports/logger.port.js"
 import type { MarketplaceScraperPort } from "../../domain/ports/marketplace-scraper.port.js"
@@ -42,8 +49,9 @@ export class ProcessScrapeShoppingSuggestionsUseCase {
 
   async execute(payload: ScrapeShoppingSuggestionsPayload): Promise<ScrapeResult> {
     const marketplace = payload.marketplace.toLowerCase().trim()
-    const userId = payload.userid
+    const userId = payload.userId
     const scrapedAt = new Date()
+    const searchParams = payload.searchParams.map(toSearchParams)
 
     const panoramaId = await this.deps.wardrobePanoramaRepository.findIdByUserId(userId)
     if (!panoramaId) {
@@ -57,14 +65,14 @@ export class ProcessScrapeShoppingSuggestionsUseCase {
       marketplace,
       userId,
       panoramaId,
-      searchTermCount: payload.search_terms.length,
+      searchParamCount: searchParams.length,
     })
 
     let products: ScrapedProduct[]
     try {
       const scraper = this.deps.resolveScraper(marketplace)
       products = await scraper.scrape({
-        searchTerms: payload.search_terms,
+        searchParams,
         userId,
       })
     } catch (err) {
@@ -77,10 +85,10 @@ export class ProcessScrapeShoppingSuggestionsUseCase {
         error: errorMeta.message,
       })
 
-      const errorRows = payload.search_terms.map((searchTerm) =>
+      const errorRows = searchParams.map((params) =>
         toErrorInsert({
           marketplace,
-          searchTerm,
+          searchParams: params,
           scrapedAt,
           error: errorMeta,
         }),
@@ -120,7 +128,7 @@ export class ProcessScrapeShoppingSuggestionsUseCase {
       marketplace,
       userId,
       scrapedAt: scrapedAt.toISOString(),
-      searchTerms: payload.search_terms,
+      searchParams,
       productCount: products.length,
       products,
     })
@@ -148,7 +156,7 @@ function toSuccessInsert(
   const metadata: ScrapingMetadata = {
     scrapedAt: scrapedAt.toISOString(),
     marketplace,
-    searchTerm: product.searchTerm,
+    searchParams: toSearchParamsJson(product.searchParams),
     raw: {
       title: product.title,
       price: product.price,
@@ -173,23 +181,24 @@ function toSuccessInsert(
 
 function toErrorInsert(input: {
   marketplace: string
-  searchTerm: string
+  searchParams: SearchParams
   scrapedAt: Date
   error: { message: string; name?: string; at: string }
 }): ScrapedProductInsert {
+  const searchTerm = input.searchParams.searchTerm
   return {
     marketplace: input.marketplace,
-    title: `Scraping failed: ${input.searchTerm}`,
+    title: `Scraping failed: ${searchTerm}`,
     price: 0,
     currency: DEFAULT_CURRENCY,
     url: DEFAULT_ERROR_URL,
     imageUrl: DEFAULT_IMAGE_URL,
-    searchTerm: input.searchTerm,
+    searchTerm,
     scrapingStatus: "ERROR",
     scrapingMetadata: {
       scrapedAt: input.scrapedAt.toISOString(),
       marketplace: input.marketplace,
-      searchTerm: input.searchTerm,
+      searchParams: toSearchParamsJson(input.searchParams),
       error: input.error,
     },
   }

@@ -1,6 +1,8 @@
 /**
  * A clothing item scraped from a marketplace search result page.
  */
+import type { SearchParams } from "./search-params.js"
+
 export interface ScrapedProduct {
   marketplace: string
   title: string
@@ -8,7 +10,10 @@ export interface ScrapedProduct {
   currency: string | null
   url: string
   imageUrl: string | null
+  /** Denormalized free-text query (also persisted in the search_term column). */
   searchTerm: string
+  /** Full criteria used for this scrape (persisted in scraping_metadata). */
+  searchParams: SearchParams
 }
 
 /**

@@ -14,7 +14,7 @@ Env files: [docs/ENV.md](docs/ENV.md) · Localhost OCI deploy: [deploy/README.md
 
 | Event | Payload | Status |
 |---|---|---|
-| `scrape-shopping-suggestions` | `{ marketplace, userid, search_terms[] }` | Active — marketplace: **Enjoei** |
+| `scrape-shopping-suggestions` | `{ marketplace, userId, searchParams[] }` | Active — marketplace: **Enjoei** |
 
 Publish: [docs/PUBLISH_EVENTS.md](docs/PUBLISH_EVENTS.md) · Flow: [docs/SCRAPE_SHOPPING_SUGGESTIONS.md](docs/SCRAPE_SHOPPING_SUGGESTIONS.md)
 

@@ -82,8 +82,17 @@ describe("RedisStreamConsumer (integration with fake Redis)", () => {
       event: "scrape-shopping-suggestions",
       payload: JSON.stringify({
         marketplace: "enjoei",
-        userid: "u1",
-        search_terms: ["vestido"],
+        userId: "u1",
+        searchParams: [
+          {
+            searchTerm: "vestido",
+            gender: null,
+            topSize: null,
+            bottomSize: null,
+            footSize: null,
+            brand: null,
+          },
+        ],
       }),
     })
 
