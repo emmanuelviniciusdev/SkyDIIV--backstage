@@ -6,15 +6,21 @@ export type OutboxEventStatus = "PENDING" | "SUCCESS" | "ERROR"
 
 export type TerminalOutboxEventStatus = Extract<OutboxEventStatus, "SUCCESS" | "ERROR">
 
+/** Optional catalog metadata from `events.metadata` (JSONB). */
+export type EventMetadata = Record<string, unknown> | null
+
 /**
  * Outbox row joined with the `events` catalog.
- * `event_name` / `broker_name` come from `events`; routing uses both.
+ * `event_name` / `broker_name` / `metadata` come from `events`;
+ * routing uses `(event_name, broker_name)`. CF Queues routes resolve a per-event
+ * queue ID from env (`queueIdEnv` on the route), not from metadata.
  */
 export interface OutboxEventRow {
   id: string
   event_id: string
   event_name: string
   broker_name: string
+  metadata: EventMetadata
   payload: Record<string, unknown>
   status: OutboxEventStatus
   created_at: Date
@@ -38,6 +44,7 @@ export class SqlOutboxEventsRepository implements OutboxEventsRepository {
         oe.event_id,
         e.event_name,
         e.broker_name,
+        e.metadata,
         oe.payload,
         oe.status,
         oe.created_at,

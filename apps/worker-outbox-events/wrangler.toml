@@ -23,6 +23,9 @@ invocation_logs = true
 #   wrangler secret put UPSTASH_REDIS_REST_TOKEN
 #   wrangler secret put WORKER_SYNC_URL
 #   wrangler secret put WORKER_NOTIFICATION_URL
+#   wrangler secret put CF_ACCOUNT_ID
+#   wrangler secret put CF_SCRAPE_SHOPP_SUGG_QUEUE_ID
+#   wrangler secret put CF_QUEUES_API_TOKEN
 #
 # ── Staging / preview environment ─────────────────────────────────────────────
 [env.staging]

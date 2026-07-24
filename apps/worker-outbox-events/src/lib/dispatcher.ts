@@ -1,4 +1,5 @@
 import { getQStashClient } from "./qstash"
+import { publishToCloudflareQueue, resolveCfQueueId } from "./cloudflare-queues"
 import { resolveWorkerSyncUrl, resolveWorkerNotificationUrl } from "./downstream-urls"
 import type { OutboxEventRow } from "./db/outbox-events.repository"
 
@@ -8,6 +9,7 @@ import type { OutboxEventRow } from "./db/outbox-events.repository"
  */
 export const BROKER_NAMES = {
   QSTASH: "QStash",
+  CF_QUEUES: "CF Queues",
 } as const
 
 export type BrokerName = (typeof BROKER_NAMES)[keyof typeof BROKER_NAMES]
@@ -15,6 +17,8 @@ export type BrokerName = (typeof BROKER_NAMES)[keyof typeof BROKER_NAMES]
 /**
  * Known outbox routes — each entry is the unique `(event_name, broker_name)`
  * pair from the `events` catalog (see `EVENTS` in `app/lib/outbox.ts`).
+ *
+ * CF Queues routes declare `queueIdEnv`: each event publishes to its own queue.
  */
 export const OUTBOX_ROUTES = {
   LANGUAGE_CHANGED_QSTASH: {
@@ -24,6 +28,12 @@ export const OUTBOX_ROUTES = {
   USER_ACCOUNT_CREATED_QSTASH: {
     eventName: "user-account-created",
     brokerName: BROKER_NAMES.QSTASH,
+  },
+  SCRAPE_SHOPPING_SUGGESTIONS_CF_QUEUES: {
+    eventName: "scrape-shopping-suggestions",
+    brokerName: BROKER_NAMES.CF_QUEUES,
+    /** Per-event Cloudflare Queue ID env var. */
+    queueIdEnv: "CF_SCRAPE_SHOPP_SUGG_QUEUE_ID",
   },
 } as const
 
@@ -35,18 +45,19 @@ export function outboxRouteKey(eventName: string, brokerName: string): string {
 }
 
 /**
- * Dispatches the outbox event to the appropriate downstream worker via QStash.
+ * Dispatches the outbox event to the appropriate downstream broker/worker.
  *
  * Routing is by `(event_name, broker_name)` from the `events` catalog (joined
- * onto the outbox row). The event `payload` is forwarded verbatim as the
- * QStash message body — it carries exactly the fields the downstream worker
- * expects.
+ * onto the outbox row).
  *
- * Throws if the route is unknown or QStash publish fails, so the caller can
- * return a 5xx and let QStash retry.
+ * - **QStash routes** — `payload` forwarded verbatim to the downstream worker URL.
+ * - **CF Queues routes** — publishes `{ event, payload }` to the queue ID env
+ *   declared on that route (`queueIdEnv`).
+ *
+ * Throws if the route is unknown or publish fails, so the caller can return
+ * a 5xx and let QStash retry.
  */
 export async function dispatch(event: OutboxEventRow): Promise<void> {
-  const client = getQStashClient()
   const key = outboxRouteKey(event.event_name, event.broker_name)
 
   switch (key) {
@@ -54,6 +65,7 @@ export async function dispatch(event: OutboxEventRow): Promise<void> {
       OUTBOX_ROUTES.LANGUAGE_CHANGED_QSTASH.eventName,
       OUTBOX_ROUTES.LANGUAGE_CHANGED_QSTASH.brokerName,
     ): {
+      const client = getQStashClient()
       const url = resolveWorkerSyncUrl("/sync/language")
       await client.publishJSON({ url, body: event.payload })
       break
@@ -62,8 +74,25 @@ export async function dispatch(event: OutboxEventRow): Promise<void> {
       OUTBOX_ROUTES.USER_ACCOUNT_CREATED_QSTASH.eventName,
       OUTBOX_ROUTES.USER_ACCOUNT_CREATED_QSTASH.brokerName,
     ): {
+      const client = getQStashClient()
       const url = resolveWorkerNotificationUrl("/email--welcome")
       await client.publishJSON({ url, body: event.payload })
+      break
+    }
+    case outboxRouteKey(
+      OUTBOX_ROUTES.SCRAPE_SHOPPING_SUGGESTIONS_CF_QUEUES.eventName,
+      OUTBOX_ROUTES.SCRAPE_SHOPPING_SUGGESTIONS_CF_QUEUES.brokerName,
+    ): {
+      const queueId = resolveCfQueueId(
+        OUTBOX_ROUTES.SCRAPE_SHOPPING_SUGGESTIONS_CF_QUEUES.queueIdEnv,
+      )
+      await publishToCloudflareQueue(
+        {
+          event: event.event_name,
+          payload: event.payload,
+        },
+        queueId,
+      )
       break
     }
     default: {

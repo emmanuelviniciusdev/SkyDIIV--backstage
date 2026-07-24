@@ -123,13 +123,14 @@ LIMIT 1
 
 **Source:** `steps/dispatch-event.ts`
 
-Calls `dispatch(event)` in `src/lib/dispatcher.ts`, which switches on `(event.event_name, event.broker_name)` from the `events` catalog and publishes `event.payload` verbatim to the registered downstream worker via QStash.
+Calls `dispatch(event)` in `src/lib/dispatcher.ts`, which switches on `(event.event_name, event.broker_name)` from the `events` catalog and publishes to the matching broker:
 
-The `payload` stored in `outbox_events` is forwarded as-is — it carries exactly the fields the downstream worker expects.
+- **QStash routes** — `event.payload` is forwarded verbatim to the downstream worker URL.
+- **CF Queues routes** — publishes `{ event: event_name, payload }` to the Cloudflare Queues HTTP API for the queue ID env declared on that route (`queueIdEnv`).
 
 This step returns `{ ok: true }` or `{ ok: false, error }` without throwing, so its outcome is cached as a durable step result. A workflow retry after a failed downstream publish does **not** re-run a step that already returned `{ ok: true }`.
 
-- Unknown route or QStash publish error → `mark-error` → `release-lock` → `500 Internal Server Error`
+- Unknown route or publish error → `mark-error` → `release-lock` → `500 Internal Server Error`
 
 ---
 
@@ -185,14 +186,19 @@ export type ProcessOutboxEventPayload = {
 
 ## Routing by Event Name + Broker Name
 
-Routing logic lives in `src/lib/dispatcher.ts`. The `dispatch()` function switches on the composite `(event_name, broker_name)` pair — joined from the `events` catalog (unique on that pair) — and publishes `event.payload` verbatim to the corresponding downstream worker endpoint.
+Routing logic lives in `src/lib/dispatcher.ts`. The `dispatch()` function switches on the composite `(event_name, broker_name)` pair — joined from the `events` catalog (unique on that pair) — and publishes to the matching broker destination.
 
-| `event_name` | `broker_name` | Downstream worker | Endpoint | URL secret |
+| `event_name` | `broker_name` | Downstream | How | Secrets |
 |---|---|---|---|---|
-| `language-changed` | `QStash` | `worker-sync` | `POST /sync/language` | `WORKER_SYNC_URL` |
-| `user-account-created` | `QStash` | `worker-notification` | `POST /email--welcome` | `WORKER_NOTIFICATION_URL` |
+| `language-changed` | `QStash` | `worker-sync` `POST /sync/language` | QStash `publishJSON` | `WORKER_SYNC_URL` |
+| `user-account-created` | `QStash` | `worker-notification` `POST /email--welcome` | QStash `publishJSON` | `WORKER_NOTIFICATION_URL` |
+| `scrape-shopping-suggestions` | `CF Queues` | Queue `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` (e.g. `consumer-shopping-suggestions`) | CF Queues HTTP publish (`{ event, payload }`) | `CF_ACCOUNT_ID`, `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID`, `CF_QUEUES_API_TOKEN` |
+
+Each CF Queues event publishes to its **own** queue ID env var (declared as `queueIdEnv` on the route in `OUTBOX_ROUTES`).
 
 Catalog IDs, names, and brokers must stay in sync with the SkyDIIV web app (`EVENTS` / `BROKER_NAMES` in `app/lib/outbox.ts`). To add a new route, see [Adding a New Event](../README.md#adding-a-new-event) in the main README.
+
+See also [SCRAPE_SHOPPING_SUGGESTIONS.md](../../consumer-shopping-suggestions/docs/SCRAPE_SHOPPING_SUGGESTIONS.md) and [PUBLISH_EVENTS.md](../../consumer-shopping-suggestions/docs/PUBLISH_EVENTS.md).
 
 ---
 
@@ -205,7 +211,7 @@ Catalog IDs, names, and brokers must stay in sync with the SkyDIIV web app (`EVE
 | Event already being processed (Redis lock present) | `200` | `{ processed: false, reason: "already-processing", outboxEventId }` |
 | Event not found in database | `200` | `{ processed: false, reason: "not-found", outboxEventId }` |
 | Event already processed (`SUCCESS` or `ERROR`) | `200` | `{ processed: false, reason: "already-processed", outboxEventId, status }` |
-| Dispatch failed (unknown route or QStash error) | `500` | `Internal Server Error` |
+| Dispatch failed (unknown route or publish error) | `500` | `Internal Server Error` |
 | Successfully processed | `200` | `{ processed: true, outboxEventId, eventId, eventName }` |
 
 ---
@@ -252,7 +258,7 @@ When dispatch fails, the handler marks the row `ERROR` before returning `500`. O
 | Outbox event not found | ❌ Non-fatal | `200 not-found` — lock released |
 | Outbox event already processed | ❌ Non-fatal | `200 already-processed` — lock released |
 | Unknown route | ✅ Fatal | `ERROR` status set; `500` — lock released |
-| QStash publish failure | ✅ Fatal | `ERROR` status set; `500` — lock released |
+| QStash / CF Queues publish failure | ✅ Fatal | `ERROR` status set; `500` — lock released |
 | Database UPDATE failure (SUCCESS) | ✅ Fatal for step | Workflow retries `mark-success` only |
 | Database UPDATE failure (ERROR) | ✅ Fatal for step | Workflow retries `mark-error` only |
 
@@ -289,7 +295,7 @@ Set via `wrangler secret put <KEY>` (production) or `.dev.vars` (local):
 | `UPSTASH_REDIS_REST_URL` | ✅ | Processing lock (or use `REDIS_URL`) |
 | `UPSTASH_REDIS_REST_TOKEN` | ✅ | Processing lock (or use `REDIS_URL`) |
 
-One downstream worker URL secret is required per registered event in `src/lib/dispatcher.ts`. See the [Secrets](../README.md#secrets) section in the main README for the current list.
+Downstream secrets depend on the route: QStash routes need a worker URL; each CF Queues route needs `CF_ACCOUNT_ID`, `CF_QUEUES_API_TOKEN`, and that route's queue ID env (e.g. `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID`). See the [Secrets](../README.md#secrets) section in the main README for the current list.
 
 ### Web app secrets (separate deployment)
 
@@ -332,7 +338,8 @@ apps/worker-outbox-events/
 │       ├── workflow-base-url.ts                 # WORKER_OUTBOX_EVENTS_URL resolver
 │       ├── qstash.ts                            # QStash client singleton
 │       ├── dispatcher.ts                        # (event_name, broker_name) → downstream routing
-│       ├── downstream-urls.ts                   # URL resolvers for downstream workers
+│       ├── downstream-urls.ts                   # URL resolvers for QStash downstream workers
+│       ├── cloudflare-queues.ts                 # CF Queues HTTP publish helper
 │       ├── cache/
 │       │   ├── redis.ts                         # Upstash REST primitives (exists / set / del)
 │       │   └── outbox-processing-cache.ts       # acquire / check / release lock
@@ -355,6 +362,7 @@ Unit tests cover all critical paths:
 | `tests/unit/process-outbox-event-workflow.test.ts` | Workflow orchestration and step ordering |
 | `tests/unit/process-outbox-event-steps.test.ts` | Individual step implementations |
 | `tests/unit/dispatcher.test.ts` | (event_name, broker_name) routing, payload forwarding, unknown route error |
+| `tests/unit/cloudflare-queues.test.ts` | CF Queues HTTP publish request shape and error handling |
 | `tests/unit/outbox-events-repository.test.ts` | `findById` (found / not-found) and `updateStatus` |
 | `tests/unit/downstream-urls.test.ts` | URL composition and missing env var errors |
 | `tests/unit/outbox-processing-cache.test.ts` | Lock check, acquire, release |
@@ -410,3 +418,4 @@ sequenceDiagram
 - [`README.md`](../README.md) — worker setup, deployment, adding new events
 - [`apps/worker-sync/README.md`](../../worker-sync/README.md) — language sync workflow reference
 - [`apps/worker-notification/docs/EMAIL_WELCOME_WORKFLOW.md`](../../worker-notification/docs/EMAIL_WELCOME_WORKFLOW.md) — welcome email workflow reference
+- [`apps/consumer-shopping-suggestions/docs/SCRAPE_SHOPPING_SUGGESTIONS.md`](../../consumer-shopping-suggestions/docs/SCRAPE_SHOPPING_SUGGESTIONS.md) — scrape shopping suggestions consumer
