@@ -1,0 +1,18 @@
+{
+  "timezone": "America/Sao_Paulo",
+  "windowLocal": {
+    "day": "Thursday",
+    "start": "11:00",
+    "stop": "12:00"
+  },
+  "cronUtc": {
+    "start": "0 14 * * 4",
+    "stop": "0 15 * * 4"
+  },
+  "notes": [
+    "America/Sao_Paulo is UTC-3 year-round (no DST).",
+    "Thursday 11:00 BRT = 14:00 UTC; Thursday 12:00 BRT = 15:00 UTC.",
+    "OCI Resource Scheduler CRON uses UTC. Day-of-week 4 = Thursday.",
+    "Window is 1 hour per week."
+  ]
+}

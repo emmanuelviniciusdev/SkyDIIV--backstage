@@ -1,10 +1,33 @@
-# Scrape Shopping Suggestions
+# Scrape shopping suggestions
+
+Feature flow for the **`scrape-shopping-suggestions`** event (one of the events
+this consumer can handle). Broker: **Cloudflare Queues** (HTTP pull).
+
+For publishing any event, see [PUBLISH_EVENTS.md](./PUBLISH_EVENTS.md).
+For which env file to use locally vs on the VM, see [ENV.md](./ENV.md).
 
 ## Overview
 
-Consumes `scrape-shopping-suggestions` events from a Redis Stream and scrapes clothing listings from the requested marketplace. Output handling is deferred (see TODO in the use case).
+Consumes `scrape-shopping-suggestions` from Cloudflare Queues, scrapes clothing
+listings from the requested marketplace, replaces `scraped_products` for the
+user's wardrobe panorama, and updates caches on the **SkyDIIV web-app Redis**.
 
-## Event contract
+## Broker
+
+| Broker | Status | Mode |
+|---|---|---|
+| **Cloudflare Queues** | **Active (local + production)** | Interval HTTP pull via `IntervalPullConsumerRunner` |
+| Redis Streams | Implementation kept under `src/infrastructure/messaging/redis-stream.consumer.ts` — **not wired** in `main.ts` or local Compose | — |
+
+## Redis (web cache only)
+
+| Instance | Env | Role |
+|---|---|---|
+| Web app | `WEB_APP_REDIS_REST_URL` + `TOKEN` (or `WEB_APP_REDIS_URL`) | `shopping-suggestions:{userId}` + `notification:new-shopping-suggestions:{userId}` |
+
+## Event payload
+
+Envelope (shared by all events):
 
 ```json
 {
@@ -17,46 +40,71 @@ Consumes `scrape-shopping-suggestions` events from a Redis Stream and scrapes cl
 }
 ```
 
-Redis Stream fields:
-
 | Field | Type | Description |
 |---|---|---|
-| `event` | string | Must be `scrape-shopping-suggestions` |
-| `payload` | string (JSON) | Event payload as above |
+| `payload.marketplace` | string | Marketplace slug (`enjoei` today) |
+| `payload.userid` | string | User id (must have a `wardrobe_panorama`) |
+| `payload.search_terms` | string[] | ≥ 1 search term |
+
+Publish helper: `./scripts/publish-event.sh` (see [PUBLISH_EVENTS.md](./PUBLISH_EVENTS.md)).
 
 ## Execution flow
 
 ```mermaid
 sequenceDiagram
   participant P as Producer
-  participant R as Redis Stream
-  participant C as StreamConsumerRunner
+  participant Q as CF Queues
+  participant R as IntervalPullConsumerRunner
+  participant Router as EventRouter
   participant U as UseCase
+  participant DB as Postgres
   participant S as EnjoeiScraper
-  participant B as Camoufox
+  participant WebRedis as Web Redis
 
-  P->>R: XADD event + payload
-  C->>R: XREADGROUP (up to concurrency)
-  C->>U: route → execute
-  U->>S: scrape(search_terms)
-  loop each search term
-    S->>B: launch / goto search URL
-    S->>S: humanDelay()
-    B-->>S: DOM products
+  P->>Q: queue.send({event, payload})
+  loop every CF_QUEUES_POLL_INTERVAL_MS
+    R->>Q: POST /messages/pull (batch_size)
+    Q-->>R: up to CF_QUEUES_BATCH_SIZE messages
+    R->>Router: route(event, payload)
+    Router->>U: scrape-shopping-suggestions handler
+    U->>DB: find wardrobe_panorama
+    U->>S: scrape(search_terms)
+    S-->>U: ScrapedProduct[]
+    U->>DB: DELETE + INSERT scraped_products
+    U->>WebRedis: DEL shopping-suggestions:{userId}
+    U->>WebRedis: SET notification:new-shopping-suggestions:{userId} (SUCCESS)
+    R->>Q: POST /messages/ack (lease_id) always
   end
-  S-->>U: ScrapedProduct[]
-  Note over U: TODO — persist / publish output
-  C->>R: XACK
 ```
+
+Defaults: batch **10**; poll **10 min** in production (local `.env.example` suggests **60s**).
+
+### Persistence rules
+
+| Outcome | `scraping_status` | Notes |
+|---|---|---|
+| Scrape OK | `SUCCESS` | One row per scraped product |
+| Scrape / marketplace error | `ERROR` | One row per `search_term` with error metadata; message is still ACKed |
+
+`scraping_metadata` (JSONB) always stores diagnostics, including raw scraper values
+before NOT NULL coercion. Default `image_url` when missing:
+`https://assets.skydiiv.space/placeholder--scraped-product.png`.
+
+### Web Redis cache contract (must match skydiiv web)
+
+| Key | Action |
+|---|---|
+| `shopping-suggestions:{userId}` | `DEL` after replace |
+| `notification:new-shopping-suggestions:{userId}` | `SET {"updatedAt":"<ISO>"}` on SUCCESS |
 
 ## Concurrency
 
-`CONSUMER_CONCURRENCY` (default **10**) caps in-flight messages. The runner:
+`CONSUMER_CONCURRENCY` (default **10**) caps in-flight messages within a poll batch.
 
-1. Claims idle pending messages (`XAUTOCLAIM`) for crash recovery
-2. Reads new messages (`XREADGROUP`)
-3. Processes each message asynchronously under a semaphore
-4. Acknowledges only on success (failures stay pending for reclaim)
+1. Sleeps `CF_QUEUES_POLL_INTERVAL_MS` between cycles (after accounting for work time)
+2. Pulls up to `CF_QUEUES_BATCH_SIZE` messages (short-poll)
+3. Processes the batch with bounded concurrency
+4. ACKs by `lease_id` always (success or failure)
 
 ## Enjoei scraping
 
@@ -69,22 +117,30 @@ sequenceDiagram
 
 1. Implement `MarketplaceScraperPort` under `src/infrastructure/scraping/marketplaces/`
 2. Register it in `src/main.ts` via `registerMarketplaceScraper("name", factory)`
-3. Publish events with `marketplace: "name"`
+3. Publish `scrape-shopping-suggestions` with `marketplace: "name"`
+
+## Adding another event (not scrape)
+
+Same broker and envelope — different `event` name + handler. See
+[PUBLISH_EVENTS.md](./PUBLISH_EVENTS.md#adding-a-new-event).
 
 ## Error handling
 
 | Failure | Behavior |
 |---|---|
-| Invalid payload | Logged; message **not** ACKed → retried via claim |
-| Unknown marketplace | Same as above |
-| Scrape / browser error | Same as above |
-| Redis disconnect | Loop backs off 1s and retries |
+| Missing wardrobe panorama | Logged; message **ACKed**. No DB rows. |
+| Invalid payload | Logged; message **ACKed** |
+| Unknown marketplace / scrape error | ERROR rows + metadata; message **ACKed** |
+| Unknown `event` | Logged; message **ACKed** |
+| Web Redis unavailable | Logged warning; persist still proceeds |
+| CF Queues pull/ack HTTP error | Logged; cycle retries on next interval |
 
 ## Tests
 
 | Suite | Covers |
 |---|---|
-| `tests/unit/*` | Zod schemas, use case, router, delay, proxy rotator, provider, config |
-| `tests/integration/stream-consumer.runner.test.ts` | Parallel processing + ACK semantics |
+| `tests/unit/*` | Zod schemas, use case, router, delay, proxy, provider, config, cache, CF Queues adapter |
+| `tests/integration/interval-pull-consumer.runner.test.ts` | Interval pull batching + ACK |
 | `tests/integration/enjoei.scraper.test.ts` | Scraper orchestration with fake browser |
-| `tests/integration/redis-stream.consumer.test.ts` | Redis Stream adapter with fake client |
+| `tests/integration/redis-stream.consumer.test.ts` | Unused Redis Streams adapter (not wired in runtime) |
+| `tests/integration/stream-consumer.runner.test.ts` | Unused stream runner (not wired in runtime) |

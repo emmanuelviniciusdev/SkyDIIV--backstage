@@ -2,6 +2,14 @@ name: Deploy — Consumer Shopping Suggestions
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy_mode:
+        description: "production = weekly Thu schedule; test = no schedule, leave VM running"
+        type: choice
+        options:
+          - production
+          - test
+        default: production
   push:
     branches:
       - main
@@ -54,7 +62,7 @@ jobs:
 
   # ── Deploy: Staging ──────────────────────────────────────────────────────────
   deploy-staging:
-    name: Deploy → Staging (Oracle Always Free)
+    name: Deploy → Staging (OCI pay-as-you-go)
     needs: ci
     runs-on: ubuntu-latest
     if: |
@@ -69,6 +77,12 @@ jobs:
       INSTANCE_MEMORY_GB: ${{ vars.INSTANCE_MEMORY_GB }}
       AVAILABILITY_DOMAIN_INDEX: ${{ vars.AVAILABILITY_DOMAIN_INDEX }}
       INSTANCE_SHAPE: ${{ vars.INSTANCE_SHAPE }}
+      # Staging defaults to test mode (no weekly schedule) unless overridden.
+      ENABLE_WEEKLY_SCHEDULE: ${{ vars.ENABLE_WEEKLY_SCHEDULE }}
+      ENABLE_COST_LIMIT: ${{ vars.ENABLE_COST_LIMIT }}
+      COST_LIMIT_USD: ${{ vars.COST_LIMIT_USD }}
+      COST_ALERT_EMAIL: ${{ secrets.COST_ALERT_EMAIL }}
+      DEPLOY_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_mode || 'test' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,9 +106,38 @@ jobs:
           echo "ipv6_count=${IPV6_COUNT:-4}" >> "$GITHUB_OUTPUT"
           echo "proxy_base_port=${PROXY_BASE_PORT:-11080}" >> "$GITHUB_OUTPUT"
           echo "instance_ocpus=${INSTANCE_OCPUS:-2}" >> "$GITHUB_OUTPUT"
-          echo "instance_memory_gb=${INSTANCE_MEMORY_GB:-12}" >> "$GITHUB_OUTPUT"
+          echo "instance_memory_gb=${INSTANCE_MEMORY_GB:-4}" >> "$GITHUB_OUTPUT"
           echo "ad_index=${AVAILABILITY_DOMAIN_INDEX:-0}" >> "$GITHUB_OUTPUT"
           echo "instance_shape=${INSTANCE_SHAPE:-VM.Standard.A1.Flex}" >> "$GITHUB_OUTPUT"
+          MODE="${DEPLOY_MODE:-test}"
+          if [ "$MODE" = "test" ]; then
+            SCHEDULE="${ENABLE_WEEKLY_SCHEDULE:-false}"
+          else
+            SCHEDULE="${ENABLE_WEEKLY_SCHEDULE:-true}"
+          fi
+          # Staging: prefer schedule off unless explicitly enabled.
+          if [ "${{ github.ref }}" = "refs/heads/staging" ] && [ -z "${ENABLE_WEEKLY_SCHEDULE}" ]; then
+            SCHEDULE="false"
+          fi
+          if [ "$MODE" = "test" ]; then
+            SCHEDULE="false"
+          fi
+          echo "enable_weekly_schedule=${SCHEDULE}" >> "$GITHUB_OUTPUT"
+          echo "deploy_mode=${MODE}" >> "$GITHUB_OUTPUT"
+
+          LIMIT="${COST_LIMIT_USD:-5}"
+          EMAIL="${COST_ALERT_EMAIL:-emmanuel.bergmann@icloud.com}"
+          COST_ENABLE="${ENABLE_COST_LIMIT:-}"
+          if [ -z "$COST_ENABLE" ]; then
+            if [ -n "$EMAIL" ]; then COST_ENABLE="true"; else COST_ENABLE="false"; fi
+          fi
+          if [ "$COST_ENABLE" = "true" ] && [ -z "$EMAIL" ]; then
+            echo "cost_alert_email is required when ENABLE_COST_LIMIT=true" >&2
+            exit 1
+          fi
+          echo "enable_cost_limit=${COST_ENABLE}" >> "$GITHUB_OUTPUT"
+          echo "cost_limit_usd=${LIMIT}" >> "$GITHUB_OUTPUT"
+          echo "cost_alert_email=${EMAIL}" >> "$GITHUB_OUTPUT"
 
       - name: Install, build & pack
         run: |
@@ -128,7 +171,7 @@ jobs:
             terraform init -input=false -backend=false
           fi
 
-      - name: Terraform Apply (Always Free VM + IPv6 pool)
+      - name: Terraform Apply (paid VM + IPv6 pool + optional schedule)
         id: tf
         working-directory: apps/consumer-shopping-suggestions/deploy/terraform
         env:
@@ -138,13 +181,17 @@ jobs:
           TF_VAR_private_key_path: oci_api_key.pem
           TF_VAR_region: ${{ secrets.OCI_REGION }}
           TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ssh_public_key: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
           TF_VAR_ipv6_count: ${{ steps.infra.outputs.ipv6_count }}
           TF_VAR_proxy_base_port: ${{ steps.infra.outputs.proxy_base_port }}
           TF_VAR_instance_ocpus: ${{ steps.infra.outputs.instance_ocpus }}
           TF_VAR_instance_memory_in_gbs: ${{ steps.infra.outputs.instance_memory_gb }}
           TF_VAR_availability_domain_index: ${{ steps.infra.outputs.ad_index }}
           TF_VAR_instance_shape: ${{ steps.infra.outputs.instance_shape }}
+          TF_VAR_enable_weekly_schedule: ${{ steps.infra.outputs.enable_weekly_schedule }}
+          TF_VAR_enable_cost_limit: ${{ steps.infra.outputs.enable_cost_limit }}
+          TF_VAR_cost_limit_usd: ${{ steps.infra.outputs.cost_limit_usd }}
+          TF_VAR_cost_alert_email: ${{ steps.infra.outputs.cost_alert_email }}
           TF_VAR_environment: staging
         run: |
           terraform apply -auto-approve -input=false
@@ -155,6 +202,8 @@ jobs:
             echo "instance_ocid=$(terraform output -raw instance_ocid)"
           } >> "$GITHUB_OUTPUT"
           echo "VM $(terraform output -raw instance_ocid) @ $(terraform output -raw instance_public_ip)"
+          echo "schedule=${{ steps.infra.outputs.enable_weekly_schedule }} mode=${{ steps.infra.outputs.deploy_mode }}"
+          echo "cost_limit=${{ steps.infra.outputs.enable_cost_limit }} usd=${{ steps.infra.outputs.cost_limit_usd }}"
           echo "IPv6 pool:"
           cat /tmp/ipv6-addresses.txt
 
@@ -164,6 +213,19 @@ jobs:
         with:
           path: apps/consumer-shopping-suggestions/deploy/terraform/terraform.tfstate
           key: tfstate-css-staging-${{ github.repository }}-${{ github.run_id }}
+
+      - name: Ensure VM is RUNNING
+        working-directory: apps/consumer-shopping-suggestions
+        env:
+          OCI_INSTANCE_OCID: ${{ steps.tf.outputs.instance_ocid }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+        run: |
+          pip install --quiet oci
+          python3 deploy/oci_instance_action.py START --wait
 
       - name: Wait for SSH
         env:
@@ -191,7 +253,7 @@ jobs:
         with:
           host: ${{ steps.tf.outputs.instance_public_ip }}
           username: ${{ steps.tf.outputs.ssh_user }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
           port: 22
           source: /tmp/skydiiv-upload/consumer-shopping-suggestions.tgz,/tmp/skydiiv-upload/ipv6-addresses.txt
           target: /tmp/skydiiv-deploy/
@@ -205,7 +267,7 @@ jobs:
         with:
           host: ${{ steps.tf.outputs.instance_public_ip }}
           username: ${{ steps.tf.outputs.ssh_user }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
           port: 22
           envs: PROXY_BASE_PORT
           script: |
@@ -234,6 +296,20 @@ jobs:
               IPV6_POOL_FILE=/var/lib/skydiiv/proxy-pool/ipv6-addresses.txt \
               bash deploy/remote-deploy.sh
 
+      - name: Stop VM after production-mode deploy
+        if: success() && steps.infra.outputs.deploy_mode == 'production'
+        working-directory: apps/consumer-shopping-suggestions
+        env:
+          OCI_INSTANCE_OCID: ${{ steps.tf.outputs.instance_ocid }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+        run: |
+          pip install --quiet oci
+          python3 deploy/oci_instance_action.py STOP --wait
+
       - name: Cleanup OCI key
         if: always()
         working-directory: apps/consumer-shopping-suggestions/deploy/terraform
@@ -241,7 +317,7 @@ jobs:
 
   # ── Deploy: Production ───────────────────────────────────────────────────────
   deploy-production:
-    name: Deploy → Production (Oracle Always Free)
+    name: Deploy → Production (OCI pay-as-you-go)
     needs: ci
     runs-on: ubuntu-latest
     if: |
@@ -256,6 +332,11 @@ jobs:
       INSTANCE_MEMORY_GB: ${{ vars.INSTANCE_MEMORY_GB }}
       AVAILABILITY_DOMAIN_INDEX: ${{ vars.AVAILABILITY_DOMAIN_INDEX }}
       INSTANCE_SHAPE: ${{ vars.INSTANCE_SHAPE }}
+      ENABLE_WEEKLY_SCHEDULE: ${{ vars.ENABLE_WEEKLY_SCHEDULE }}
+      ENABLE_COST_LIMIT: ${{ vars.ENABLE_COST_LIMIT }}
+      COST_LIMIT_USD: ${{ vars.COST_LIMIT_USD }}
+      COST_ALERT_EMAIL: ${{ secrets.COST_ALERT_EMAIL }}
+      DEPLOY_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_mode || 'production' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -279,9 +360,34 @@ jobs:
           echo "ipv6_count=${IPV6_COUNT:-4}" >> "$GITHUB_OUTPUT"
           echo "proxy_base_port=${PROXY_BASE_PORT:-11080}" >> "$GITHUB_OUTPUT"
           echo "instance_ocpus=${INSTANCE_OCPUS:-2}" >> "$GITHUB_OUTPUT"
-          echo "instance_memory_gb=${INSTANCE_MEMORY_GB:-12}" >> "$GITHUB_OUTPUT"
+          echo "instance_memory_gb=${INSTANCE_MEMORY_GB:-4}" >> "$GITHUB_OUTPUT"
           echo "ad_index=${AVAILABILITY_DOMAIN_INDEX:-0}" >> "$GITHUB_OUTPUT"
           echo "instance_shape=${INSTANCE_SHAPE:-VM.Standard.A1.Flex}" >> "$GITHUB_OUTPUT"
+          MODE="${DEPLOY_MODE:-production}"
+          if [ "$MODE" = "test" ]; then
+            SCHEDULE="${ENABLE_WEEKLY_SCHEDULE:-false}"
+          else
+            SCHEDULE="${ENABLE_WEEKLY_SCHEDULE:-true}"
+          fi
+          if [ "$MODE" = "test" ]; then
+            SCHEDULE="false"
+          fi
+          echo "enable_weekly_schedule=${SCHEDULE}" >> "$GITHUB_OUTPUT"
+          echo "deploy_mode=${MODE}" >> "$GITHUB_OUTPUT"
+
+          LIMIT="${COST_LIMIT_USD:-5}"
+          EMAIL="${COST_ALERT_EMAIL:-emmanuel.bergmann@icloud.com}"
+          COST_ENABLE="${ENABLE_COST_LIMIT:-}"
+          if [ -z "$COST_ENABLE" ]; then
+            if [ -n "$EMAIL" ]; then COST_ENABLE="true"; else COST_ENABLE="false"; fi
+          fi
+          if [ "$COST_ENABLE" = "true" ] && [ -z "$EMAIL" ]; then
+            echo "cost_alert_email is required when ENABLE_COST_LIMIT=true" >&2
+            exit 1
+          fi
+          echo "enable_cost_limit=${COST_ENABLE}" >> "$GITHUB_OUTPUT"
+          echo "cost_limit_usd=${LIMIT}" >> "$GITHUB_OUTPUT"
+          echo "cost_alert_email=${EMAIL}" >> "$GITHUB_OUTPUT"
 
       - name: Install, build & pack
         run: |
@@ -315,7 +421,7 @@ jobs:
             terraform init -input=false -backend=false
           fi
 
-      - name: Terraform Apply (Always Free VM + IPv6 pool)
+      - name: Terraform Apply (paid VM + IPv6 pool + optional schedule)
         id: tf
         working-directory: apps/consumer-shopping-suggestions/deploy/terraform
         env:
@@ -325,13 +431,17 @@ jobs:
           TF_VAR_private_key_path: oci_api_key.pem
           TF_VAR_region: ${{ secrets.OCI_REGION }}
           TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ssh_public_key: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
           TF_VAR_ipv6_count: ${{ steps.infra.outputs.ipv6_count }}
           TF_VAR_proxy_base_port: ${{ steps.infra.outputs.proxy_base_port }}
           TF_VAR_instance_ocpus: ${{ steps.infra.outputs.instance_ocpus }}
           TF_VAR_instance_memory_in_gbs: ${{ steps.infra.outputs.instance_memory_gb }}
           TF_VAR_availability_domain_index: ${{ steps.infra.outputs.ad_index }}
           TF_VAR_instance_shape: ${{ steps.infra.outputs.instance_shape }}
+          TF_VAR_enable_weekly_schedule: ${{ steps.infra.outputs.enable_weekly_schedule }}
+          TF_VAR_enable_cost_limit: ${{ steps.infra.outputs.enable_cost_limit }}
+          TF_VAR_cost_limit_usd: ${{ steps.infra.outputs.cost_limit_usd }}
+          TF_VAR_cost_alert_email: ${{ steps.infra.outputs.cost_alert_email }}
           TF_VAR_environment: production
         run: |
           terraform apply -auto-approve -input=false
@@ -342,6 +452,8 @@ jobs:
             echo "instance_ocid=$(terraform output -raw instance_ocid)"
           } >> "$GITHUB_OUTPUT"
           echo "VM $(terraform output -raw instance_ocid) @ $(terraform output -raw instance_public_ip)"
+          echo "schedule=${{ steps.infra.outputs.enable_weekly_schedule }} mode=${{ steps.infra.outputs.deploy_mode }}"
+          echo "cost_limit=${{ steps.infra.outputs.enable_cost_limit }} usd=${{ steps.infra.outputs.cost_limit_usd }}"
           echo "IPv6 pool:"
           cat /tmp/ipv6-addresses.txt
 
@@ -351,6 +463,19 @@ jobs:
         with:
           path: apps/consumer-shopping-suggestions/deploy/terraform/terraform.tfstate
           key: tfstate-css-production-${{ github.repository }}-${{ github.run_id }}
+
+      - name: Ensure VM is RUNNING
+        working-directory: apps/consumer-shopping-suggestions
+        env:
+          OCI_INSTANCE_OCID: ${{ steps.tf.outputs.instance_ocid }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+        run: |
+          pip install --quiet oci
+          python3 deploy/oci_instance_action.py START --wait
 
       - name: Wait for SSH
         env:
@@ -378,7 +503,7 @@ jobs:
         with:
           host: ${{ steps.tf.outputs.instance_public_ip }}
           username: ${{ steps.tf.outputs.ssh_user }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
           port: 22
           source: /tmp/skydiiv-upload/consumer-shopping-suggestions.tgz,/tmp/skydiiv-upload/ipv6-addresses.txt
           target: /tmp/skydiiv-deploy/
@@ -392,7 +517,7 @@ jobs:
         with:
           host: ${{ steps.tf.outputs.instance_public_ip }}
           username: ${{ steps.tf.outputs.ssh_user }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
           port: 22
           envs: PROXY_BASE_PORT
           script: |
@@ -420,6 +545,20 @@ jobs:
             sudo PROXY_BASE_PORT="${PROXY_BASE_PORT}" \
               IPV6_POOL_FILE=/var/lib/skydiiv/proxy-pool/ipv6-addresses.txt \
               bash deploy/remote-deploy.sh
+
+      - name: Stop VM after production deploy
+        if: success() && steps.infra.outputs.deploy_mode == 'production'
+        working-directory: apps/consumer-shopping-suggestions
+        env:
+          OCI_INSTANCE_OCID: ${{ steps.tf.outputs.instance_ocid }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+        run: |
+          pip install --quiet oci
+          python3 deploy/oci_instance_action.py STOP --wait
 
       - name: Cleanup OCI key
         if: always()

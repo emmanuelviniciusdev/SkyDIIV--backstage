@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 .env
+# Legacy local docker env (compose now uses .env)
 .env.docker
 .dev.vars
 *.log

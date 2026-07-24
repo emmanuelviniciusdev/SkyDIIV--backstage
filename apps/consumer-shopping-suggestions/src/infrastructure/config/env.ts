@@ -1,12 +1,36 @@
 import { z } from "zod"
 
 const envSchema = z.object({
-  REDIS_URL: z.string().min(1).default("redis://127.0.0.1:6379"),
-  REDIS_STREAM_KEY: z.string().min(1).default("shopping-suggestions"),
-  REDIS_CONSUMER_GROUP: z.string().min(1).default("shopping-suggestions-consumers"),
-  REDIS_CONSUMER_NAME: z.string().min(1).default("consumer-1"),
-  REDIS_BLOCK_MS: z.coerce.number().int().positive().default(5000),
-  REDIS_CLAIM_IDLE_MS: z.coerce.number().int().positive().default(60_000),
+  /**
+   * Cloudflare Queues HTTP pull — **default / active broker**.
+   */
+  CF_ACCOUNT_ID: z.string().min(1),
+  CF_QUEUE_ID: z.string().min(1),
+  CF_QUEUES_API_TOKEN: z.string().min(1),
+  /** Max messages pulled per poll cycle (default: 10). */
+  CF_QUEUES_BATCH_SIZE: z.coerce.number().int().positive().default(10),
+  /** Delay between poll cycles in ms (default: 10 minutes). */
+  CF_QUEUES_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(600_000),
+  /**
+   * Lease duration while processing a pulled batch (default: 2 hours).
+   * Must cover worst-case scrape time for the whole batch.
+   */
+  CF_QUEUES_VISIBILITY_TIMEOUT_MS: z.coerce.number().int().positive().default(7_200_000),
+
+  /**
+   * REST credentials for the SkyDIIV web-app Redis.
+   * Used for `shopping-suggestions:{userId}` and
+   * `notification:new-shopping-suggestions:{userId}`.
+   */
+  WEB_APP_REDIS_REST_URL: z.string().optional(),
+  WEB_APP_REDIS_REST_TOKEN: z.string().optional(),
+  /** Optional web-app Redis URL fallback when REST vars are missing. */
+  WEB_APP_REDIS_URL: z.string().optional(),
+
+  /** Postgres pooled connection — SELECTs */
+  DATABASE_URL: z.string().min(1),
+  /** Postgres direct connection — writes / transactions (falls back to DATABASE_URL) */
+  DATABASE_URL_UNPOOLED: z.string().optional(),
 
   CONSUMER_CONCURRENCY: z.coerce.number().int().positive().default(10),
 
@@ -43,7 +67,11 @@ export type AppConfig = z.infer<typeof envSchema>
  * Loads and validates process environment into a typed config object.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const parsed = envSchema.safeParse(env)
+  const parsed = envSchema.safeParse({
+    ...env,
+    WEB_APP_REDIS_REST_URL: env.WEB_APP_REDIS_REST_URL ?? env.UPSTASH_REDIS_REST_URL,
+    WEB_APP_REDIS_REST_TOKEN: env.WEB_APP_REDIS_REST_TOKEN ?? env.UPSTASH_REDIS_REST_TOKEN,
+  })
   if (!parsed.success) {
     throw new Error(`Invalid environment configuration: ${parsed.error.message}`)
   }

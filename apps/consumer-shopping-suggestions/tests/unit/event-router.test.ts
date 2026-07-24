@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   EventRouter,
   ScrapeShoppingSuggestionsHandler,
+  type EventHandler,
 } from "../../src/application/services/event-router.js"
 import { ProcessScrapeShoppingSuggestionsUseCase } from "../../src/application/use-cases/process-scrape-shopping-suggestions.use-case.js"
 import { SCRAPE_SHOPPING_SUGGESTIONS_EVENT } from "../../src/domain/events/scrape-shopping-suggestions.event.js"
@@ -65,17 +66,51 @@ describe("EventRouter", () => {
     ).rejects.toThrow(/not valid JSON/)
   })
 
-  it("rejects unregistered events after schema would fail", async () => {
+  it("rejects unregistered events", async () => {
     const router = new EventRouter(silentLogger())
     await expect(
       router.route({
-        event: "unknown-event",
-        payload: JSON.stringify({
-          marketplace: "enjoei",
-          userid: "u1",
-          search_terms: ["x"],
-        }),
+        event: "future-event",
+        payload: JSON.stringify({ any: "shape" }),
       }),
-    ).rejects.toThrow(/Invalid stream message/)
+    ).rejects.toThrow(/No handler registered for event "future-event"/)
+  })
+
+  it("dispatches to a custom handler for another event name", async () => {
+    const handle = vi.fn().mockResolvedValue(undefined)
+    const custom: EventHandler = {
+      eventName: "example-other-event",
+      handle,
+    }
+
+    const router = new EventRouter(silentLogger())
+    router.register(custom)
+
+    await router.route({
+      event: "example-other-event",
+      payload: JSON.stringify({ foo: "bar" }),
+    })
+
+    expect(handle).toHaveBeenCalledWith({
+      event: "example-other-event",
+      payload: { foo: "bar" },
+    })
+  })
+
+  it("lets the scrape handler reject invalid payload shapes", async () => {
+    const useCase = {
+      execute: vi.fn(),
+    } as unknown as ProcessScrapeShoppingSuggestionsUseCase
+
+    const router = new EventRouter(silentLogger())
+    router.register(new ScrapeShoppingSuggestionsHandler(useCase))
+
+    await expect(
+      router.route({
+        event: SCRAPE_SHOPPING_SUGGESTIONS_EVENT,
+        payload: JSON.stringify({ marketplace: "enjoei" }),
+      }),
+    ).rejects.toThrow()
+    expect(useCase.execute).not.toHaveBeenCalled()
   })
 })

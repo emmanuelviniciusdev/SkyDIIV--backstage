@@ -1,51 +1,31 @@
-# Local development stack for consumer-shopping-suggestions.
+# Local development — Cloudflare Queues only.
 #
-# Quick start:
-#   cp .env.docker.example .env.docker
+#   cp .env.example .env   # fill CF_* + DATABASE_URL
 #   docker compose up --build
 #
-# Publish a test event (another terminal):
-#   ./scripts/publish-test-event.sh
+# Publish an event (another terminal):
+#   ./scripts/publish-event.sh
 #
-# Redis only (run the app on the host with npm run dev):
-#   docker compose up redis
+# Note: create `.env` before `docker compose up` — the file is mounted into the
+# container and loaded via `node --env-file` (same as `npm run dev` on the host).
 
 services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6380:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
-
   consumer:
     build:
       context: .
       dockerfile: Dockerfile
     env_file:
-      - path: .env.docker
-        required: false
+      - .env
+    volumes:
+      - ./.env:/app/.env:ro
+    command: ["node", "--env-file=/app/.env", "dist/main.js"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      # Defaults when .env.docker is missing
-      REDIS_URL: redis://redis:6379
-      REDIS_STREAM_KEY: shopping-suggestions
-      REDIS_CONSUMER_GROUP: shopping-suggestions-consumers
-      REDIS_CONSUMER_NAME: consumer-1
+      # Docker-only overrides (take precedence over .env — keep this list minimal)
       CONSUMER_CONCURRENCY: "2"
       CAMOUFOX_HEADLESS: "true"
       CAMOUFOX_INSTALL_DIR: /opt/camoufox
       LOG_LEVEL: DEBUG
-    depends_on:
-      redis:
-        condition: service_healthy
     shm_size: "2gb"
     restart: unless-stopped
-
-volumes:
-  redis-data:

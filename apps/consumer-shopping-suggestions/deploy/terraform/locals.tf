@@ -12,7 +12,7 @@ data "oci_core_images" "os" {
 }
 
 locals {
-  name_prefix = "css-${var.environment}"
+  name_prefix = "css-${var.environment}" # legacy OCI resource prefix (consumer-shopping-suggestions)
   # VCN/subnet DNS labels: max 15 alphanumeric characters
   dns_label = "css${var.environment == "production" ? "prod" : "stg"}"
 
@@ -29,8 +29,15 @@ locals {
     app         = "consumer-shopping-suggestions"
     environment = var.environment
     managed_by  = "terraform"
-    always_free = "true"
+    billing     = "payg"
   }
 
-  is_ampere = var.instance_shape == "VM.Standard.A1.Flex"
+  is_ampere = contains([
+    "VM.Standard.A1.Flex",
+  ], var.instance_shape)
+
+  is_flex = contains([
+    "VM.Standard.A1.Flex",
+    "VM.Standard.E4.Flex",
+  ], var.instance_shape)
 }

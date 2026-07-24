@@ -1,5 +1,5 @@
 output "instance_ocid" {
-  description = "OCID of the Always Free compute instance"
+  description = "OCID of the compute instance"
   value       = oci_core_instance.consumer.id
 }
 
@@ -54,6 +54,46 @@ output "ipv6_pool_file" {
 }
 
 output "instance_shape" {
-  description = "Compute shape (Always Free eligible)"
+  description = "Compute shape"
   value       = var.instance_shape
+}
+
+output "enable_weekly_schedule" {
+  description = "Whether Thursday start/stop Resource Scheduler schedules are managed"
+  value       = var.enable_weekly_schedule
+}
+
+output "schedule_start_cron_utc" {
+  description = "UTC CRON used to START the VM (when schedule is enabled)"
+  value       = var.schedule_start_cron_utc
+}
+
+output "schedule_stop_cron_utc" {
+  description = "UTC CRON used to STOP the VM (when schedule is enabled)"
+  value       = var.schedule_stop_cron_utc
+}
+
+output "schedule_start_id" {
+  description = "OCID of the START schedule (null when disabled)"
+  value       = try(oci_resource_scheduler_schedule.start_thursday[0].id, null)
+}
+
+output "schedule_stop_id" {
+  description = "OCID of the STOP schedule (null when disabled)"
+  value       = try(oci_resource_scheduler_schedule.stop_thursday[0].id, null)
+}
+
+output "enable_cost_limit" {
+  description = "Whether the monthly OCI Budget + cost guard ceiling is enabled"
+  value       = var.enable_cost_limit
+}
+
+output "cost_limit_usd" {
+  description = "Monthly spend ceiling in USD"
+  value       = var.cost_limit_usd
+}
+
+output "budget_id" {
+  description = "OCID of the monthly budget (null when disabled)"
+  value       = try(oci_budget_budget.css[0].id, null)
 }

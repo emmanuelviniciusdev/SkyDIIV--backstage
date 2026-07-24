@@ -9,17 +9,29 @@ ssh_public_key   = "ssh-ed25519 AAAA... deploy@skydiiv"
 environment               = "production"
 availability_domain_index = 0
 
-# Always Free Ampere A1 (default). Free accounts: stay at 2 OCPU / 12 GB.
-instance_shape         = "VM.Standard.A1.Flex"
-instance_ocpus         = 2
-instance_memory_in_gbs = 12
+# Paid pay-as-you-go Ampere (better capacity than Always Free).
+instance_shape          = "VM.Standard.A1.Flex"
+instance_ocpus          = 2
+instance_memory_in_gbs  = 4
 boot_volume_size_in_gbs = 50
-
-# Alternative Always Free AMD micro (uncomment to use instead of Ampere):
-# instance_shape = "VM.Standard.E2.1.Micro"
 
 operating_system         = "Canonical Ubuntu"
 operating_system_version = "24.04"
 
 ipv6_count      = 4
 proxy_base_port = 11080
+
+# Thursday 11:00–12:00 America/Sao_Paulo (UTC crons below).
+# Set false for localhost test deploys so the schedule does not apply.
+enable_weekly_schedule            = true
+schedule_start_cron_utc           = "0 14 * * 4" # Thu 11:00 BRT
+schedule_stop_cron_utc            = "0 15 * * 4" # Thu 12:00 BRT
+create_resource_scheduler_policy  = true
+
+# Monthly spend ceiling ($5 default). OCI Budgets email only;
+# hard kill (terraform destroy of the consumer stack) is deploy/oci_cost_guard.py + GitHub Actions cron.
+# Targets compartment_ocid — use a dedicated compartment if this should not
+# cover the whole tenancy.
+enable_cost_limit = true
+cost_limit_usd    = 5
+cost_alert_email  = "emmanuel.bergmann@icloud.com"

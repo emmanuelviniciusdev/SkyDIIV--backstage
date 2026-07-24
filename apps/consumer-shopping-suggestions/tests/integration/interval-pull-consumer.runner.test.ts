@@ -5,13 +5,16 @@ import {
 } from "../../src/application/services/event-router.js"
 import { ProcessScrapeShoppingSuggestionsUseCase } from "../../src/application/use-cases/process-scrape-shopping-suggestions.use-case.js"
 import { SCRAPE_SHOPPING_SUGGESTIONS_EVENT } from "../../src/domain/events/scrape-shopping-suggestions.event.js"
-import type { BrokerMessage, MessageBrokerPort } from "../../src/domain/ports/message-broker.port.js"
-import type { Logger } from "../../src/domain/ports/logger.port.js"
 import type { CachePort } from "../../src/domain/ports/cache.port.js"
+import type { Logger } from "../../src/domain/ports/logger.port.js"
 import type { MarketplaceScraperPort } from "../../src/domain/ports/marketplace-scraper.port.js"
+import type {
+  PulledQueueMessage,
+  QueuePullPort,
+} from "../../src/domain/ports/queue-pull.port.js"
 import type { ScrapedProductsRepositoryPort } from "../../src/domain/ports/scraped-products.repository.port.js"
 import type { WardrobePanoramaRepositoryPort } from "../../src/domain/ports/wardrobe-panorama.repository.port.js"
-import { StreamConsumerRunner } from "../../src/presentation/stream-consumer.runner.js"
+import { IntervalPullConsumerRunner } from "../../src/presentation/interval-pull-consumer.runner.js"
 
 function silentLogger(): Logger {
   return {
@@ -42,52 +45,41 @@ function stubPersistenceDeps(): {
   }
 }
 
-class InMemoryBroker implements MessageBrokerPort {
+class InMemoryQueuePull implements QueuePullPort {
   readonly acked: string[] = []
-  private queue: BrokerMessage[] = []
-  private reads = 0
+  private batches: PulledQueueMessage[][] = []
+  pullCount = 0
 
-  enqueue(msg: BrokerMessage): void {
-    this.queue.push(msg)
+  enqueueBatch(messages: PulledQueueMessage[]): void {
+    this.batches.push(messages)
   }
 
-  async ensureConsumerGroup(): Promise<void> {}
+  async pull(batchSize: number): Promise<PulledQueueMessage[]> {
+    this.pullCount += 1
+    const batch = this.batches.shift() ?? []
+    return batch.slice(0, batchSize)
+  }
 
-  async readMessages(count: number, blockMs: number): Promise<BrokerMessage[]> {
-    void blockMs
-    this.reads += 1
-    if (this.queue.length === 0) {
-      // Simulate Redis BLOCK by yielding briefly when empty.
-      await new Promise((r) => setTimeout(r, 5))
-      return []
+  async acknowledge(messages: PulledQueueMessage[]): Promise<void> {
+    for (const msg of messages) {
+      this.acked.push(msg.id)
     }
-    return this.queue.splice(0, count)
   }
 
-  async acknowledge(messageId: string): Promise<void> {
-    this.acked.push(messageId)
-  }
-
-  async claimIdleMessages(): Promise<BrokerMessage[]> {
-    return []
-  }
+  async retry(): Promise<void> {}
 
   async disconnect(): Promise<void> {}
-
-  get readCount(): number {
-    return this.reads
-  }
 }
 
-describe("StreamConsumerRunner (integration)", () => {
-  it("processes messages in parallel up to concurrency and acknowledges them", async () => {
+describe("IntervalPullConsumerRunner (integration)", () => {
+  it("pulls a batch, processes with concurrency, and acknowledges successes", async () => {
     const scrapedUsers: string[] = []
 
     const scraper: MarketplaceScraperPort = {
       marketplace: "enjoei",
       scrape: async ({ userId }) => {
         scrapedUsers.push(userId)
-        await new Promise((r) => setTimeout(r, 20))
+        await new Promise((r) => setTimeout(r, 15))
         return []
       },
     }
@@ -101,10 +93,11 @@ describe("StreamConsumerRunner (integration)", () => {
     const router = new EventRouter(silentLogger())
     router.register(new ScrapeShoppingSuggestionsHandler(useCase))
 
-    const broker = new InMemoryBroker()
-    for (let i = 0; i < 5; i++) {
-      broker.enqueue({
+    const queue = new InMemoryQueuePull()
+    queue.enqueueBatch(
+      Array.from({ length: 5 }, (_, i) => ({
         id: `msg-${i}`,
+        leaseId: `lease-${i}`,
         fields: {
           event: SCRAPE_SHOPPING_SUGGESTIONS_EVENT,
           payload: JSON.stringify({
@@ -113,24 +106,25 @@ describe("StreamConsumerRunner (integration)", () => {
             search_terms: ["vestido"],
           }),
         },
-      })
-    }
+      })),
+    )
 
-    const runner = new StreamConsumerRunner(
-      broker,
+    const runner = new IntervalPullConsumerRunner(
+      queue,
       router,
-      { concurrency: 3, blockMs: 10, claimIdleMs: 60_000 },
+      { batchSize: 10, intervalMs: 60_000, concurrency: 3 },
       silentLogger(),
     )
 
     void runner.start()
 
     await vi.waitFor(() => {
-      expect(broker.acked).toHaveLength(5)
+      expect(queue.acked).toHaveLength(5)
     }, { timeout: 5000 })
 
     await runner.stop()
 
+    expect(queue.pullCount).toBeGreaterThanOrEqual(1)
     expect(scrapedUsers.sort()).toEqual([
       "user-0",
       "user-1",
@@ -138,16 +132,9 @@ describe("StreamConsumerRunner (integration)", () => {
       "user-3",
       "user-4",
     ])
-    expect(broker.acked.sort()).toEqual([
-      "msg-0",
-      "msg-1",
-      "msg-2",
-      "msg-3",
-      "msg-4",
-    ])
   })
 
-  it("acknowledges messages that fail processing to remove them from the stream", async () => {
+  it("acknowledges messages that fail processing to remove them from the queue", async () => {
     const useCase = new ProcessScrapeShoppingSuggestionsUseCase({
       resolveScraper: () => {
         throw new Error("boom")
@@ -159,32 +146,63 @@ describe("StreamConsumerRunner (integration)", () => {
     const router = new EventRouter(silentLogger())
     router.register(new ScrapeShoppingSuggestionsHandler(useCase))
 
-    const broker = new InMemoryBroker()
-    broker.enqueue({
-      id: "bad-1",
-      fields: {
-        event: SCRAPE_SHOPPING_SUGGESTIONS_EVENT,
-        payload: JSON.stringify({
-          marketplace: "enjoei",
-          userid: "u1",
-          search_terms: ["x"],
-        }),
+    const queue = new InMemoryQueuePull()
+    queue.enqueueBatch([
+      {
+        id: "bad-1",
+        leaseId: "lease-bad",
+        fields: {
+          event: SCRAPE_SHOPPING_SUGGESTIONS_EVENT,
+          payload: JSON.stringify({
+            marketplace: "enjoei",
+            userid: "u1",
+            search_terms: ["x"],
+          }),
+        },
       },
-    })
+    ])
 
-    const runner = new StreamConsumerRunner(
-      broker,
+    const runner = new IntervalPullConsumerRunner(
+      queue,
       router,
-      { concurrency: 1, blockMs: 10, claimIdleMs: 60_000 },
+      { batchSize: 10, intervalMs: 60_000, concurrency: 1 },
       silentLogger(),
     )
 
     void runner.start()
 
     await vi.waitFor(() => {
-      expect(broker.acked).toEqual(["bad-1"])
+      expect(queue.acked).toEqual(["bad-1"])
     }, { timeout: 2000 })
 
     await runner.stop()
+  })
+
+  it("respects batchSize when pulling", async () => {
+    const pull = vi.fn().mockResolvedValue([])
+    const queue: QueuePullPort = {
+      pull,
+      acknowledge: vi.fn(),
+      retry: vi.fn(),
+      disconnect: vi.fn(),
+    }
+
+    const router = new EventRouter(silentLogger())
+    const runner = new IntervalPullConsumerRunner(
+      queue,
+      router,
+      { batchSize: 7, intervalMs: 60_000, concurrency: 2 },
+      silentLogger(),
+    )
+
+    void runner.start()
+
+    await vi.waitFor(() => {
+      expect(pull).toHaveBeenCalled()
+    }, { timeout: 2000 })
+
+    await runner.stop()
+
+    expect(pull).toHaveBeenCalledWith(7)
   })
 })

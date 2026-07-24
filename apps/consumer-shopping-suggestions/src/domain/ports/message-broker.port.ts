@@ -7,8 +7,8 @@ export interface BrokerMessage {
 }
 
 /**
- * Port for consuming messages from a stream/queue broker.
- * Implementations: Redis Streams, etc.
+ * Port for continuous stream brokers (Redis Streams XREADGROUP).
+ * For interval HTTP pull brokers (Cloudflare Queues), see queue-pull.port.ts.
  */
 export interface MessageBrokerPort {
   /**

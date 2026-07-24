@@ -1,19 +1,31 @@
+/**
+ * Routes broker messages to registered event handlers.
+ *
+ * Wire format (Cloudflare Queues / any broker):
+ *   { "event": "<event-name>", "payload": { ... } }
+ *
+ * Each handler owns validation for its own payload schema. New events =
+ * new domain schema + handler registered in `main.ts`.
+ */
+
 import {
   SCRAPE_SHOPPING_SUGGESTIONS_EVENT,
-  streamMessageSchema,
-  type StreamMessage,
+  scrapeShoppingSuggestionsPayloadSchema,
 } from "../../domain/events/scrape-shopping-suggestions.event.js"
 import type { Logger } from "../../domain/ports/logger.port.js"
 import type { ProcessScrapeShoppingSuggestionsUseCase } from "../use-cases/process-scrape-shopping-suggestions.use-case.js"
 
-export interface EventHandler {
-  readonly eventName: string
-  handle(message: StreamMessage): Promise<void>
+/** Generic broker envelope after JSON decode (before per-event validation). */
+export interface BrokerEventMessage {
+  event: string
+  payload: unknown
 }
 
-/**
- * Routes validated stream messages to the matching event handler.
- */
+export interface EventHandler {
+  readonly eventName: string
+  handle(message: BrokerEventMessage): Promise<void>
+}
+
 export class EventRouter {
   private readonly handlers = new Map<string, EventHandler>()
 
@@ -24,7 +36,7 @@ export class EventRouter {
   }
 
   /**
-   * Parses raw broker fields into a StreamMessage and dispatches to a handler.
+   * Parses raw broker fields and dispatches to a handler.
    * Expects fields: `event` (string) and `payload` (JSON string).
    */
   async route(fields: Record<string, string>): Promise<void> {
@@ -42,22 +54,13 @@ export class EventRouter {
       throw new Error("Broker message payload is not valid JSON")
     }
 
-    const parsed = streamMessageSchema.safeParse({
-      event: eventName,
-      payload: payloadJson,
-    })
-
-    if (!parsed.success) {
-      throw new Error(`Invalid stream message: ${parsed.error.message}`)
-    }
-
-    const handler = this.handlers.get(parsed.data.event)
+    const handler = this.handlers.get(eventName)
     if (!handler) {
-      this.logger.warn("No handler registered for event", { event: parsed.data.event })
-      throw new Error(`No handler registered for event "${parsed.data.event}"`)
+      this.logger.warn("No handler registered for event", { event: eventName })
+      throw new Error(`No handler registered for event "${eventName}"`)
     }
 
-    await handler.handle(parsed.data)
+    await handler.handle({ event: eventName, payload: payloadJson })
   }
 }
 
@@ -66,7 +69,8 @@ export class ScrapeShoppingSuggestionsHandler implements EventHandler {
 
   constructor(private readonly useCase: ProcessScrapeShoppingSuggestionsUseCase) {}
 
-  async handle(message: StreamMessage): Promise<void> {
-    await this.useCase.execute(message.payload)
+  async handle(message: BrokerEventMessage): Promise<void> {
+    const payload = scrapeShoppingSuggestionsPayloadSchema.parse(message.payload)
+    await this.useCase.execute(payload)
   }
 }

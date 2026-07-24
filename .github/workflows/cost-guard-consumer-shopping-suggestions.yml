@@ -1,0 +1,159 @@
+name: Cost guard — Consumer Shopping Suggestions
+
+# Enforces the monthly OCI cost ceiling by destroying the consumer Terraform stack
+# (VM, VCN, IPv6, schedules, budget, …) when spend >= limit.
+# OCI Budgets only email; this workflow is the hard kill switch.
+
+on:
+  schedule:
+    # Once per day at 12:00 UTC (09:00 America/Sao_Paulo). Usage API can lag ~hours.
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report only (do not destroy infra)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: consumer-cost-guard
+  cancel-in-progress: false
+
+jobs:
+  cost-guard:
+    name: Enforce cost limit
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Install OCI SDK
+        run: pip install --quiet oci
+
+      - name: Write OCI API key
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        run: |
+          umask 077
+          printf '%s\n' "${{ secrets.OCI_API_PRIVATE_KEY }}" > oci_api_key.pem
+
+      - name: Restore Terraform state
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/consumer-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-css-production-${{ github.repository }}
+          restore-keys: |
+            tfstate-css-production-
+
+      - name: Terraform Init
+        id: tf
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_ssh_public_key: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+        run: |
+          if [ -n "${{ secrets.TF_BACKEND_HCL }}" ]; then
+            printf '%s\n' "${{ secrets.TF_BACKEND_HCL }}" > backend.hcl
+            terraform init -input=false -reconfigure -backend-config=backend.hcl
+          else
+            terraform init -input=false -backend=false
+          fi
+
+          HAS_STATE="false"
+          if terraform state list 2>/dev/null | grep -q .; then
+            HAS_STATE="true"
+          elif [ -f terraform.tfstate ] && [ -s terraform.tfstate ]; then
+            HAS_STATE="true"
+          fi
+          echo "has_state=${HAS_STATE}" >> "$GITHUB_OUTPUT"
+
+          INSTANCE_OCID="$(terraform output -raw instance_ocid 2>/dev/null || true)"
+          if [ -z "$INSTANCE_OCID" ] && [ -n "${{ secrets.OCI_INSTANCE_OCID }}" ]; then
+            INSTANCE_OCID="${{ secrets.OCI_INSTANCE_OCID }}"
+          fi
+          echo "instance_ocid=${INSTANCE_OCID}" >> "$GITHUB_OUTPUT"
+
+          if [ "$HAS_STATE" != "true" ] && [ -z "$INSTANCE_OCID" ]; then
+            echo "No Terraform state and no instance OCID — skipping cost guard" >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run cost guard (destroy stack if over limit)
+        id: guard
+        if: steps.tf.outputs.skip != 'true'
+        working-directory: apps/consumer-shopping-suggestions
+        env:
+          OCI_INSTANCE_OCID: ${{ steps.tf.outputs.instance_ocid }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          COST_LIMIT_USD: ${{ vars.COST_LIMIT_USD }}
+          # Terraform destroy runs with cwd=deploy/terraform
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_ssh_public_key: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+        run: |
+          LIMIT="${COST_LIMIT_USD:-5}"
+          EXTRA=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            EXTRA="--dry-run"
+          fi
+          set +e
+          python3 deploy/oci_cost_guard.py \
+            --limit "${LIMIT}" \
+            --terraform-dir deploy/terraform \
+            ${EXTRA}
+          CODE=$?
+          set -e
+          echo "exit_code=${CODE}" >> "$GITHUB_OUTPUT"
+          exit "${CODE}"
+
+      - name: Detect emptied Terraform state
+        id: state
+        if: success() && steps.tf.outputs.skip != 'true' && steps.tf.outputs.has_state == 'true'
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        run: |
+          if terraform state list 2>/dev/null | grep -q .; then
+            echo "empty=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+            echo "Terraform state is empty after cost guard — persisting for next deploy"
+          fi
+
+      - name: Persist Terraform state after destroy
+        if: success() && steps.state.outputs.empty == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/consumer-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-css-production-${{ github.repository }}-${{ github.run_id }}
+
+      - name: Cleanup OCI key
+        if: always()
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
+        run: rm -f oci_api_key.pem backend.hcl

@@ -13,6 +13,9 @@ export interface StreamConsumerRunnerConfig {
  *
  * At most `concurrency` messages are in-flight at once. Idle pending messages
  * are periodically claimed for crash recovery.
+ *
+ * Note: kept for the unused Redis Streams path. Production uses
+ * {@link IntervalPullConsumerRunner} with Cloudflare Queues.
  */
 export class StreamConsumerRunner {
   private running = false
@@ -78,12 +81,24 @@ export class StreamConsumerRunner {
     this.inFlight += 1
     try {
       this.logger.info("Processing message", { messageId: msg.id })
-      await this.router.route(msg.fields)
+      try {
+        await this.router.route(msg.fields)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        this.logger.error(
+          "Message processing failed — acknowledging to remove from stream",
+          {
+            messageId: msg.id,
+            error: message,
+          },
+        )
+      }
+
       await this.broker.acknowledge(msg.id)
       this.logger.info("Message acknowledged", { messageId: msg.id })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      this.logger.error("Message processing failed — will be retried via claim", {
+      this.logger.error("Failed to acknowledge stream message", {
         messageId: msg.id,
         error: message,
       })

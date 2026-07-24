@@ -17,6 +17,9 @@ type RedisStreamEntry = [id: string, fields: string[]]
  * Message field convention:
  *   event   = event name (e.g. "scrape-shopping-suggestions")
  *   payload = JSON-encoded event payload
+ *
+ * Note: kept in the codebase for reference / tests. The production composition
+ * root (`main.ts`) starts Cloudflare Queues only.
  */
 export class RedisStreamConsumer implements MessageBrokerPort {
   private readonly redis: Redis

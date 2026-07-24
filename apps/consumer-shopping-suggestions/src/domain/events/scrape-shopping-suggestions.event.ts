@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-/** Canonical name of the Redis Stream event handled by this consumer. */
+/** Canonical name of this consumer event (one of several the broker may carry). */
 export const SCRAPE_SHOPPING_SUGGESTIONS_EVENT = "scrape-shopping-suggestions" as const
 
 export const scrapeShoppingSuggestionsPayloadSchema = z.object({

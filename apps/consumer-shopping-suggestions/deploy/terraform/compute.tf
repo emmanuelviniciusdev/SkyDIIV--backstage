@@ -1,5 +1,7 @@
 /**
- * Always Free compute instance (Ampere A1 Flex by default).
+ * Paid OCI compute (Ampere A1 Flex by default).
+ * Lifecycle state (RUNNING / STOPPED) is managed by Resource Scheduler
+ * and/or manual test deploys — Terraform ignores state drifts.
  */
 
 resource "oci_core_instance" "consumer" {
@@ -9,7 +11,7 @@ resource "oci_core_instance" "consumer" {
   shape               = var.instance_shape
 
   dynamic "shape_config" {
-    for_each = local.is_ampere ? [1] : []
+    for_each = local.is_flex ? [1] : []
     content {
       ocpus         = var.instance_ocpus
       memory_in_gbs = var.instance_memory_in_gbs
@@ -49,6 +51,8 @@ resource "oci_core_instance" "consumer" {
     ignore_changes = [
       # Avoid recreation when OCI publishes a newer image of the same OS.
       source_details[0].source_id,
+      # Start/stop is owned by Resource Scheduler (or test deploys).
+      state,
     ]
   }
 }

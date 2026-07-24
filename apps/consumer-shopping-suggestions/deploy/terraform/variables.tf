@@ -20,17 +20,17 @@ variable "private_key_path" {
 
 variable "region" {
   type        = string
-  description = "OCI home region (Always Free compute must be in the home region)"
+  description = "OCI home region (compute should run in the home region)"
 }
 
 variable "compartment_ocid" {
   type        = string
-  description = "Compartment OCID for all resources (often the tenancy OCID for free accounts)"
+  description = "Compartment OCID for all resources (often the tenancy OCID)"
 }
 
 variable "ssh_public_key" {
   type        = string
-  description = "SSH public key installed on the Always Free instance"
+  description = "SSH public key installed on the compute instance"
 }
 
 variable "environment" {
@@ -46,49 +46,50 @@ variable "environment" {
 
 variable "availability_domain_index" {
   type        = number
-  description = "Availability domain index (0-based). Change if Ampere capacity is exhausted in the default AD."
+  description = "Availability domain index (0-based). Change if capacity is exhausted in the default AD."
   default     = 0
 }
 
 variable "instance_shape" {
   type        = string
-  description = "Always Free–eligible shape. Prefer VM.Standard.A1.Flex (Ampere). Alternative: VM.Standard.E2.1.Micro (AMD)."
+  description = "Compute shape. Default VM.Standard.A1.Flex (Ampere, pay-as-you-go)."
   default     = "VM.Standard.A1.Flex"
 
   validation {
     condition = contains([
       "VM.Standard.A1.Flex",
       "VM.Standard.E2.1.Micro",
+      "VM.Standard.E4.Flex",
     ], var.instance_shape)
-    error_message = "instance_shape must be an Always Free–eligible shape (VM.Standard.A1.Flex or VM.Standard.E2.1.Micro)."
+    error_message = "instance_shape must be VM.Standard.A1.Flex, VM.Standard.E2.1.Micro, or VM.Standard.E4.Flex."
   }
 }
 
 variable "instance_ocpus" {
   type        = number
-  description = "OCPUs for A1.Flex. Always Free tenancies: max 2 total. Paid accounts Always Free A1 entitlement: up to 4."
+  description = "OCPUs for flexible shapes (A1.Flex / E4.Flex)."
   default     = 2
 
   validation {
-    condition     = var.instance_ocpus >= 1 && var.instance_ocpus <= 4
-    error_message = "instance_ocpus must be between 1 and 4 (Always Free Ampere cap)."
+    condition     = var.instance_ocpus >= 1 && var.instance_ocpus <= 8
+    error_message = "instance_ocpus must be between 1 and 8."
   }
 }
 
 variable "instance_memory_in_gbs" {
   type        = number
-  description = "Memory (GB) for A1.Flex. Always Free tenancies: max 12 total. Paid Always Free A1 entitlement: up to 24."
-  default     = 12
+  description = "Memory (GB) for flexible shapes. Prefer >= 4 GB for Camoufox scraping."
+  default     = 4
 
   validation {
-    condition     = var.instance_memory_in_gbs >= 1 && var.instance_memory_in_gbs <= 24
-    error_message = "instance_memory_in_gbs must be between 1 and 24 (Always Free Ampere cap)."
+    condition     = var.instance_memory_in_gbs >= 1 && var.instance_memory_in_gbs <= 64
+    error_message = "instance_memory_in_gbs must be between 1 and 64."
   }
 }
 
 variable "boot_volume_size_in_gbs" {
   type        = number
-  description = "Boot volume size in GB (Always Free block storage pool is 200 GB total; minimum ~47)."
+  description = "Boot volume size in GB (OCI minimum ~47)."
   default     = 50
 
   validation {
@@ -142,4 +143,60 @@ variable "proxy_base_port" {
   type        = number
   description = "Base local SOCKS port used by microsocks on the VM"
   default     = 11080
+}
+
+variable "enable_weekly_schedule" {
+  type        = bool
+  description = <<-EOT
+    When true, OCI Resource Scheduler starts the VM every Thursday 11:00 and stops
+    it at 12:00 (America/Sao_Paulo → UTC crons below). Set false for test/staging
+    deploys so the schedule does not apply (VM stays under manual control).
+  EOT
+  default     = true
+}
+
+variable "schedule_start_cron_utc" {
+  type        = string
+  description = "CRON (UTC) to START the VM. Default: Thursday 11:00 America/Sao_Paulo = 14:00 UTC."
+  default     = "0 14 * * 4"
+}
+
+variable "schedule_stop_cron_utc" {
+  type        = string
+  description = "CRON (UTC) to STOP the VM. Default: Thursday 12:00 America/Sao_Paulo = 15:00 UTC."
+  default     = "0 15 * * 4"
+}
+
+variable "create_resource_scheduler_policy" {
+  type        = bool
+  description = "Create an Identity policy so Resource Scheduler can start/stop the instance."
+  default     = true
+}
+
+variable "enable_cost_limit" {
+  type        = bool
+  description = <<-EOT
+    When true, create an OCI monthly Budget (+ email alerts) for cost_limit_usd.
+    Hard enforcement (terraform destroy of the consumer stack: VM, network, IPv6,
+    schedules, budget) is performed by deploy/oci_cost_guard.py (GitHub Actions
+    cron), because Budgets alone only notify.
+  EOT
+  default     = true
+}
+
+variable "cost_limit_usd" {
+  type        = number
+  description = "Monthly spend ceiling in USD. When Usage API MTD cost >= this, cost guard destroys the consumer Terraform stack."
+  default     = 5
+
+  validation {
+    condition     = var.cost_limit_usd > 0 && var.cost_limit_usd <= 1000
+    error_message = "cost_limit_usd must be between 0 (exclusive) and 1000."
+  }
+}
+
+variable "cost_alert_email" {
+  type        = string
+  description = "Email recipient for OCI Budget alert rules (required when enable_cost_limit is true)."
+  default     = "emmanuel.bergmann@icloud.com"
 }
