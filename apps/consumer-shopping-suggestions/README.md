@@ -57,7 +57,7 @@ flowchart LR
 ```bash
 cd apps/consumer-shopping-suggestions
 cp .env.example .env
-# Required: CF_ACCOUNT_ID, CF_QUEUE_ID, CF_QUEUES_API_TOKEN, DATABASE_URL
+# Required: CF_ACCOUNT_ID, CF_SCRAPE_SHOPP_SUGG_QUEUE_ID, CF_QUEUES_API_TOKEN, DATABASE_URL
 chmod +x scripts/*.sh
 ```
 
@@ -96,7 +96,7 @@ See `.env.example`. Key knobs:
 
 | Variable | Default | Description |
 |---|---|---|
-| `CF_ACCOUNT_ID` / `CF_QUEUE_ID` / `CF_QUEUES_API_TOKEN` | _(required)_ | Cloudflare Queues credentials |
+| `CF_ACCOUNT_ID` / `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` / `CF_QUEUES_API_TOKEN` | _(required)_ | Cloudflare Queues credentials |
 | `CF_QUEUES_BATCH_SIZE` | `10` | Max messages per poll |
 | `CF_QUEUES_POLL_INTERVAL_MS` | `600000` (10 min) | Delay between polls (`.env.example` uses `60000` locally) |
 | `CF_QUEUES_VISIBILITY_TIMEOUT_MS` | `7200000` (2 h) | Lease while processing a batch |

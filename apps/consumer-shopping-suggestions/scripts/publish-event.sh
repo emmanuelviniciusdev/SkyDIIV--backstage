@@ -64,7 +64,7 @@ Env:
   FOOT_SIZE       Optional foot sizes applied to every TERMS entry
   BRAND           Optional brand applied to every TERMS entry
 
-  CF_ACCOUNT_ID / CF_QUEUE_ID / CF_QUEUES_API_TOKEN
+  CF_ACCOUNT_ID / CF_SCRAPE_SHOPP_SUGG_QUEUE_ID / CF_QUEUES_API_TOKEN
 
 When neither SEARCH_PARAMS nor TERMS is set, publishes a default sample entry.
 Payload keys are camelCase: marketplace, userId, searchParams[].
@@ -103,7 +103,7 @@ load_env_file() {
   fi
   local preexisting=()
   local key
-  for key in CF_ACCOUNT_ID CF_QUEUE_ID CF_QUEUES_API_TOKEN; do
+  for key in CF_ACCOUNT_ID CF_SCRAPE_SHOPP_SUGG_QUEUE_ID CF_QUEUES_API_TOKEN; do
     if [[ -n "${!key-}" ]]; then
       preexisting+=("${key}=${!key}")
     fi
@@ -129,7 +129,7 @@ else
 fi
 
 : "${CF_ACCOUNT_ID:?Set CF_ACCOUNT_ID (in .env or --env-file)}"
-: "${CF_QUEUE_ID:?Set CF_QUEUE_ID (in .env or --env-file)}"
+: "${CF_SCRAPE_SHOPP_SUGG_QUEUE_ID:?Set CF_SCRAPE_SHOPP_SUGG_QUEUE_ID (in .env or --env-file)}"
 : "${CF_QUEUES_API_TOKEN:?Set CF_QUEUES_API_TOKEN (in .env or --env-file)}"
 
 build_payload_json() {
@@ -356,11 +356,11 @@ PY
 }
 
 REQUEST_BODY="$(build_payload_json)"
-URL="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/queues/${CF_QUEUE_ID}/messages"
+URL="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/queues/${CF_SCRAPE_SHOPP_SUGG_QUEUE_ID}/messages"
 
 echo "Publishing to Cloudflare Queues"
 echo "  account=${CF_ACCOUNT_ID}"
-echo "  queue=${CF_QUEUE_ID}"
+echo "  queue=${CF_SCRAPE_SHOPP_SUGG_QUEUE_ID}"
 echo "  event=${EVENT}"
 echo "  body=${REQUEST_BODY}"
 

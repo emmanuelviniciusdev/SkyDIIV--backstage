@@ -4,7 +4,7 @@ import { loadConfig } from "../../src/infrastructure/config/env.js"
 const requiredEnv = {
   DATABASE_URL: "postgresql://user:pass@localhost:5432/skydiiv",
   CF_ACCOUNT_ID: "acc-1",
-  CF_QUEUE_ID: "queue-1",
+  CF_SCRAPE_SHOPP_SUGG_QUEUE_ID: "queue-1",
   CF_QUEUES_API_TOKEN: "token-1",
 }
 
@@ -16,7 +16,7 @@ describe("loadConfig", () => {
     expect(config.PROXY_URLS).toEqual([])
     expect(config.DATABASE_URL).toBe(requiredEnv.DATABASE_URL)
     expect(config.CF_ACCOUNT_ID).toBe("acc-1")
-    expect(config.CF_QUEUE_ID).toBe("queue-1")
+    expect(config.CF_SCRAPE_SHOPP_SUGG_QUEUE_ID).toBe("queue-1")
     expect(config.CF_QUEUES_API_TOKEN).toBe("token-1")
     expect(config.CF_QUEUES_BATCH_SIZE).toBe(10)
     expect(config.CF_QUEUES_POLL_INTERVAL_MS).toBe(600_000)
@@ -62,7 +62,7 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({
         CF_ACCOUNT_ID: "acc-1",
-        CF_QUEUE_ID: "queue-1",
+        CF_SCRAPE_SHOPP_SUGG_QUEUE_ID: "queue-1",
         CF_QUEUES_API_TOKEN: "token-1",
       }),
     ).toThrow(/Invalid environment configuration/)

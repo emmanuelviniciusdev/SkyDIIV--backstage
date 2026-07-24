@@ -102,7 +102,7 @@ async function main(): Promise<void> {
   const cfQueues = new CloudflareQueuesConsumer(
     {
       accountId: config.CF_ACCOUNT_ID,
-      queueId: config.CF_QUEUE_ID,
+      queueId: config.CF_SCRAPE_SHOPP_SUGG_QUEUE_ID,
       apiToken: config.CF_QUEUES_API_TOKEN,
       visibilityTimeoutMs: config.CF_QUEUES_VISIBILITY_TIMEOUT_MS,
     },

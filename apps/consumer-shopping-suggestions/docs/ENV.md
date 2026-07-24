@@ -25,7 +25,7 @@ Local (this repo)                    OCI VM
 ```bash
 cd apps/consumer-shopping-suggestions
 cp .env.example .env
-# Required: CF_ACCOUNT_ID, CF_QUEUE_ID, CF_QUEUES_API_TOKEN, DATABASE_URL
+# Required: CF_ACCOUNT_ID, CF_SCRAPE_SHOPP_SUGG_QUEUE_ID, CF_QUEUES_API_TOKEN, DATABASE_URL
 # Optional: WEB_APP_REDIS_REST_*
 ```
 
@@ -61,7 +61,7 @@ Use the **same keys** as `.env.example` / local `.env`, with staging or producti
 
 ```env
 CF_ACCOUNT_ID=...
-CF_QUEUE_ID=...
+CF_SCRAPE_SHOPP_SUGG_QUEUE_ID=...
 CF_QUEUES_API_TOKEN=...
 CF_QUEUES_BATCH_SIZE=10
 CF_QUEUES_POLL_INTERVAL_MS=600000

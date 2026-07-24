@@ -5,7 +5,7 @@ const envSchema = z.object({
    * Cloudflare Queues HTTP pull — **default / active broker**.
    */
   CF_ACCOUNT_ID: z.string().min(1),
-  CF_QUEUE_ID: z.string().min(1),
+  CF_SCRAPE_SHOPP_SUGG_QUEUE_ID: z.string().min(1),
   CF_QUEUES_API_TOKEN: z.string().min(1),
   /** Max messages pulled per poll cycle (default: 10). */
   CF_QUEUES_BATCH_SIZE: z.coerce.number().int().positive().default(10),

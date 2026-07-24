@@ -43,7 +43,7 @@ Credentials always come from the **same** CF vars the consumer uses to pull:
 
 ```bash
 CF_ACCOUNT_ID=...
-CF_QUEUE_ID=...
+CF_SCRAPE_SHOPP_SUGG_QUEUE_ID=...
 CF_QUEUES_API_TOKEN=...   # needs Queues Edit to publish
 ```
 
@@ -83,7 +83,7 @@ Also: `npm run publish:event`
 
 The script `POST`s to:
 
-`https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/queues/{CF_QUEUE_ID}/messages`
+`https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/queues/{CF_SCRAPE_SHOPP_SUGG_QUEUE_ID}/messages`
 
 ```json
 {
@@ -117,7 +117,7 @@ Expected: HTTP `200` and `"success": true`.
 set -a && source .env && set +a
 
 curl -sS -X POST \
-  "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/queues/${CF_QUEUE_ID}/messages" \
+  "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/queues/${CF_SCRAPE_SHOPP_SUGG_QUEUE_ID}/messages" \
   -H "Authorization: Bearer ${CF_QUEUES_API_TOKEN}" \
   -H "Content-Type: application/json" \
   --data '{
@@ -171,7 +171,7 @@ sequenceDiagram
 | Symptom | Likely cause |
 |---|---|
 | HTTP 403 | Invalid token or missing **Queues Edit** |
-| HTTP 404 | Wrong `CF_ACCOUNT_ID` / `CF_QUEUE_ID` |
+| HTTP 404 | Wrong `CF_ACCOUNT_ID` / `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` |
 | `success: false` | Invalid push body |
 | Published, no processing | Consumer stopped / VM STOPPED / still inside poll interval |
 | `No handler registered` | Typo in `event`, or handler not wired in `main.ts` |
