@@ -1,15 +1,6 @@
 name: Deploy — Consumer Shopping Suggestions
 
 on:
-  workflow_dispatch:
-    inputs:
-      deploy_mode:
-        description: "production = apply+deploy then terraform destroy (no idle storage); test = leave VM running (destroy manually)"
-        type: choice
-        options:
-          - production
-          - test
-        default: production
   push:
     branches:
       - main
@@ -65,9 +56,7 @@ jobs:
     name: Deploy → Staging (OCI pay-as-you-go)
     needs: ci
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     environment:
       name: staging
     env:
@@ -80,7 +69,7 @@ jobs:
       ENABLE_COST_LIMIT: ${{ vars.ENABLE_COST_LIMIT }}
       COST_LIMIT_USD: ${{ vars.COST_LIMIT_USD }}
       COST_ALERT_EMAIL: ${{ secrets.COST_ALERT_EMAIL }}
-      DEPLOY_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_mode || 'test' }}
+      DEPLOY_MODE: test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -324,9 +313,7 @@ jobs:
     name: Deploy → Production (OCI pay-as-you-go)
     needs: ci
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
     env:
@@ -339,7 +326,7 @@ jobs:
       ENABLE_COST_LIMIT: ${{ vars.ENABLE_COST_LIMIT }}
       COST_LIMIT_USD: ${{ vars.COST_LIMIT_USD }}
       COST_ALERT_EMAIL: ${{ secrets.COST_ALERT_EMAIL }}
-      DEPLOY_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_mode || 'production' }}
+      DEPLOY_MODE: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
