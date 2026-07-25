@@ -1,5 +1,5 @@
-import { Camoufox } from "camoufox-js"
-import type { Browser, Page } from "playwright-core"
+import { launchOptions as camoufoxLaunchOptions } from "camoufox-js"
+import { firefox, type Browser, type Page } from "playwright-core"
 import type {
   BrowserFactoryPort,
   BrowserPage,
@@ -59,19 +59,22 @@ export class CamoufoxBrowserFactory implements BrowserFactoryPort {
     private readonly logger: Logger,
   ) {}
 
-  async launch(options?: { proxyUrl?: string }): Promise<BrowserSession> {
+  async launch(options?: { proxyUrl?: string; egressIp?: string }): Promise<BrowserSession> {
     this.logger.debug("Launching Camoufox browser", {
       headless: this.config.headless,
       hasProxy: Boolean(options?.proxyUrl),
+      egressIp: options?.egressIp,
     })
 
-    const browser = await Camoufox({
+    const fromOptions = await camoufoxLaunchOptions({
       headless: this.config.headless,
-      ...(options?.proxyUrl
-        ? { proxy: { server: options.proxyUrl } }
-        : {}),
     })
 
+    if (options?.proxyUrl) {
+      fromOptions.proxy = { server: options.proxyUrl }
+    }
+
+    const browser = await firefox.launch(fromOptions)
     return new PlaywrightBrowserSession(browser)
   }
 }

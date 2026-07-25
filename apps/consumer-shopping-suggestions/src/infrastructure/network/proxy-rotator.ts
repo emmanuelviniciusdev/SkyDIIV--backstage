@@ -9,7 +9,10 @@ import type { ProxyEndpoint, ProxyRotatorPort } from "../../domain/ports/proxy-r
 export class RoundRobinProxyRotator implements ProxyRotatorPort {
   private cursor = 0
 
-  constructor(private readonly proxyUrls: string[]) {
+  constructor(
+    private readonly proxyUrls: string[],
+    private readonly egressIps: string[] = [],
+  ) {
     if (proxyUrls.length === 0) {
       throw new Error("RoundRobinProxyRotator requires at least one proxy URL")
     }
@@ -22,7 +25,10 @@ export class RoundRobinProxyRotator implements ProxyRotatorPort {
   next(): ProxyEndpoint {
     const index = this.cursor % this.proxyUrls.length
     this.cursor += 1
-    return { proxyUrl: this.proxyUrls[index]! }
+    return {
+      proxyUrl: this.proxyUrls[index]!,
+      egressIp: this.egressIps[index],
+    }
   }
 }
 

@@ -12,7 +12,7 @@ trap 'rm -f "${tmp}"' EXIT
 
 if [[ -f "${APP_ENV_FILE}" ]]; then
   # Drop any stale PROXY_* keys from the secrets file; infra owns them.
-  grep -vE '^\s*(PROXY_URLS|PROXY_BASE_PORT)=' "${APP_ENV_FILE}" > "${tmp}" || true
+  grep -vE '^\s*(PROXY_URLS|PROXY_EGRESS_IPS|PROXY_BASE_PORT)=' "${APP_ENV_FILE}" > "${tmp}" || true
 else
   : > "${tmp}"
 fi

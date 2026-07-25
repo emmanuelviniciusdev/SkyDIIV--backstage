@@ -21,13 +21,6 @@ operating_system_version = "24.04"
 ipv6_count      = 4
 proxy_base_port = 11080
 
-# Thursday 11:00–12:00 America/Sao_Paulo (UTC crons below).
-# Set false for localhost test deploys so the schedule does not apply.
-enable_weekly_schedule            = true
-schedule_start_cron_utc           = "0 14 * * 4" # Thu 11:00 BRT
-schedule_stop_cron_utc            = "0 15 * * 4" # Thu 12:00 BRT
-create_resource_scheduler_policy  = true
-
 # Monthly spend ceiling ($5 default). OCI Budgets email only;
 # hard kill (terraform destroy of the consumer stack) is deploy/oci_cost_guard.py + GitHub Actions cron.
 # Targets compartment_ocid — use a dedicated compartment if this should not

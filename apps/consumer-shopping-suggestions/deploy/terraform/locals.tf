@@ -12,9 +12,11 @@ data "oci_core_images" "os" {
 }
 
 locals {
-  name_prefix = "css-${var.environment}" # legacy OCI resource prefix (consumer-shopping-suggestions)
+  # All OCI display names use this prefix. Production VM name is exact;
+  # non-production appends environment to avoid compartment collisions.
+  name_prefix = var.environment == "production" ? "skydiiv-consumer-shopping-suggestions" : "skydiiv-consumer-shopping-suggestions-${var.environment}"
   # VCN/subnet DNS labels: max 15 alphanumeric characters
-  dns_label = "css${var.environment == "production" ? "prod" : "stg"}"
+  dns_label = var.environment == "production" ? "skydiivcss" : "skydiivcssstg"
 
   availability_domain = data.oci_identity_availability_domains.ads.availability_domains[
     var.availability_domain_index
@@ -26,7 +28,8 @@ locals {
   ssh_user = startswith(var.operating_system, "Canonical Ubuntu") ? "ubuntu" : "opc"
 
   common_tags = {
-    app         = "consumer-shopping-suggestions"
+    app         = "skydiiv-consumer-shopping-suggestions"
+    brand       = "skydiiv"
     environment = var.environment
     managed_by  = "terraform"
     billing     = "payg"

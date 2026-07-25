@@ -60,7 +60,7 @@ async function main(): Promise<void> {
 
   const proxyRotator =
     config.PROXY_URLS.length > 0
-      ? new RoundRobinProxyRotator(config.PROXY_URLS)
+      ? new RoundRobinProxyRotator(config.PROXY_URLS, config.PROXY_EGRESS_IPS)
       : new DisabledProxyRotator()
 
   const browserFactory = new CamoufoxBrowserFactory(

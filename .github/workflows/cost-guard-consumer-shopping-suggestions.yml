@@ -1,7 +1,7 @@
 name: Cost guard — Consumer Shopping Suggestions
 
 # Enforces the monthly OCI cost ceiling by destroying the consumer Terraform stack
-# (VM, VCN, IPv6, schedules, budget, …) when spend >= limit.
+# (VM, boot volume, VCN, IPv6, budget, …) when spend >= limit.
 # OCI Budgets only email; this workflow is the hard kill switch.
 
 on:

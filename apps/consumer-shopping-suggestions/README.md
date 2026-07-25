@@ -47,8 +47,8 @@ flowchart LR
 | Browser | Camoufox + Playwright |
 | Validation | Zod (per event) |
 | Tests | Vitest |
-| Infra | Terraform (OCI VM + IPv6) + microsocks + Resource Scheduler |
-| Deploy | GitHub Actions / `deploy/deploy-from-local.sh` → SSH → systemd |
+| Infra | Terraform (ephemeral OCI VM + IPv6) + microsocks |
+| Deploy | Weekly GHA create→destroy / `deploy/deploy-from-local.sh` → SSH → systemd |
 
 ## Getting started (local)
 
@@ -113,17 +113,19 @@ After a successful scrape the consumer updates web Redis:
 2. Deletes `shopping-suggestions:{userId}`
 3. Sets `notification:new-shopping-suggestions:{userId}`
 
-## IPv6 rotation + weekly schedule
+## IPv6 rotation + ephemeral weekly stack
 
 On every OCI deploy:
 
-1. Terraform creates/updates VM, VCN, IPv6, schedules
+1. Terraform creates VM, VCN, IPv6 (no OCI Resource Scheduler)
 2. `setup-proxy-pool.sh` → local SOCKS + `PROXY_URLS`
 3. `merge-env.sh` injects proxies into the consumer env
 4. App round-robins `PROXY_URLS` per scrape
 
-Production: **START Thu 11:00 / STOP Thu 12:00** (`America/Sao_Paulo`).
-Monthly cost ceiling **$5** — see [deploy/README.md](deploy/README.md#monthly-cost-limit-5-default).
+Production (PAYG): GitHub Actions **creates** the stack Thu **10:00** BRT and
+**`terraform destroy`s** it at **12:05** BRT (scrape window 11:00–12:00) so idle
+compute **and boot volume** cost **$0**. See [deploy/README.md](deploy/README.md).
+Monthly cost ceiling **$5** — [cost limit](deploy/README.md#monthly-cost-limit-5-default).
 
 ## Tests
 

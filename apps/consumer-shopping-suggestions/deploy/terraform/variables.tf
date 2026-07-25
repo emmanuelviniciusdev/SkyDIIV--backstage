@@ -89,12 +89,12 @@ variable "instance_memory_in_gbs" {
 
 variable "boot_volume_size_in_gbs" {
   type        = number
-  description = "Boot volume size in GB (OCI minimum ~47)."
+  description = "Boot volume size in GB (OCI minimum 50). Kept minimal for PAYG while the ephemeral VM is up."
   default     = 50
 
   validation {
-    condition     = var.boot_volume_size_in_gbs >= 47 && var.boot_volume_size_in_gbs <= 200
-    error_message = "boot_volume_size_in_gbs must be between 47 and 200."
+    condition     = var.boot_volume_size_in_gbs >= 50 && var.boot_volume_size_in_gbs <= 200
+    error_message = "boot_volume_size_in_gbs must be between 50 and 200."
   }
 }
 
@@ -145,40 +145,12 @@ variable "proxy_base_port" {
   default     = 11080
 }
 
-variable "enable_weekly_schedule" {
-  type        = bool
-  description = <<-EOT
-    When true, OCI Resource Scheduler starts the VM every Thursday 11:00 and stops
-    it at 12:00 (America/Sao_Paulo → UTC crons below). Set false for test/staging
-    deploys so the schedule does not apply (VM stays under manual control).
-  EOT
-  default     = true
-}
-
-variable "schedule_start_cron_utc" {
-  type        = string
-  description = "CRON (UTC) to START the VM. Default: Thursday 11:00 America/Sao_Paulo = 14:00 UTC."
-  default     = "0 14 * * 4"
-}
-
-variable "schedule_stop_cron_utc" {
-  type        = string
-  description = "CRON (UTC) to STOP the VM. Default: Thursday 12:00 America/Sao_Paulo = 15:00 UTC."
-  default     = "0 15 * * 4"
-}
-
-variable "create_resource_scheduler_policy" {
-  type        = bool
-  description = "Create an Identity policy so Resource Scheduler can start/stop the instance."
-  default     = true
-}
-
 variable "enable_cost_limit" {
   type        = bool
   description = <<-EOT
     When true, create an OCI monthly Budget (+ email alerts) for cost_limit_usd.
-    Hard enforcement (terraform destroy of the consumer stack: VM, network, IPv6,
-    schedules, budget) is performed by deploy/oci_cost_guard.py (GitHub Actions
+    Hard enforcement (terraform destroy of the consumer stack: VM, boot volume,
+    network, IPv6, budget) is performed by deploy/oci_cost_guard.py (GitHub Actions
     cron), because Budgets alone only notify.
   EOT
   default     = true

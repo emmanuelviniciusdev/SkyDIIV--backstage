@@ -173,7 +173,7 @@ sequenceDiagram
 | HTTP 403 | Invalid token or missing **Queues Edit** |
 | HTTP 404 | Wrong `CF_ACCOUNT_ID` / `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` |
 | `success: false` | Invalid push body |
-| Published, no processing | Consumer stopped / VM STOPPED / still inside poll interval |
+| Published, no processing | Consumer down / stack destroyed (outside Thu window) / still inside poll interval |
 | `No handler registered` | Typo in `event`, or handler not wired in `main.ts` |
 | Scrape ACK with no products | `userId` has no `wardrobe_panorama` |
 

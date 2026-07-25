@@ -58,6 +58,20 @@ const envSchema = z.object({
         .filter(Boolean),
     ),
 
+  /**
+   * Comma-separated public egress IPs aligned with PROXY_URLS (same order).
+   * Set by infra so Camoufox can spoof geolocation without calling external IP APIs.
+   */
+  PROXY_EGRESS_IPS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+
   LOG_LEVEL: z.enum(["DEBUG", "INFO", "WARN", "ERROR"]).default("INFO"),
 })
 

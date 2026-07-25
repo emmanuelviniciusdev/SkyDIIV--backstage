@@ -17,5 +17,5 @@ export interface BrowserFactoryPort {
   /**
    * Launches a new browser session, optionally bound to a rotated network endpoint.
    */
-  launch(options?: { proxyUrl?: string }): Promise<BrowserSession>
+  launch(options?: { proxyUrl?: string; egressIp?: string }): Promise<BrowserSession>
 }

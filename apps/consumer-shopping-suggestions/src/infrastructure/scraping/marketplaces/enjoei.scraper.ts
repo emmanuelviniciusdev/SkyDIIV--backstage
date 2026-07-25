@@ -107,11 +107,15 @@ export class EnjoeiScraper implements MarketplaceScraperPort {
   }
 
   async scrape(input: MarketplaceScrapeInput): Promise<ScrapedProduct[]> {
-    const proxyUrl = this.deps.proxyRotator.isEnabled()
-      ? this.deps.proxyRotator.next().proxyUrl
-      : undefined
+    const proxy = this.deps.proxyRotator.isEnabled()
+      ? this.deps.proxyRotator.next()
+      : null
 
-    const browser = await this.deps.browserFactory.launch({ proxyUrl })
+    const browser = await this.deps.browserFactory.launch(
+      proxy
+        ? { proxyUrl: proxy.proxyUrl, egressIp: proxy.egressIp }
+        : undefined,
+    )
     const products: ScrapedProduct[] = []
 
     try {

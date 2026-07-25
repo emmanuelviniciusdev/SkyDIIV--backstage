@@ -1,61 +1,68 @@
 # Deploy — Consumer Shopping Suggestions
 
-Provisioning + deploy on **Oracle Cloud pay-as-you-go** compute (Ampere A1 Flex),
-with a **weekly start/stop window** to keep costs low.
+Provisioning + deploy on **Oracle Cloud pay-as-you-go** compute (Ampere A1 Flex)
+with an **ephemeral weekly stack**: create before the scrape window, **`terraform destroy`**
+after — so idle cost for compute **and boot volume** is **$0**.
+
+> On PAYG, **STOPPED** VMs still bill for the boot volume (~50 GB). Do **not** rely on
+> OCI Resource Scheduler START/STOP for cost control.
 
 ## Cost model
 
-| Mode | Compute billing |
+| Mode | Billing |
 |---|---|
-| **Production schedule** | VM **RUNNING** only **Thursday 11:00–12:00** (`America/Sao_Paulo`) — 1h/week |
-| **Test / localhost** | Schedule **disabled**; you start the VM on demand and leave it running |
-| **Monthly ceiling** | Default **`$5.00` USD** — cost guard runs **`terraform destroy`** on the consumer stack when Usage API MTD cost ≥ limit |
+| **Production (Thursday window)** | Stack exists only ~Thu 10:00–12:05 (`America/Sao_Paulo`). Outside that: **no VM / no boot volume**. |
+| **Test / localhost `--test`** | You create on demand; VM left **RUNNING** — **destroy when done** or storage keeps billing. |
+| **Push deploy (`production` mode)** | Apply + deploy smoke, then **`terraform destroy`** (no idle stack). |
+| **Monthly ceiling** | Default **`$5.00` USD** — cost guard **`terraform destroy`** if Usage API MTD cost ≥ limit |
 
-Default shape: `VM.Standard.A1.Flex` — **2 OCPU / 4 GB** (paid). Stopped VMs do not bill OCPU/RAM (boot volume still may).
+Default shape: `VM.Standard.A1.Flex` — **2 OCPU / 4 GB**. Boot volume default **50 GB** (OCI minimum).
 
-Schedule CRON (UTC), matching [schedule-defaults.json](./schedule-defaults.json):
+Weekly GitHub Actions crons ([schedule-defaults.json](./schedule-defaults.json),
+workflow `.github/workflows/weekly-consumer-shopping-suggestions.yml`):
 
 | Action | Local (BRT) | UTC CRON |
 |---|---|---|
-| START | Thursday 11:00 | `0 14 * * 4` |
-| STOP | Thursday 12:00 | `0 15 * * 4` |
+| **Create + deploy** | Thursday 10:00 | `0 13 * * 4` |
+| Scrape window | Thursday 11:00–12:00 | — |
+| **Destroy stack** | Thursday 12:05 | `5 15 * * 4` |
 
 ```
-GitHub Actions / localhost
-  ├─ CI (lint / test / build)          [CI only]
-  ├─ Terraform
-  │    ├─ VCN + subnet (IPv4 + IPv6)
-  │    ├─ Internet Gateway + routes + security list
-  │    ├─ Paid VM (Ampere A1 Flex)
-  │    ├─ Extra IPv6 addresses for egress rotation
-  │    ├─ Resource Scheduler start/stop (production only)
-  │    └─ Monthly Budget + email alerts (cost ceiling)
-  ├─ Ensure VM is RUNNING (instance action START)
-  ├─ SCP release + ipv6-addresses.txt
-  └─ SSH remote-deploy.sh
-        ├─ setup-proxy-pool.sh
-        ├─ merge-env.sh
-        ├─ npm ci + camoufox fetch
-        └─ systemctl restart consumer
+Weekly GHA (production environment)
+  Thu 10:00 BRT  terraform apply → START → SCP → remote-deploy.sh → leave RUNNING
+  Thu 11:00–12:00  consumer polls Cloudflare Queues
+  Thu 12:05 BRT  terraform destroy  (VM + boot volume + VCN + IPv6)
 
-GitHub Actions cron (daily 12:00 UTC) + manual workflow_dispatch
-  └─ oci_cost_guard.py → terraform destroy consumer stack if MTD cost ≥ cost_limit_usd
+Push / localhost production mode
+  terraform apply → deploy → terraform destroy
+
+Localhost --test
+  terraform apply → deploy → leave RUNNING
+  → ./deploy/destroy-from-local.sh when finished
+
+Daily GHA cost guard (12:00 UTC)
+  oci_cost_guard.py → terraform destroy if MTD ≥ cost_limit_usd
 ```
 
-## Weekly schedule vs test mode
+Prefer secret **`TF_BACKEND_HCL`** so weekly create/destroy share the same Terraform state
+(see [Terraform state](#terraform-state-tf_backend_hcl) below). Without it, Actions cache
+is best-effort only.
 
-| | Production | Test (`--test` / staging) |
+## Modes (ephemeral vs test)
+
+| | Production / weekly | Test (`--test` / staging default) |
 |---|---|---|
-| `enable_weekly_schedule` | `true` | `false` |
-| Resource Scheduler | Creates START + STOP | **Not created** (or destroyed) |
-| When can the VM run? | Only Thu 11:00–12:00 BRT (unless you start manually mid-window) | Anytime you start it |
-| After localhost deploy | Script **STOP**s the VM again | VM left **RUNNING** |
+| Stack lifetime | Create → ~2h → destroy | Until you destroy |
+| After localhost `--production` | **`terraform destroy`** | — |
+| After localhost `--test` | — | VM **RUNNING** (bills until destroy) |
 
-**Identity policy:** Terraform can create a Resource Scheduler policy (OCI name
-`${name_prefix}-resource-scheduler`, e.g. `css-production-resource-scheduler`) so the
-Resource Scheduler service principal may manage consumer instances in the compartment.
-Set `create_resource_scheduler_policy = false` if you already have an equivalent
-tenancy policy.
+### OCI naming
+
+| Resource | Display name |
+|---|---|
+| VM (production) | `skydiiv-consumer-shopping-suggestions` |
+| VM (staging) | `skydiiv-consumer-shopping-suggestions-staging` |
+| VCN / IGW / subnet / budget / … | `${name_prefix}-…` (same prefix) |
 
 ---
 
@@ -119,19 +126,18 @@ python3 deploy/oci_cost_guard.py --limit 5 --terraform-dir deploy/terraform --dr
 
 ---
 
-## Localhost deploy for tests (schedule does not apply)
+## Localhost deploy
 
-Use this when you need to exercise the consumer **outside** Thursday 11:00–12:00,
-or keep the VM up while debugging.
+Use this to exercise the consumer outside the Thursday GHA window.
 
 ### Prerequisites
 
 1. `deploy/terraform/terraform.tfvars` filled (see `terraform.tfvars.example`)
 2. SSH key pair matching `ssh_public_key`
 3. **`.env`** filled from `.env.example` (app secrets for dev and local deploy — see [docs/ENV.md](../docs/ENV.md))
-4. Tools: `terraform`, `npm`, `ssh`/`scp`, `python3`, and `pip install oci`
+4. Tools: `terraform`, `npm`, `ssh`/`scp`, `python3` (+ pip). The script installs the `oci` Python SDK if missing.
 
-### Run test deploy
+### Test deploy (leave RUNNING — destroy when done)
 
 ```bash
 cd apps/consumer-shopping-suggestions
@@ -144,21 +150,19 @@ chmod +x deploy/*.sh
 
 What `--test` does:
 
-1. `terraform apply -var='enable_weekly_schedule=false'` → **removes / skips** the Thursday schedules
-2. **START**s the VM immediately (does not wait for Thursday)
-3. Builds, uploads, and runs `remote-deploy.sh`
-4. Leaves the VM **RUNNING**
+1. `terraform apply`
+2. **START**s the VM, builds, uploads, `remote-deploy.sh`
+3. Leaves the VM **RUNNING** (PAYG boot volume bills until destroy)
 
-Re-enable production schedule when finished:
+When finished:
 
 ```bash
-cd deploy/terraform
-terraform apply -var='enable_weekly_schedule=true' -auto-approve
-# optional: stop the VM until next Thursday
-python3 ../oci_instance_action.py STOP --wait
+./deploy/destroy-from-local.sh --yes
 ```
 
-### Production-like localhost deploy
+Also check **Block Storage → Boot Volumes** in OCI for orphan volumes from old terminations.
+
+### Ephemeral / production-like localhost deploy
 
 ```bash
 ./deploy/deploy-from-local.sh --production \
@@ -166,10 +170,10 @@ python3 ../oci_instance_action.py STOP --wait
   --yes
 ```
 
-Keeps schedules enabled, starts the VM for the deploy, then **STOP**s it so compute
-returns to the weekly window.
+Apply + deploy, then **`terraform destroy`** (no idle storage). Thursday live traffic
+uses the **Weekly** GitHub Actions workflow, not this path.
 
-### Manual start / stop
+### Manual start / get (while a stack exists)
 
 ```bash
 cd deploy/terraform
@@ -181,8 +185,41 @@ export OCI_USER_OCID=...
 export OCI_FINGERPRINT=...
 
 python3 ../oci_instance_action.py START --wait
-python3 ../oci_instance_action.py STOP --wait
 python3 ../oci_instance_action.py GET
+# Prefer destroy over STOP on PAYG:
+# ./deploy/destroy-from-local.sh --yes
+```
+
+### SSH / logs on the VM
+
+Use [ssh-vm.sh](./ssh-vm.sh) (reads `instance_public_ip` and `ssh_user` from Terraform):
+
+```bash
+cd apps/consumer-shopping-suggestions
+
+# Interactive shell
+./deploy/ssh-vm.sh --ssh-key ~/.ssh/skydiiv-oci-css
+
+# Recent consumer logs
+./deploy/ssh-vm.sh logs
+
+# Follow consumer logs
+./deploy/ssh-vm.sh logs --follow
+
+# Proxy pool logs
+./deploy/ssh-vm.sh logs proxy --follow
+
+# systemd status for consumer + proxy
+./deploy/ssh-vm.sh status
+```
+
+Manual equivalent:
+
+```bash
+cd deploy/terraform
+ssh -i ~/.ssh/skydiiv-oci-css ubuntu@"$(terraform output -raw instance_public_ip)"
+sudo journalctl -u consumer-shopping-suggestions -f
+sudo journalctl -u skydiiv-proxy-pool -f
 ```
 
 ---
@@ -272,10 +309,10 @@ CAMOUFOX_HEADLESS=true
 | Concern | Owner |
 |---|---|
 | VCN / subnet / IGW / security | Terraform |
-| Paid VM | Terraform (`oci_core_instance`) |
-| Thursday START / STOP | Terraform (`oci_resource_scheduler_schedule`) when enabled |
+| Paid VM + boot volume | Terraform (`oci_core_instance`) — destroyed with the stack |
+| Thursday create / destroy | GitHub Actions `weekly-consumer-shopping-suggestions.yml` |
 | Monthly budget + email alerts | Terraform (`oci_budget_budget`) when enabled |
-| Hard cost kill (`terraform destroy`) | `oci_cost_guard.py` + GitHub Actions cron |
+| Hard cost kill (`terraform destroy`) | `oci_cost_guard.py` + daily GHA cron |
 | Public IPv6 pool | Terraform (`oci_core_ipv6`) |
 | Bind IPv6 → local SOCKS | `setup-proxy-pool.sh` + microsocks |
 | `PROXY_URLS` | Infra (`/etc/skydiiv/proxy-pool.env`) |
@@ -288,22 +325,32 @@ Paid Ampere usually has better availability than Always Free. If `LaunchInstance
 1. Bump `availability_domain_index` (`1`, `2`, …).
 2. Or temporarily use `VM.Standard.E4.Flex` (also paid flex).
 
-## Terraform state
+## Terraform state (`TF_BACKEND_HCL`)
 
-- Preferred: `TF_BACKEND_HCL` remote backend.
-- Fallback: GitHub Actions cache (less durable).
+GitHub secret **`TF_BACKEND_HCL`** is the contents of a Terraform `backend.hcl` file.
+Workflows write it to disk and run `terraform init -backend-config=backend.hcl` so
+**create** and **destroy** jobs share the same state.
+
+Typical options:
+
+| Backend | Cost on PAYG? | Notes |
+|---|---|---|
+| **GitHub Actions cache** (current fallback) | Free | Works for weekly create/destroy if cache hits; can miss / diverge |
+| **Cloudflare R2** (S3-compatible) | Usually **$0** on free tier for tiny state (~KBs) | Good fit if you already use CF; no OCI storage cost |
+| **OCI Object Storage** | Often covered by Always Free **20 GB** object storage; beyond that, small PAYG charge | Same cloud as the VM; not free if you exceed Always Free |
 
 ## First-time local Terraform
 
 ```bash
 cd deploy/terraform
 cp terraform.tfvars.example terraform.tfvars
-# edit values — keep enable_weekly_schedule=true for production
-# cost_alert_email defaults to emmanuel.bergmann@icloud.com
+# edit values — cost_alert_email defaults to emmanuel.bergmann@icloud.com
 terraform init -backend=false
 terraform apply
 terraform output instance_public_ip
-terraform output enable_weekly_schedule
+terraform output name_prefix   # skydiiv-consumer-shopping-suggestions
 terraform output cost_limit_usd
 terraform output budget_id
+# when finished testing:
+cd .. && ./destroy-from-local.sh --yes
 ```

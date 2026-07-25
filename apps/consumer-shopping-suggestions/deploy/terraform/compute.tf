@@ -1,13 +1,13 @@
 /**
  * Paid OCI compute (Ampere A1 Flex by default).
- * Lifecycle state (RUNNING / STOPPED) is managed by Resource Scheduler
- * and/or manual test deploys — Terraform ignores state drifts.
+ * Ephemeral: GitHub Actions / local scripts create and terraform-destroy the stack.
+ * Terraform ignores lifecycle_state drifts while the instance exists.
  */
 
 resource "oci_core_instance" "consumer" {
   compartment_id      = var.compartment_ocid
   availability_domain = local.availability_domain
-  display_name        = "${local.name_prefix}-vm"
+  display_name        = local.name_prefix
   shape               = var.instance_shape
 
   dynamic "shape_config" {
@@ -22,7 +22,7 @@ resource "oci_core_instance" "consumer" {
     subnet_id        = oci_core_subnet.public.id
     display_name     = "${local.name_prefix}-vnic"
     assign_public_ip = true
-    hostname_label   = "consumer"
+    hostname_label   = "skydiiv"
   }
 
   source_details {
@@ -51,7 +51,7 @@ resource "oci_core_instance" "consumer" {
     ignore_changes = [
       # Avoid recreation when OCI publishes a newer image of the same OS.
       source_details[0].source_id,
-      # Start/stop is owned by Resource Scheduler (or test deploys).
+      # Start/stop while the ephemeral stack exists is owned by deploy scripts.
       state,
     ]
   }

@@ -5,6 +5,8 @@
 export interface ProxyEndpoint {
   /** SOCKS/HTTP proxy URL used by the browser for this session. */
   proxyUrl: string
+  /** Public egress IP for Camoufox geoip spoofing (IPv6 from the proxy pool). */
+  egressIp?: string
 }
 
 export interface ProxyRotatorPort {

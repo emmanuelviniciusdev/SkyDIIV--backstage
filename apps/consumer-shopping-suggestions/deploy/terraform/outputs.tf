@@ -58,29 +58,9 @@ output "instance_shape" {
   value       = var.instance_shape
 }
 
-output "enable_weekly_schedule" {
-  description = "Whether Thursday start/stop Resource Scheduler schedules are managed"
-  value       = var.enable_weekly_schedule
-}
-
-output "schedule_start_cron_utc" {
-  description = "UTC CRON used to START the VM (when schedule is enabled)"
-  value       = var.schedule_start_cron_utc
-}
-
-output "schedule_stop_cron_utc" {
-  description = "UTC CRON used to STOP the VM (when schedule is enabled)"
-  value       = var.schedule_stop_cron_utc
-}
-
-output "schedule_start_id" {
-  description = "OCID of the START schedule (null when disabled)"
-  value       = try(oci_resource_scheduler_schedule.start_thursday[0].id, null)
-}
-
-output "schedule_stop_id" {
-  description = "OCID of the STOP schedule (null when disabled)"
-  value       = try(oci_resource_scheduler_schedule.stop_thursday[0].id, null)
+output "name_prefix" {
+  description = "OCI display-name prefix (production VM name is exact)"
+  value       = local.name_prefix
 }
 
 output "enable_cost_limit" {

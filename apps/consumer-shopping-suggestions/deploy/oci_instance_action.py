@@ -33,8 +33,18 @@ def load_client(region: str):
     tenancy = os.environ.get("OCI_TENANCY_OCID", "").strip()
     user = os.environ.get("OCI_USER_OCID", "").strip()
     fingerprint = os.environ.get("OCI_FINGERPRINT", "").strip()
+    missing = [
+        name
+        for name, value in (
+            ("OCI_TENANCY_OCID", tenancy),
+            ("OCI_USER_OCID", user),
+            ("OCI_FINGERPRINT", fingerprint),
+            ("OCI_API_PRIVATE_KEY_PATH", key_path),
+        )
+        if not value
+    ]
 
-    if tenancy and user and fingerprint and key_path:
+    if not missing:
         config = {
             "user": user,
             "key_file": key_path,
@@ -43,10 +53,18 @@ def load_client(region: str):
             "region": region,
         }
     else:
-        config = oci.config.from_file(
-            os.environ.get("OCI_CONFIG_FILE", "~/.oci/config"),
-            os.environ.get("OCI_CONFIG_PROFILE", "DEFAULT"),
-        )
+        config_file = os.environ.get("OCI_CONFIG_FILE", "~/.oci/config")
+        try:
+            config = oci.config.from_file(
+                config_file,
+                os.environ.get("OCI_CONFIG_PROFILE", "DEFAULT"),
+            )
+        except Exception as err:
+            raise SystemExit(
+                "OCI credentials incomplete. Missing env: "
+                + ", ".join(missing)
+                + f"\nAlso could not load {config_file}: {err}"
+            ) from err
         config["region"] = region or config.get("region")
 
     return oci.core.ComputeClient(config), oci

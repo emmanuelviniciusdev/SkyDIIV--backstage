@@ -2,17 +2,23 @@
   "timezone": "America/Sao_Paulo",
   "windowLocal": {
     "day": "Thursday",
-    "start": "11:00",
-    "stop": "12:00"
+    "scrapeStart": "11:00",
+    "scrapeStop": "12:00"
   },
-  "cronUtc": {
-    "start": "0 14 * * 4",
-    "stop": "0 15 * * 4"
+  "githubActionsCronUtc": {
+    "createAndDeploy": "0 13 * * 4",
+    "destroy": "5 15 * * 4"
   },
+  "githubActionsLocal": {
+    "createAndDeploy": "Thursday 10:00",
+    "destroy": "Thursday 12:05"
+  },
+  "workflow": ".github/workflows/weekly-consumer-shopping-suggestions.yml",
   "notes": [
     "America/Sao_Paulo is UTC-3 year-round (no DST).",
-    "Thursday 11:00 BRT = 14:00 UTC; Thursday 12:00 BRT = 15:00 UTC.",
-    "OCI Resource Scheduler CRON uses UTC. Day-of-week 4 = Thursday.",
-    "Window is 1 hour per week."
+    "PAYG: STOPPED instances still bill boot volumes — do not use OCI Resource Scheduler START/STOP for cost control.",
+    "Ephemeral stack: GitHub Actions terraform-applies + deploys at 10:00 BRT, terraform-destroys at 12:05 BRT (VM + boot volume + VCN + IPv6).",
+    "Create runs one hour before the scrape window to allow apt/Node/Camoufox provisioning.",
+    "Prefer secret TF_BACKEND_HCL so create and destroy share remote Terraform state."
   ]
 }

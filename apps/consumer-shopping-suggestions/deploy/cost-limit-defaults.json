@@ -6,7 +6,7 @@
   "enforcement": "terraform-destroy",
   "notes": [
     "OCI Budgets alert by email only; hard kill is deploy/oci_cost_guard.py.",
-    "When the ceiling is hit, the guard runs terraform destroy on the consumer stack (VM, VCN, IPv6, schedules, budget, scheduler policy).",
+    "When the ceiling is hit, the guard runs terraform destroy on the consumer stack (VM, boot volume, VCN, IPv6, budget).",
     "Usage API cost data can lag up to ~24h — treat the ceiling as eventual, not instantaneous.",
     "Recreate with: cd deploy/terraform && terraform apply"
   ]

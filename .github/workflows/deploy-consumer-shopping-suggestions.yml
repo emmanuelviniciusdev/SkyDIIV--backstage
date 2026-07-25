@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy_mode:
-        description: "production = weekly Thu schedule; test = no schedule, leave VM running"
+        description: "production = apply+deploy then terraform destroy (no idle storage); test = leave VM running (destroy manually)"
         type: choice
         options:
           - production
@@ -77,8 +77,6 @@ jobs:
       INSTANCE_MEMORY_GB: ${{ vars.INSTANCE_MEMORY_GB }}
       AVAILABILITY_DOMAIN_INDEX: ${{ vars.AVAILABILITY_DOMAIN_INDEX }}
       INSTANCE_SHAPE: ${{ vars.INSTANCE_SHAPE }}
-      # Staging defaults to test mode (no weekly schedule) unless overridden.
-      ENABLE_WEEKLY_SCHEDULE: ${{ vars.ENABLE_WEEKLY_SCHEDULE }}
       ENABLE_COST_LIMIT: ${{ vars.ENABLE_COST_LIMIT }}
       COST_LIMIT_USD: ${{ vars.COST_LIMIT_USD }}
       COST_ALERT_EMAIL: ${{ secrets.COST_ALERT_EMAIL }}
@@ -110,19 +108,6 @@ jobs:
           echo "ad_index=${AVAILABILITY_DOMAIN_INDEX:-0}" >> "$GITHUB_OUTPUT"
           echo "instance_shape=${INSTANCE_SHAPE:-VM.Standard.A1.Flex}" >> "$GITHUB_OUTPUT"
           MODE="${DEPLOY_MODE:-test}"
-          if [ "$MODE" = "test" ]; then
-            SCHEDULE="${ENABLE_WEEKLY_SCHEDULE:-false}"
-          else
-            SCHEDULE="${ENABLE_WEEKLY_SCHEDULE:-true}"
-          fi
-          # Staging: prefer schedule off unless explicitly enabled.
-          if [ "${{ github.ref }}" = "refs/heads/staging" ] && [ -z "${ENABLE_WEEKLY_SCHEDULE}" ]; then
-            SCHEDULE="false"
-          fi
-          if [ "$MODE" = "test" ]; then
-            SCHEDULE="false"
-          fi
-          echo "enable_weekly_schedule=${SCHEDULE}" >> "$GITHUB_OUTPUT"
           echo "deploy_mode=${MODE}" >> "$GITHUB_OUTPUT"
 
           LIMIT="${COST_LIMIT_USD:-5}"
@@ -171,7 +156,7 @@ jobs:
             terraform init -input=false -backend=false
           fi
 
-      - name: Terraform Apply (paid VM + IPv6 pool + optional schedule)
+      - name: Terraform Apply (paid VM + IPv6 pool)
         id: tf
         working-directory: apps/consumer-shopping-suggestions/deploy/terraform
         env:
@@ -188,7 +173,6 @@ jobs:
           TF_VAR_instance_memory_in_gbs: ${{ steps.infra.outputs.instance_memory_gb }}
           TF_VAR_availability_domain_index: ${{ steps.infra.outputs.ad_index }}
           TF_VAR_instance_shape: ${{ steps.infra.outputs.instance_shape }}
-          TF_VAR_enable_weekly_schedule: ${{ steps.infra.outputs.enable_weekly_schedule }}
           TF_VAR_enable_cost_limit: ${{ steps.infra.outputs.enable_cost_limit }}
           TF_VAR_cost_limit_usd: ${{ steps.infra.outputs.cost_limit_usd }}
           TF_VAR_cost_alert_email: ${{ steps.infra.outputs.cost_alert_email }}
@@ -202,7 +186,7 @@ jobs:
             echo "instance_ocid=$(terraform output -raw instance_ocid)"
           } >> "$GITHUB_OUTPUT"
           echo "VM $(terraform output -raw instance_ocid) @ $(terraform output -raw instance_public_ip)"
-          echo "schedule=${{ steps.infra.outputs.enable_weekly_schedule }} mode=${{ steps.infra.outputs.deploy_mode }}"
+          echo "mode=${{ steps.infra.outputs.deploy_mode }}"
           echo "cost_limit=${{ steps.infra.outputs.enable_cost_limit }} usd=${{ steps.infra.outputs.cost_limit_usd }}"
           echo "IPv6 pool:"
           cat /tmp/ipv6-addresses.txt
@@ -296,19 +280,39 @@ jobs:
               IPV6_POOL_FILE=/var/lib/skydiiv/proxy-pool/ipv6-addresses.txt \
               bash deploy/remote-deploy.sh
 
-      - name: Stop VM after production-mode deploy
+      - name: Destroy stack after production-mode deploy (no idle storage)
         if: success() && steps.infra.outputs.deploy_mode == 'production'
-        working-directory: apps/consumer-shopping-suggestions
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
         env:
-          OCI_INSTANCE_OCID: ${{ steps.tf.outputs.instance_ocid }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_ssh_public_key: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+          TF_VAR_environment: staging
         run: |
-          pip install --quiet oci
-          python3 deploy/oci_instance_action.py STOP --wait
+          terraform destroy -auto-approve -input=false
+          echo "Staging production-mode: stack destroyed (use weekly workflow for live window)"
+
+      - name: Save Terraform state after destroy
+        if: success() && steps.infra.outputs.deploy_mode == 'production'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/consumer-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-css-staging-${{ github.repository }}-${{ github.run_id }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Staging deploy" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.infra.outputs.deploy_mode }}" = "production" ]; then
+            echo "Mode **production**: apply+deploy then **terraform destroy** (ephemeral; no idle PAYG storage)." >> "$GITHUB_STEP_SUMMARY"
+            echo "Thursday live window: workflow **Weekly — Consumer Shopping Suggestions**." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Mode **test**: VM left **RUNNING** — destroy when done (\`terraform destroy\` / destroy-from-local.sh) to avoid boot-volume cost." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Cleanup OCI key
         if: always()
@@ -332,7 +336,6 @@ jobs:
       INSTANCE_MEMORY_GB: ${{ vars.INSTANCE_MEMORY_GB }}
       AVAILABILITY_DOMAIN_INDEX: ${{ vars.AVAILABILITY_DOMAIN_INDEX }}
       INSTANCE_SHAPE: ${{ vars.INSTANCE_SHAPE }}
-      ENABLE_WEEKLY_SCHEDULE: ${{ vars.ENABLE_WEEKLY_SCHEDULE }}
       ENABLE_COST_LIMIT: ${{ vars.ENABLE_COST_LIMIT }}
       COST_LIMIT_USD: ${{ vars.COST_LIMIT_USD }}
       COST_ALERT_EMAIL: ${{ secrets.COST_ALERT_EMAIL }}
@@ -364,15 +367,6 @@ jobs:
           echo "ad_index=${AVAILABILITY_DOMAIN_INDEX:-0}" >> "$GITHUB_OUTPUT"
           echo "instance_shape=${INSTANCE_SHAPE:-VM.Standard.A1.Flex}" >> "$GITHUB_OUTPUT"
           MODE="${DEPLOY_MODE:-production}"
-          if [ "$MODE" = "test" ]; then
-            SCHEDULE="${ENABLE_WEEKLY_SCHEDULE:-false}"
-          else
-            SCHEDULE="${ENABLE_WEEKLY_SCHEDULE:-true}"
-          fi
-          if [ "$MODE" = "test" ]; then
-            SCHEDULE="false"
-          fi
-          echo "enable_weekly_schedule=${SCHEDULE}" >> "$GITHUB_OUTPUT"
           echo "deploy_mode=${MODE}" >> "$GITHUB_OUTPUT"
 
           LIMIT="${COST_LIMIT_USD:-5}"
@@ -421,7 +415,7 @@ jobs:
             terraform init -input=false -backend=false
           fi
 
-      - name: Terraform Apply (paid VM + IPv6 pool + optional schedule)
+      - name: Terraform Apply (paid VM + IPv6 pool)
         id: tf
         working-directory: apps/consumer-shopping-suggestions/deploy/terraform
         env:
@@ -438,7 +432,6 @@ jobs:
           TF_VAR_instance_memory_in_gbs: ${{ steps.infra.outputs.instance_memory_gb }}
           TF_VAR_availability_domain_index: ${{ steps.infra.outputs.ad_index }}
           TF_VAR_instance_shape: ${{ steps.infra.outputs.instance_shape }}
-          TF_VAR_enable_weekly_schedule: ${{ steps.infra.outputs.enable_weekly_schedule }}
           TF_VAR_enable_cost_limit: ${{ steps.infra.outputs.enable_cost_limit }}
           TF_VAR_cost_limit_usd: ${{ steps.infra.outputs.cost_limit_usd }}
           TF_VAR_cost_alert_email: ${{ steps.infra.outputs.cost_alert_email }}
@@ -452,7 +445,7 @@ jobs:
             echo "instance_ocid=$(terraform output -raw instance_ocid)"
           } >> "$GITHUB_OUTPUT"
           echo "VM $(terraform output -raw instance_ocid) @ $(terraform output -raw instance_public_ip)"
-          echo "schedule=${{ steps.infra.outputs.enable_weekly_schedule }} mode=${{ steps.infra.outputs.deploy_mode }}"
+          echo "mode=${{ steps.infra.outputs.deploy_mode }}"
           echo "cost_limit=${{ steps.infra.outputs.enable_cost_limit }} usd=${{ steps.infra.outputs.cost_limit_usd }}"
           echo "IPv6 pool:"
           cat /tmp/ipv6-addresses.txt
@@ -546,19 +539,39 @@ jobs:
               IPV6_POOL_FILE=/var/lib/skydiiv/proxy-pool/ipv6-addresses.txt \
               bash deploy/remote-deploy.sh
 
-      - name: Stop VM after production deploy
+      - name: Destroy stack after production deploy (no idle storage)
         if: success() && steps.infra.outputs.deploy_mode == 'production'
-        working-directory: apps/consumer-shopping-suggestions
+        working-directory: apps/consumer-shopping-suggestions/deploy/terraform
         env:
-          OCI_INSTANCE_OCID: ${{ steps.tf.outputs.instance_ocid }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_ssh_public_key: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+          TF_VAR_environment: production
         run: |
-          pip install --quiet oci
-          python3 deploy/oci_instance_action.py STOP --wait
+          terraform destroy -auto-approve -input=false
+          echo "Production push deploy: stack destroyed (Thursday window = Weekly workflow)"
+
+      - name: Save Terraform state after destroy
+        if: success() && steps.infra.outputs.deploy_mode == 'production'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/consumer-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-css-production-${{ github.repository }}-${{ github.run_id }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Production deploy" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.infra.outputs.deploy_mode }}" = "production" ]; then
+            echo "Ephemeral: apply+deploy then **terraform destroy** — no idle PAYG boot volume." >> "$GITHUB_STEP_SUMMARY"
+            echo "Live scrape window: **Weekly — Consumer Shopping Suggestions** (create Thu 10:00 / destroy Thu 12:05 BRT)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Mode **test**: VM left **RUNNING** — destroy when done to avoid boot-volume cost." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Cleanup OCI key
         if: always()

@@ -201,6 +201,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
         isEnabled: () => true,
         next: () => ({
           proxyUrl: "socks5://127.0.0.1:11080",
+          egressIp: "2603:c020:4016:ba00:0:9156:4a06:9403",
         }),
       },
       logger: silentLogger(),
@@ -211,6 +212,9 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
       userId: "u1",
     })
 
-    expect(launch).toHaveBeenCalledWith({ proxyUrl: "socks5://127.0.0.1:11080" })
+    expect(launch).toHaveBeenCalledWith({
+      proxyUrl: "socks5://127.0.0.1:11080",
+      egressIp: "2603:c020:4016:ba00:0:9156:4a06:9403",
+    })
   })
 })
