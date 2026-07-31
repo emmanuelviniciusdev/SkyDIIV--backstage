@@ -68,10 +68,14 @@ jobs:
 
       - name: Log in to OCIR
         uses: oracle-actions/login-ocir@v1.3.0
+        env:
+          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
         with:
           auth_token: ${{ secrets.OCIR_AUTH_TOKEN }}
-          region: ${{ secrets.OCI_REGION }}
-          ocir_username: ${{ secrets.OCIR_USERNAME }}
 
       - name: Build & push
         working-directory: apps/robot-shopping-suggestions
