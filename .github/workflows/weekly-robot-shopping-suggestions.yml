@@ -26,10 +26,6 @@ concurrency:
   group: robot-shopping-suggestions-weekly
   cancel-in-progress: false
 
-defaults:
-  run:
-    working-directory: apps/robot-shopping-suggestions
-
 jobs:
   resolve:
     name: Resolve action
@@ -54,6 +50,9 @@ jobs:
     needs: resolve
     if: needs.resolve.outputs.action == 'create'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/robot-shopping-suggestions
     environment:
       name: production
     env:
