@@ -86,16 +86,6 @@ resource "oci_container_instances_container_instance" "robot" {
   container_restart_policy             = "NEVER"
   graceful_shutdown_timeout_in_seconds = 120
 
-  lifecycle {
-    precondition {
-      condition = !var.create_ocir_pull_policy || strcontains(
-        local.effective_matching_rule,
-        var.compartment_ocid,
-      )
-      error_message = "Dynamic group ${local.dynamic_group_name} does not match compartment_ocid, so OCIR will refuse the image pull. Delete the group in the console and re-apply, or point compartment_ocid at the one it targets."
-    }
-  }
-
   freeform_tags = merge(local.common_tags, {
     shape = var.container_shape
     mode  = "cron-batch-drain"

@@ -12,10 +12,10 @@
  * tenancy administrator. Set create_ocir_pull_policy = false when the policy is
  * managed elsewhere (or when the OCIR repository is public).
  *
- * Neither costs anything, and CI keeps its state in the Actions cache, so a
- * lost state file would otherwise collide with the leftovers ("DynamicResource
- * Group with the same displayName already exists"). They are looked up by name
- * first and adopted when present, which also skips the propagation wait.
+ * When a previous run left the group/policy behind (lost state), they are
+ * imported into this stack and their matching rule / statements are reconciled.
+ * The OCI list API omits matching_rule, so "adopt by name and skip create"
+ * cannot verify the rule — import + manage is the reliable path.
  */
 
 locals {
@@ -31,17 +31,7 @@ locals {
     null,
   )
 
-  create_dynamic_group = var.create_ocir_pull_policy && local.existing_dynamic_group_id == null
-  create_ocir_policy   = var.create_ocir_pull_policy && local.existing_ocir_policy_id == null
-
   dynamic_group_matching_rule = "ALL {resource.type='computecontainerinstance', resource.compartment.id = '${var.compartment_ocid}'}"
-
-  # An adopted group scoped to another compartment authorizes nothing, and the
-  # pull then fails as "inadequate network configuration".
-  effective_matching_rule = try(
-    data.oci_identity_dynamic_groups.existing.dynamic_groups[0].matching_rule,
-    local.dynamic_group_matching_rule,
-  )
 }
 
 data "oci_identity_dynamic_groups" "existing" {
@@ -49,7 +39,7 @@ data "oci_identity_dynamic_groups" "existing" {
 
   filter {
     name   = "name"
-    values = ["${local.name_prefix}-ci-dg"]
+    values = [local.dynamic_group_name]
   }
 }
 
@@ -58,12 +48,34 @@ data "oci_identity_policies" "existing" {
 
   filter {
     name   = "name"
-    values = ["${local.name_prefix}-ocir-pull"]
+    values = [local.ocir_policy_name]
   }
 }
 
+# Bring orphans into state when remote state was lost (Actions cache / first
+# remote-backend run). No-op once the resource is already managed.
+import {
+  for_each = (
+    var.create_ocir_pull_policy && local.existing_dynamic_group_id != null
+    ? { "0" = local.existing_dynamic_group_id }
+    : {}
+  )
+  to = oci_identity_dynamic_group.container_instances[tonumber(each.key)]
+  id = each.value
+}
+
+import {
+  for_each = (
+    var.create_ocir_pull_policy && local.existing_ocir_policy_id != null
+    ? { "0" = local.existing_ocir_policy_id }
+    : {}
+  )
+  to = oci_identity_policy.ocir_pull[tonumber(each.key)]
+  id = each.value
+}
+
 resource "oci_identity_dynamic_group" "container_instances" {
-  count = local.create_dynamic_group ? 1 : 0
+  count = var.create_ocir_pull_policy ? 1 : 0
 
   compartment_id = var.tenancy_ocid
   name           = local.dynamic_group_name
@@ -74,10 +86,8 @@ resource "oci_identity_dynamic_group" "container_instances" {
 }
 
 resource "oci_identity_policy" "ocir_pull" {
-  count = local.create_ocir_policy ? 1 : 0
+  count = var.create_ocir_pull_policy ? 1 : 0
 
-  # The statement names the dynamic group as a string, so nothing forces the
-  # group to exist first.
   depends_on = [oci_identity_dynamic_group.container_instances]
 
   compartment_id = var.tenancy_ocid
@@ -93,15 +103,16 @@ resource "oci_identity_policy" "ocir_pull" {
 
 # OCI IAM is eventually consistent: a Container Instance created immediately
 # after the policy can still be denied by OCIR, which fails the whole apply
-# (the pull is not retried). Only needed when this run created the group or
-# policy — an adopted one propagated long ago.
+# (the pull is not retried). Triggers replace this wait when the group or
+# policy changes so a corrected matching rule has time to propagate.
 resource "time_sleep" "ocir_policy_propagation" {
-  count = local.create_dynamic_group || local.create_ocir_policy ? 1 : 0
+  count = var.create_ocir_pull_policy ? 1 : 0
 
   create_duration = var.ocir_policy_propagation_wait
 
   triggers = {
-    policy_id        = try(oci_identity_policy.ocir_pull[0].id, local.existing_ocir_policy_id, "adopted")
-    dynamic_group_id = try(oci_identity_dynamic_group.container_instances[0].id, local.existing_dynamic_group_id, "adopted")
+    policy_id        = oci_identity_policy.ocir_pull[0].id
+    dynamic_group_id = oci_identity_dynamic_group.container_instances[0].id
+    matching_rule    = oci_identity_dynamic_group.container_instances[0].matching_rule
   }
 }
