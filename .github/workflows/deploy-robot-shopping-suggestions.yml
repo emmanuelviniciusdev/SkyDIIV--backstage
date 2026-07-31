@@ -67,6 +67,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Log in to OCIR
+        id: login-ocir
         uses: oracle-actions/login-ocir@v1.3.0
         env:
           OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
@@ -80,11 +81,13 @@ jobs:
       - name: Build & push
         working-directory: apps/robot-shopping-suggestions
         env:
-          REGION: ${{ secrets.OCI_REGION }}
+          # Endpoint the login step authenticated against — OCIR uses the region
+          # key (iad.ocir.io), not the region id, and docker auth is per host.
+          REGISTRY: ${{ steps.login-ocir.outputs.ocir_endpoint }}
           NS: ${{ secrets.OCIR_NAMESPACE }}
         run: |
-          IMAGE="${REGION}.ocir.io/${NS}/robot-shopping-suggestions:${{ github.sha }}"
-          LATEST="${REGION}.ocir.io/${NS}/robot-shopping-suggestions:latest"
+          IMAGE="${REGISTRY}/${NS}/robot-shopping-suggestions:${{ github.sha }}"
+          LATEST="${REGISTRY}/${NS}/robot-shopping-suggestions:latest"
           docker build \
             --build-arg GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
             -t "$IMAGE" -t "$LATEST" .

@@ -89,22 +89,37 @@ jobs:
           npm run test
           npm run build
 
+      - name: Log in to OCIR
+        id: login-ocir
+        uses: oracle-actions/login-ocir@v1.3.0
+        env:
+          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
+        with:
+          auth_token: ${{ secrets.OCIR_AUTH_TOKEN }}
+
       - name: Resolve infra defaults
         id: infra
+        env:
+          # Endpoint the login step authenticated against — OCIR uses the region
+          # key (iad.ocir.io), not the region id, and docker auth is per host.
+          REGISTRY: ${{ steps.login-ocir.outputs.ocir_endpoint }}
         run: |
           echo "container_ocpus=${CONTAINER_OCPUS:-2}" >> "$GITHUB_OUTPUT"
           echo "container_memory_gb=${CONTAINER_MEMORY_GB:-4}" >> "$GITHUB_OUTPUT"
           echo "ad_index=${AVAILABILITY_DOMAIN_INDEX:-0}" >> "$GITHUB_OUTPUT"
 
-          REGION="${OCI_REGION}"
           NS="${OCIR_NAMESPACE}"
-          if [ -z "$REGION" ] || [ -z "$NS" ]; then
-            echo "OCI_REGION and OCIR_NAMESPACE secrets are required" >&2
+          if [ -z "$REGISTRY" ] || [ -z "$NS" ]; then
+            echo "OCIR login endpoint and OCIR_NAMESPACE are required" >&2
             exit 1
           fi
-          IMAGE="${REGION}.ocir.io/${NS}/robot-shopping-suggestions:${{ github.sha }}"
+          IMAGE="${REGISTRY}/${NS}/robot-shopping-suggestions:${{ github.sha }}"
           echo "container_image_url=${IMAGE}" >> "$GITHUB_OUTPUT"
-          echo "image_latest=${REGION}.ocir.io/${NS}/robot-shopping-suggestions:latest" >> "$GITHUB_OUTPUT"
+          echo "image_latest=${REGISTRY}/${NS}/robot-shopping-suggestions:latest" >> "$GITHUB_OUTPUT"
 
           LIMIT="${COST_LIMIT_USD:-5}"
           EMAIL="${COST_ALERT_EMAIL:-emmanuel.bergmann@icloud.com}"
@@ -115,17 +130,6 @@ jobs:
           echo "enable_cost_limit=${COST_ENABLE}" >> "$GITHUB_OUTPUT"
           echo "cost_limit_usd=${LIMIT}" >> "$GITHUB_OUTPUT"
           echo "cost_alert_email=${EMAIL}" >> "$GITHUB_OUTPUT"
-
-      - name: Log in to OCIR
-        uses: oracle-actions/login-ocir@v1.3.0
-        env:
-          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
-          OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-        with:
-          auth_token: ${{ secrets.OCIR_AUTH_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
