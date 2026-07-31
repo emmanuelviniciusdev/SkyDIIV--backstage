@@ -64,6 +64,7 @@ jobs:
       ENABLE_COST_LIMIT: ${{ vars.ENABLE_COST_LIMIT }}
       COST_LIMIT_USD: ${{ vars.COST_LIMIT_USD }}
       COST_ALERT_EMAIL: ${{ secrets.COST_ALERT_EMAIL }}
+      OCI_PRIVATE_KEY_PEM: ${{ secrets.OCI_API_PRIVATE_KEY || secrets.OCI_CLI_KEY_CONTENT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -95,7 +96,7 @@ jobs:
           OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
           OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT || secrets.OCI_API_PRIVATE_KEY }}
           OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
         with:
           auth_token: ${{ secrets.OCIR_AUTH_TOKEN }}
@@ -150,7 +151,11 @@ jobs:
         working-directory: apps/robot-shopping-suggestions/deploy/terraform
         run: |
           umask 077
-          printf '%s\n' "${{ secrets.OCI_API_PRIVATE_KEY }}" > oci_api_key.pem
+          if [ -z "$OCI_PRIVATE_KEY_PEM" ]; then
+            echo "::error::Set OCI_API_PRIVATE_KEY or OCI_CLI_KEY_CONTENT in the production environment" >&2
+            exit 1
+          fi
+          printf '%s\n' "$OCI_PRIVATE_KEY_PEM" > oci_api_key.pem
 
       - name: Install OCI SDK (cost gate)
         run: pip install --quiet oci
@@ -187,7 +192,7 @@ jobs:
         working-directory: apps/robot-shopping-suggestions
         env:
           ROBOT_ENV_FILE: ${{ secrets.ROBOT_SHOPPING_SUGGESTIONS_ENV }}
-          OCI_API_PRIVATE_KEY: ${{ secrets.OCI_API_PRIVATE_KEY }}
+          OCI_API_PRIVATE_KEY: ${{ secrets.OCI_API_PRIVATE_KEY || secrets.OCI_CLI_KEY_CONTENT }}
         run: |
           python3 <<'PY'
           import json, os, pathlib
@@ -290,6 +295,8 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
+    env:
+      OCI_PRIVATE_KEY_PEM: ${{ secrets.OCI_API_PRIVATE_KEY || secrets.OCI_CLI_KEY_CONTENT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -304,7 +311,11 @@ jobs:
         working-directory: apps/robot-shopping-suggestions/deploy/terraform
         run: |
           umask 077
-          printf '%s\n' "${{ secrets.OCI_API_PRIVATE_KEY }}" > oci_api_key.pem
+          if [ -z "$OCI_PRIVATE_KEY_PEM" ]; then
+            echo "::error::Set OCI_API_PRIVATE_KEY or OCI_CLI_KEY_CONTENT in the production environment" >&2
+            exit 1
+          fi
+          printf '%s\n' "$OCI_PRIVATE_KEY_PEM" > oci_api_key.pem
 
       - name: Restore Terraform state
         uses: actions/cache/restore@v4
