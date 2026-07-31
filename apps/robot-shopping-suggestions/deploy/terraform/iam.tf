@@ -32,6 +32,21 @@ locals {
   )
 
   dynamic_group_matching_rule = "ALL {resource.type='computecontainerinstance', resource.compartment.id = '${var.compartment_ocid}'}"
+
+  # for_each rather than count so the import blocks below can address the
+  # instance by a static key.
+  ocir_pull_keys = var.create_ocir_pull_policy ? toset(["default"]) : toset([])
+
+  import_dynamic_group = (
+    var.create_ocir_pull_policy && local.existing_dynamic_group_id != null
+    ? { default = local.existing_dynamic_group_id }
+    : {}
+  )
+  import_ocir_policy = (
+    var.create_ocir_pull_policy && local.existing_ocir_policy_id != null
+    ? { default = local.existing_ocir_policy_id }
+    : {}
+  )
 }
 
 data "oci_identity_dynamic_groups" "existing" {
@@ -55,27 +70,19 @@ data "oci_identity_policies" "existing" {
 # Bring orphans into state when remote state was lost (Actions cache / first
 # remote-backend run). No-op once the resource is already managed.
 import {
-  for_each = (
-    var.create_ocir_pull_policy && local.existing_dynamic_group_id != null
-    ? { "0" = local.existing_dynamic_group_id }
-    : {}
-  )
-  to = oci_identity_dynamic_group.container_instances[tonumber(each.key)]
-  id = each.value
+  for_each = local.import_dynamic_group
+  to       = oci_identity_dynamic_group.container_instances[each.key]
+  id       = each.value
 }
 
 import {
-  for_each = (
-    var.create_ocir_pull_policy && local.existing_ocir_policy_id != null
-    ? { "0" = local.existing_ocir_policy_id }
-    : {}
-  )
-  to = oci_identity_policy.ocir_pull[tonumber(each.key)]
-  id = each.value
+  for_each = local.import_ocir_policy
+  to       = oci_identity_policy.ocir_pull[each.key]
+  id       = each.value
 }
 
 resource "oci_identity_dynamic_group" "container_instances" {
-  count = var.create_ocir_pull_policy ? 1 : 0
+  for_each = local.ocir_pull_keys
 
   compartment_id = var.tenancy_ocid
   name           = local.dynamic_group_name
@@ -86,7 +93,7 @@ resource "oci_identity_dynamic_group" "container_instances" {
 }
 
 resource "oci_identity_policy" "ocir_pull" {
-  count = var.create_ocir_pull_policy ? 1 : 0
+  for_each = local.ocir_pull_keys
 
   depends_on = [oci_identity_dynamic_group.container_instances]
 
@@ -106,13 +113,13 @@ resource "oci_identity_policy" "ocir_pull" {
 # (the pull is not retried). Triggers replace this wait when the group or
 # policy changes so a corrected matching rule has time to propagate.
 resource "time_sleep" "ocir_policy_propagation" {
-  count = var.create_ocir_pull_policy ? 1 : 0
+  for_each = local.ocir_pull_keys
 
   create_duration = var.ocir_policy_propagation_wait
 
   triggers = {
-    policy_id        = oci_identity_policy.ocir_pull[0].id
-    dynamic_group_id = oci_identity_dynamic_group.container_instances[0].id
-    matching_rule    = oci_identity_dynamic_group.container_instances[0].matching_rule
+    policy_id        = oci_identity_policy.ocir_pull[each.key].id
+    dynamic_group_id = oci_identity_dynamic_group.container_instances[each.key].id
+    matching_rule    = oci_identity_dynamic_group.container_instances[each.key].matching_rule
   }
 }

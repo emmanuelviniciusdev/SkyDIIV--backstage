@@ -1,5 +1,6 @@
 terraform {
-  required_version = ">= 1.5.0"
+  # 1.7 is the floor for `import` blocks with for_each (see iam.tf).
+  required_version = ">= 1.7.0"
 
   # Values supplied at init time via backend.hcl or the TF_BACKEND_HCL secret.
   backend "s3" {}
