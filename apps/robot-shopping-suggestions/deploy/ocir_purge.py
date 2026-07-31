@@ -133,6 +133,11 @@ def main() -> None:
             client.delete_container_image(image.id)
             print(f"Deleted {label}")
         except Exception as err:  # noqa: BLE001 — keep purging the rest
+            # `:latest` and `:<sha>` are separate entries over one digest, so
+            # deleting either takes the other with it.
+            if getattr(err, "status", None) == 404:
+                print(f"Already gone: {label}")
+                continue
             failures += 1
             print(f"Failed to delete {label}: {err}", file=sys.stderr)
 

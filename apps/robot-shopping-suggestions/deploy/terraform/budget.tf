@@ -4,10 +4,32 @@
  * OCI Budgets only *alert* — they do not destroy resources.
  * Enforcement (`terraform destroy` on the consumer stack) is done by
  * `deploy/oci_cost_guard.py`, scheduled via GitHub Actions.
+ *
+ * OCI allows a single budget per target compartment, so a budget left behind by
+ * an earlier run (or created by hand) makes CreateBudget fail with
+ * "400-LimitExceeded, 1 budgets already exist in target compartment". Budgets
+ * are free, so an existing one is adopted rather than recreated.
  */
 
+locals {
+  existing_budget_id = try(
+    [
+      for budget in data.oci_budget_budgets.existing.budgets :
+      budget.id if contains(coalesce(budget.targets, []), var.compartment_ocid)
+    ][0],
+    null,
+  )
+
+  create_budget = var.enable_cost_limit && local.existing_budget_id == null
+  budget_id     = try(oci_budget_budget.css[0].id, local.existing_budget_id, null)
+}
+
+data "oci_budget_budgets" "existing" {
+  compartment_id = var.tenancy_ocid
+}
+
 resource "oci_budget_budget" "css" {
-  count = var.enable_cost_limit ? 1 : 0
+  count = local.create_budget ? 1 : 0
 
   # Budgets are owned at the tenancy (root) compartment.
   compartment_id = var.tenancy_ocid
@@ -29,8 +51,10 @@ resource "oci_budget_budget" "css" {
   }
 }
 
+// Created alongside the budget only: an adopted budget already carries the
+// rules from the run that created it.
 resource "oci_budget_alert_rule" "actual_at_limit" {
-  count = var.enable_cost_limit ? 1 : 0
+  count = local.create_budget ? 1 : 0
 
   budget_id      = oci_budget_budget.css[0].id
   display_name   = "${local.name_prefix}-alert-100pct"
@@ -45,7 +69,7 @@ resource "oci_budget_alert_rule" "actual_at_limit" {
 }
 
 resource "oci_budget_alert_rule" "actual_warning" {
-  count = var.enable_cost_limit ? 1 : 0
+  count = local.create_budget ? 1 : 0
 
   budget_id      = oci_budget_budget.css[0].id
   display_name   = "${local.name_prefix}-alert-80pct"

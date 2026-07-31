@@ -45,7 +45,7 @@ output "ocir_registry_endpoint" {
 
 output "ocir_pull_policy" {
   description = "Name of the policy authorizing OCIR pulls (null when not managed here)"
-  value       = try(oci_identity_policy.ocir_pull[0].name, null)
+  value       = var.create_ocir_pull_policy ? local.ocir_policy_name : null
 }
 
 output "name_prefix" {
@@ -64,8 +64,8 @@ output "cost_limit_usd" {
 }
 
 output "budget_id" {
-  description = "OCID of the monthly budget (null when disabled)"
-  value       = try(oci_budget_budget.css[0].id, null)
+  description = "OCID of the monthly budget, created or adopted (null when disabled)"
+  value       = local.budget_id
 }
 
 # Compatibility aliases used by older scripts / cost guard fallbacks

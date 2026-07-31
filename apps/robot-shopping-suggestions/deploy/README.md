@@ -143,6 +143,16 @@ out-of-band. Because IAM is eventually consistent, the Container Instance waits
 `ocir_policy_propagation_wait` (default 90s) after the policy is created — an
 unauthorized pull is not retried, it fails the whole apply.
 
+The dynamic group, the policy and the monthly budget are looked up by name and
+**adopted when they already exist**, so a lost state file no longer breaks the
+run with `DynamicResourceGroup with the same displayName already exists` or
+`400-LimitExceeded, 1 budgets already exist in target compartment`. All three are
+free and adopting them also skips the propagation wait. The trade-off is that
+`terraform destroy` leaves adopted ones behind, and an adopted budget keeps the
+alert rules it was created with — delete them by hand in the console to have the
+next apply recreate them. Configure `TF_BACKEND_HCL` for durable remote state if
+you want CI to manage them across runs instead.
+
 ### Debugging image-pull failures
 
 `A container's image could not be pulled due to inadequate network configuration`
