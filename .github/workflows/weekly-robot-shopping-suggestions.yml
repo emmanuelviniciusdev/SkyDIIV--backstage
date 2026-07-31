@@ -142,13 +142,17 @@ jobs:
           OCIR_USERNAME: ${{ secrets.OCIR_USERNAME }}
           OCI_REGION: ${{ secrets.OCI_REGION }}
         run: |
+          # One name per --output (CSV); repeated name= keeps only the last tag.
+          # Push the sha tag as a single-arch image, then alias :latest to it.
           docker buildx build \
             --platform linux/arm64 \
             --provenance=false \
             --sbom=false \
             --build-arg GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
-            --output "type=image,name=${IMAGE},name=${LATEST},push=true" \
+            --output "type=image,name=${IMAGE},push=true" \
             .
+
+          docker buildx imagetools create --tag "${LATEST}" "${IMAGE}"
 
           media_type="$(docker buildx imagetools inspect --raw "$IMAGE" \
             | python3 -c 'import json,sys; print(json.load(sys.stdin).get("mediaType",""))')"
