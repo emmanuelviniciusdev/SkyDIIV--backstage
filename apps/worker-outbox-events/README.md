@@ -233,7 +233,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 {WORKER_NOTIFICATION_URL}/email--welcome
 ```
 
-`scrape-shopping-suggestions` publishes `{ event, payload }` to `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` (consumed by `consumer-shopping-suggestions`).
+`scrape-shopping-suggestions` publishes `{ event, payload }` to `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` (consumed by `robot-shopping-suggestions`).
 
 ---
 

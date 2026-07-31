@@ -1,0 +1,30 @@
+# Local development — Cloudflare Queues batch drain.
+#
+#   cp .env.example .env
+#   docker compose up --build
+#
+# The robot drains up to 2 messages at a time until the queue is empty, then exits.
+# Self-delete is a no-op without OCI credentials.
+
+services:
+  robot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    env_file:
+      - .env
+    volumes:
+      - ./.env:/app/.env:ro
+    command: ["node", "--env-file=/app/.env", "dist/main.js"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      ROBOT_CONCURRENCY: "2"
+      CF_QUEUES_BATCH_SIZE: "2"
+      CAMOUFOX_HEADLESS: "true"
+      CAMOUFOX_INSTALL_DIR: /opt/camoufox
+      LOG_LEVEL: DEBUG
+    shm_size: "2gb"
+    restart: "no"

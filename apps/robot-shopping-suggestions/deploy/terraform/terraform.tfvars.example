@@ -1,0 +1,43 @@
+tenancy_ocid     = "ocid1.tenancy.oc1..aaaa..."
+user_ocid        = "ocid1.user.oc1..aaaa..."
+fingerprint      = "aa:bb:cc:..."
+private_key_path = "/Users/you/.oci/oci_api_key.pem" # or "oci_api_key.pem" next to tfvars
+region           = "us-ashburn-1" # US East (Ashburn)
+compartment_ocid = "ocid1.tenancy.oc1..aaaa..." # prefer a dedicated compartment
+
+environment               = "production"
+availability_domain_index = 0
+
+# Container Instance (Ampere) — no boot volume; ephemeral storage included.
+container_shape         = "CI.Standard.A1.Flex"
+container_ocpus         = 2
+container_memory_in_gbs = 4
+
+# OCIR image — prefer TF_VAR_container_image_url in deploy/local.env
+# container_image_url = "us-ashburn-1.ocir.io/<namespace>/robot-shopping-suggestions:latest"
+
+# OCIR pull secrets — only used for external registries (Docker Hub, GHCR).
+# OCIR itself is authorized by the resource-principal policy below.
+# Prefer TF_VAR_ocir_* in deploy/local.env (do not commit tokens).
+# ocir_username   = "<namespace>/you@example.com"
+# ocir_auth_token = "..."
+
+# Tenancy-level dynamic group + "read repos" policy that lets the Container
+# Instance pull private OCIR images. Requires a tenancy administrator; set false
+# only when the policy already exists out-of-band.
+create_ocir_pull_policy = true
+
+# Networking (IPv4 only): "public" = public subnet + Internet Gateway + ephemeral
+# public IP. "private" = private subnet + NAT + Service Gateway (NAT billed hourly).
+network_mode = "public"
+
+# App secrets — local apply reads .env automatically (deploy/build-robot-env.py).
+
+robot_batch_size  = 2
+robot_concurrency = 2
+
+# Monthly spend ceiling ($5 default). OCI Budgets email only;
+# hard kill (terraform destroy) is deploy/oci_cost_guard.py + GitHub Actions cron.
+enable_cost_limit = true
+cost_limit_usd    = 5
+cost_alert_email  = "emmanuel.bergmann@icloud.com"

@@ -1,0 +1,14 @@
+{
+  "costLimitUsd": 5,
+  "costAlertEmail": "emmanuel.bergmann@icloud.com",
+  "budgetReset": "MONTHLY",
+  "alertPercents": [80, 100],
+  "enforcement": "terraform-destroy",
+  "notes": [
+    "OCI Budgets only send email alerts — they do not delete resources.",
+    "Hard enforcement is deploy/oci_cost_guard.py via GitHub Actions (daily cron + workflow_dispatch).",
+    "Before terraform apply, --check-only refuses create when MTD Usage API cost >= costLimitUsd (exit 10).",
+    "When MTD Usage API cost for the compartment >= costLimitUsd, the script runs terraform destroy on the robot stack (Container Instance + VCN + budget).",
+    "Usage API cost data can lag up to ~24h — treat the kill as eventual, not instantaneous."
+  ]
+}

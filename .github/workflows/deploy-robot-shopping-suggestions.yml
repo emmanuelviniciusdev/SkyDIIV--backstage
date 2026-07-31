@@ -1,0 +1,91 @@
+name: Deploy — Robot Shopping Suggestions
+
+# CI on PR/push. Production ephemeral runs use the weekly create/destroy workflow.
+# Manual dispatch can push a fresh OCIR image without creating the Container Instance.
+
+on:
+  pull_request:
+    paths:
+      - "apps/robot-shopping-suggestions/**"
+      - ".github/workflows/deploy-robot-shopping-suggestions.yml"
+  push:
+    branches: [main, staging]
+    paths:
+      - "apps/robot-shopping-suggestions/**"
+      - ".github/workflows/deploy-robot-shopping-suggestions.yml"
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: "Build and push OCIR image (tag = git sha + latest)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: robot-shopping-suggestions-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/robot-shopping-suggestions
+
+jobs:
+  ci:
+    name: Lint, test & build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/robot-shopping-suggestions/package-lock.json
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+  push-ocir:
+    name: Push OCIR image
+    needs: ci
+    if: github.event_name == 'workflow_dispatch' && inputs.push_image == true
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref_name == 'staging' && 'staging' || 'production' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to OCIR
+        uses: oracle-actions/login-ocir@v1.3.0
+        with:
+          auth_token: ${{ secrets.OCIR_AUTH_TOKEN }}
+          region: ${{ secrets.OCI_REGION }}
+          ocir_username: ${{ secrets.OCIR_USERNAME }}
+
+      - name: Build & push
+        working-directory: apps/robot-shopping-suggestions
+        env:
+          REGION: ${{ secrets.OCI_REGION }}
+          NS: ${{ secrets.OCIR_NAMESPACE }}
+        run: |
+          IMAGE="${REGION}.ocir.io/${NS}/robot-shopping-suggestions:${{ github.sha }}"
+          LATEST="${REGION}.ocir.io/${NS}/robot-shopping-suggestions:latest"
+          docker build \
+            --build-arg GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
+            -t "$IMAGE" -t "$LATEST" .
+          docker push "$IMAGE"
+          docker push "$LATEST"
+          echo "### Pushed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`$LATEST\`" >> "$GITHUB_STEP_SUMMARY"

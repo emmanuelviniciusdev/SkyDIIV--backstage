@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.env
+deploy/local.env
+# Legacy local docker env (compose now uses .env)
+.env.docker
+.dev.vars
+*.log
+.DS_Store
+*.tgz

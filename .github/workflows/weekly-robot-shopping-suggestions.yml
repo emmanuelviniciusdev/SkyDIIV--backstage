@@ -1,0 +1,367 @@
+name: Weekly — Robot Shopping Suggestions (ephemeral)
+
+# PAYG Container Instance: create Sunday 07:00 BRT, destroy Sunday 09:00 BRT.
+# America/Sao_Paulo = UTC-3 year-round:
+#   Create  Sun 07:00 BRT → 0 10 * * 0 UTC
+#   Destroy Sun 09:00 BRT → 0 12 * * 0 UTC
+#
+# Robot drains the queue (2 at a time) and self-deletes when empty.
+# Terraform destroy has absolute authority — tears down even if messages remain.
+
+on:
+  schedule:
+    - cron: "0 10 * * 0" # create
+    - cron: "0 12 * * 0" # destroy
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "create = apply Container Instance; destroy = terraform destroy"
+        type: choice
+        options:
+          - create
+          - destroy
+        default: create
+
+concurrency:
+  group: robot-shopping-suggestions-weekly
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: apps/robot-shopping-suggestions
+
+jobs:
+  resolve:
+    name: Resolve action
+    runs-on: ubuntu-latest
+    outputs:
+      action: ${{ steps.pick.outputs.action }}
+    steps:
+      - name: Pick create vs destroy
+        id: pick
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "action=${{ inputs.action }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "${{ github.event.schedule }}" in
+            "0 12 * * 0") echo "action=destroy" >> "$GITHUB_OUTPUT" ;;
+            *)            echo "action=create" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  create:
+    name: Build image + terraform apply
+    needs: resolve
+    if: needs.resolve.outputs.action == 'create'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    env:
+      OCI_REGION: ${{ secrets.OCI_REGION }}
+      OCIR_NAMESPACE: ${{ secrets.OCIR_NAMESPACE }}
+      CONTAINER_OCPUS: ${{ vars.CONTAINER_OCPUS }}
+      CONTAINER_MEMORY_GB: ${{ vars.CONTAINER_MEMORY_GB }}
+      AVAILABILITY_DOMAIN_INDEX: ${{ vars.AVAILABILITY_DOMAIN_INDEX }}
+      ENABLE_COST_LIMIT: ${{ vars.ENABLE_COST_LIMIT }}
+      COST_LIMIT_USD: ${{ vars.COST_LIMIT_USD }}
+      COST_ALERT_EMAIL: ${{ secrets.COST_ALERT_EMAIL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/robot-shopping-suggestions/package-lock.json
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Install, lint, test & build
+        run: |
+          npm ci --ignore-scripts
+          npm run lint
+          npm run test
+          npm run build
+
+      - name: Resolve infra defaults
+        id: infra
+        run: |
+          echo "container_ocpus=${CONTAINER_OCPUS:-2}" >> "$GITHUB_OUTPUT"
+          echo "container_memory_gb=${CONTAINER_MEMORY_GB:-4}" >> "$GITHUB_OUTPUT"
+          echo "ad_index=${AVAILABILITY_DOMAIN_INDEX:-0}" >> "$GITHUB_OUTPUT"
+
+          REGION="${OCI_REGION}"
+          NS="${OCIR_NAMESPACE}"
+          if [ -z "$REGION" ] || [ -z "$NS" ]; then
+            echo "OCI_REGION and OCIR_NAMESPACE secrets are required" >&2
+            exit 1
+          fi
+          IMAGE="${REGION}.ocir.io/${NS}/robot-shopping-suggestions:${{ github.sha }}"
+          echo "container_image_url=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "image_latest=${REGION}.ocir.io/${NS}/robot-shopping-suggestions:latest" >> "$GITHUB_OUTPUT"
+
+          LIMIT="${COST_LIMIT_USD:-5}"
+          EMAIL="${COST_ALERT_EMAIL:-emmanuel.bergmann@icloud.com}"
+          COST_ENABLE="${ENABLE_COST_LIMIT:-}"
+          if [ -z "$COST_ENABLE" ]; then
+            if [ -n "$EMAIL" ]; then COST_ENABLE="true"; else COST_ENABLE="false"; fi
+          fi
+          echo "enable_cost_limit=${COST_ENABLE}" >> "$GITHUB_OUTPUT"
+          echo "cost_limit_usd=${LIMIT}" >> "$GITHUB_OUTPUT"
+          echo "cost_alert_email=${EMAIL}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to OCIR
+        uses: oracle-actions/login-ocir@v1.3.0
+        with:
+          auth_token: ${{ secrets.OCIR_AUTH_TOKEN }}
+          region: ${{ secrets.OCI_REGION }}
+          ocir_username: ${{ secrets.OCIR_USERNAME }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push Docker image
+        # Container Instances cannot pull manifest lists with attestations
+        working-directory: apps/robot-shopping-suggestions
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            --provenance=false \
+            --sbom=false \
+            --build-arg GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
+            -t "${{ steps.infra.outputs.container_image_url }}" \
+            -t "${{ steps.infra.outputs.image_latest }}" \
+            --push .
+
+      - name: Write OCI API key
+        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        run: |
+          umask 077
+          printf '%s\n' "${{ secrets.OCI_API_PRIVATE_KEY }}" > oci_api_key.pem
+
+      - name: Install OCI SDK (cost gate)
+        run: pip install --quiet oci
+
+      - name: Cost ceiling gate (refuse apply if MTD ≥ limit)
+        working-directory: apps/robot-shopping-suggestions
+        env:
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          COST_LIMIT_USD: ${{ steps.infra.outputs.cost_limit_usd }}
+        run: |
+          # Exit 10 = over limit → skip apply (do not create infra that would burn more budget)
+          set +e
+          python3 deploy/oci_cost_guard.py --check-only --limit "${COST_LIMIT_USD:-5}"
+          CODE=$?
+          set -e
+          if [ "$CODE" -eq 10 ]; then
+            echo "::error::Monthly cost ceiling already reached — refusing terraform apply"
+            echo "### Create skipped (cost ceiling)" >> "$GITHUB_STEP_SUMMARY"
+            echo "MTD spend is at or above \`${COST_LIMIT_USD:-5}\` USD. No Container Instance was created." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "$CODE" -ne 0 ]; then
+            echo "::error::Cost ceiling check failed (exit ${CODE})"
+            exit "$CODE"
+          fi
+
+      - name: Build robot_env JSON from secret
+        id: env
+        working-directory: apps/robot-shopping-suggestions
+        env:
+          ROBOT_ENV_FILE: ${{ secrets.ROBOT_SHOPPING_SUGGESTIONS_ENV }}
+          OCI_API_PRIVATE_KEY: ${{ secrets.OCI_API_PRIVATE_KEY }}
+        run: |
+          python3 <<'PY'
+          import json, os, pathlib
+          raw = os.environ.get("ROBOT_ENV_FILE") or ""
+          env = {}
+          for line in raw.splitlines():
+              line = line.strip()
+              if not line or line.startswith("#") or "=" not in line:
+                  continue
+              k, _, v = line.partition("=")
+              env[k.strip()] = v.strip().strip('"').strip("'")
+          # Compute provider + OCI signing material for self-delete
+          env.setdefault("COMPUTE_PROVIDER", "oci")
+          if os.environ.get("OCI_API_PRIVATE_KEY"):
+              env["OCI_API_PRIVATE_KEY"] = os.environ["OCI_API_PRIVATE_KEY"]
+          pathlib.Path("/tmp/robot_env.json").write_text(json.dumps(env))
+          print(f"robot_env keys: {sorted(env.keys())}")
+          PY
+          echo "path=/tmp/robot_env.json" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Terraform state
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/robot-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-rss-production-${{ github.repository }}
+          restore-keys: |
+            tfstate-rss-production-
+
+      - name: Terraform Init
+        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        run: |
+          if [ -n "${{ secrets.TF_BACKEND_HCL }}" ]; then
+            printf '%s\n' "${{ secrets.TF_BACKEND_HCL }}" > backend.hcl
+            terraform init -input=false -reconfigure -backend-config=backend.hcl
+          else
+            echo "::warning::TF_BACKEND_HCL unset — using local state + Actions cache."
+            terraform init -input=false -backend=false
+          fi
+
+      - name: Terraform Apply (Container Instance)
+        id: tf
+        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_container_image_url: ${{ steps.infra.outputs.container_image_url }}
+          TF_VAR_ocir_username: ${{ secrets.OCIR_USERNAME }}
+          TF_VAR_ocir_auth_token: ${{ secrets.OCIR_AUTH_TOKEN }}
+          TF_VAR_container_ocpus: ${{ steps.infra.outputs.container_ocpus }}
+          TF_VAR_container_memory_in_gbs: ${{ steps.infra.outputs.container_memory_gb }}
+          TF_VAR_availability_domain_index: ${{ steps.infra.outputs.ad_index }}
+          TF_VAR_enable_cost_limit: ${{ steps.infra.outputs.enable_cost_limit }}
+          TF_VAR_cost_limit_usd: ${{ steps.infra.outputs.cost_limit_usd }}
+          TF_VAR_cost_alert_email: ${{ steps.infra.outputs.cost_alert_email }}
+          TF_VAR_environment: production
+          TF_VAR_robot_batch_size: "2"
+          TF_VAR_robot_concurrency: "2"
+        run: |
+          export TF_VAR_robot_env="$(cat /tmp/robot_env.json)"
+          ../tf-apply.sh
+          # Empty when the robot drained and self-deleted during the apply.
+          ocid="$(terraform output -raw container_instance_ocid 2>/dev/null || true)"
+          {
+            echo "container_instance_ocid=${ocid}"
+          } >> "$GITHUB_OUTPUT"
+          if [[ -n "${ocid}" ]]; then
+            echo "Container Instance ${ocid} created — robot draining queue"
+          else
+            echo "Robot completed its drain and self-deleted during apply"
+          fi
+
+      - name: Save Terraform state
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: apps/robot-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-rss-production-${{ github.repository }}-${{ github.run_id }}
+
+      - name: Summary
+        run: |
+          echo "### Weekly create complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "Container Instance left **ACTIVE** until self-delete or destroy cron (Sun 09:00 BRT)." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "OCID: \`${{ steps.tf.outputs.container_instance_ocid }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image: \`${{ steps.infra.outputs.container_image_url }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup OCI key
+        if: always()
+        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        run: rm -f oci_api_key.pem backend.hcl
+
+  destroy:
+    name: Destroy stack (absolute authority)
+    needs: resolve
+    if: needs.resolve.outputs.action == 'destroy'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Write OCI API key
+        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        run: |
+          umask 077
+          printf '%s\n' "${{ secrets.OCI_API_PRIVATE_KEY }}" > oci_api_key.pem
+
+      - name: Restore Terraform state
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/robot-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-rss-production-${{ github.repository }}
+          restore-keys: |
+            tfstate-rss-production-
+
+      - name: Terraform Init
+        id: tf
+        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        run: |
+          if [ -n "${{ secrets.TF_BACKEND_HCL }}" ]; then
+            printf '%s\n' "${{ secrets.TF_BACKEND_HCL }}" > backend.hcl
+            terraform init -input=false -reconfigure -backend-config=backend.hcl
+          else
+            echo "::warning::TF_BACKEND_HCL unset — using local state + Actions cache."
+            terraform init -input=false -backend=false
+          fi
+
+          HAS_STATE="false"
+          if terraform state list 2>/dev/null | grep -q .; then
+            HAS_STATE="true"
+          elif [ -f terraform.tfstate ] && [ -s terraform.tfstate ]; then
+            HAS_STATE="true"
+          fi
+          echo "has_state=${HAS_STATE}" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_STATE" != "true" ]; then
+            echo "No Terraform state — nothing to destroy"
+          fi
+
+      - name: Terraform Destroy
+        if: steps.tf.outputs.has_state == 'true'
+        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_environment: production
+          # Required by schema even when destroying; image may already be gone
+          TF_VAR_container_image_url: "placeholder.invalid/robot:destroy"
+          TF_VAR_robot_env: "{}"
+        run: |
+          terraform destroy -auto-approve -input=false
+          echo "Stack destroyed — Container Instance + VCN removed (absolute authority)"
+
+      - name: Persist emptied Terraform state
+        if: success() && steps.tf.outputs.has_state == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/robot-shopping-suggestions/deploy/terraform/terraform.tfstate
+          key: tfstate-rss-production-${{ github.repository }}-${{ github.run_id }}
+
+      - name: Summary
+        run: |
+          echo "### Weekly destroy complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "No OCI Container Instance / VCN should remain for this stack." >> "$GITHUB_STEP_SUMMARY"
+          echo "Destroy ran with absolute authority regardless of queue depth." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup OCI key
+        if: always()
+        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        run: rm -f oci_api_key.pem backend.hcl
