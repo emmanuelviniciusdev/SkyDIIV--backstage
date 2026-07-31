@@ -33,6 +33,15 @@ locals {
 
   create_dynamic_group = var.create_ocir_pull_policy && local.existing_dynamic_group_id == null
   create_ocir_policy   = var.create_ocir_pull_policy && local.existing_ocir_policy_id == null
+
+  dynamic_group_matching_rule = "ALL {resource.type='computecontainerinstance', resource.compartment.id = '${var.compartment_ocid}'}"
+
+  # An adopted group scoped to another compartment authorizes nothing, and the
+  # pull then fails as "inadequate network configuration".
+  effective_matching_rule = try(
+    data.oci_identity_dynamic_groups.existing.dynamic_groups[0].matching_rule,
+    local.dynamic_group_matching_rule,
+  )
 }
 
 data "oci_identity_dynamic_groups" "existing" {
@@ -59,7 +68,7 @@ resource "oci_identity_dynamic_group" "container_instances" {
   compartment_id = var.tenancy_ocid
   name           = local.dynamic_group_name
   description    = "Container Instances allowed to pull ${local.name_prefix} images from OCIR"
-  matching_rule  = "ALL {resource.type='computecontainerinstance', resource.compartment.id = '${var.compartment_ocid}'}"
+  matching_rule  = local.dynamic_group_matching_rule
 
   freeform_tags = local.common_tags
 }

@@ -15,8 +15,11 @@ endpoint = "https://YOUR_NAMESPACE.compat.objectstorage.us-ashburn-1.oraclecloud
 access_key = "YOUR_CUSTOMER_SECRET_ACCESS_KEY"
 secret_key = "YOUR_CUSTOMER_SECRET_SECRET_KEY"
 
+# The S3 driver targets AWS by default; these disable the AWS-only calls and the
+# aws-chunked upload encoding that OCI Object Storage answers with 501.
 skip_region_validation      = true
 skip_credentials_validation = true
 skip_metadata_api_check     = true
 skip_requesting_account_id  = true
-force_path_style            = true
+skip_s3_checksum            = true
+use_path_style              = true

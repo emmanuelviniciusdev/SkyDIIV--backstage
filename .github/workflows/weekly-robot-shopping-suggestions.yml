@@ -134,6 +134,8 @@ jobs:
       - name: Build & push Docker image
         # Container Instances cannot pull manifest lists with attestations
         working-directory: apps/robot-shopping-suggestions
+        env:
+          IMAGE: ${{ steps.infra.outputs.container_image_url }}
         run: |
           docker buildx build \
             --platform linux/arm64 \
@@ -143,6 +145,18 @@ jobs:
             -t "${{ steps.infra.outputs.container_image_url }}" \
             -t "${{ steps.infra.outputs.image_latest }}" \
             --push .
+
+          # A manifest list is pulled as "inadequate network configuration",
+          # which sends every investigation at the VCN instead of the image.
+          media_type="$(docker buildx imagetools inspect --raw "$IMAGE" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("mediaType",""))')"
+          echo "Remote manifest mediaType: ${media_type}"
+          case "${media_type}" in
+            *manifest.list*|*image.index*)
+              echo "::error::Pushed a manifest list (${media_type}) — Container Instances need a single image manifest"
+              exit 1
+              ;;
+          esac
 
       - name: Write OCI API key
         working-directory: apps/robot-shopping-suggestions/deploy/terraform

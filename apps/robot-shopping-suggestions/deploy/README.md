@@ -79,9 +79,11 @@ same path is reused by the cost gate.
    base64 < deploy/terraform/backend.hcl | tr -d '\n' | \
      gh secret set TF_BACKEND_HCL_B64 --env production
    ```
-   Include `skip_requesting_account_id = true` in `backend.hcl` (required for the
-   OCI S3-compatible endpoint). `terraform-init.sh` also re-quotes string keys if
-   Actions still strips `"`. Do not embed secrets inside a `run:` script body.
+   Keep the `skip_*` flags from `backend.hcl.example`: the S3 driver otherwise
+   makes AWS-only calls (`skip_requesting_account_id`) and uploads with
+   `aws-chunked` encoding, which OCI rejects with `501 NotImplemented`
+   (`skip_s3_checksum`). `terraform-init.sh` also re-quotes string keys if Actions
+   strips `"`. Do not embed secrets inside a `run:` script body.
 4. If you already have a local `terraform.tfstate`, migrate once:
    ```bash
    TF_BACKEND_MIGRATE=1 ./deploy/terraform-init.sh
