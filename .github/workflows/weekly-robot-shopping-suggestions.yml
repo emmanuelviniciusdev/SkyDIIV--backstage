@@ -147,7 +147,7 @@ jobs:
             --provenance=false \
             --sbom=false \
             --build-arg GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
-            --output "type=image,name=${IMAGE},${LATEST},push=true" \
+            --output "type=image,name=${IMAGE},name=${LATEST},push=true" \
             .
 
           media_type="$(docker buildx imagetools inspect --raw "$IMAGE" \
