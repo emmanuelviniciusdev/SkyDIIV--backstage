@@ -219,15 +219,11 @@ jobs:
             tfstate-rss-production-
 
       - name: Terraform Init
-        working-directory: apps/robot-shopping-suggestions/deploy/terraform
-        run: |
-          if [ -n "${{ secrets.TF_BACKEND_HCL }}" ]; then
-            printf '%s\n' "${{ secrets.TF_BACKEND_HCL }}" > backend.hcl
-            terraform init -input=false -reconfigure -backend-config=backend.hcl
-          else
-            echo "::warning::TF_BACKEND_HCL unset — using local state + Actions cache."
-            terraform init -input=false -backend=false
-          fi
+        working-directory: apps/robot-shopping-suggestions
+        env:
+          TF_BACKEND_HCL: ${{ secrets.TF_BACKEND_HCL }}
+          TF_BACKEND_HCL_B64: ${{ secrets.TF_BACKEND_HCL_B64 }}
+        run: ./deploy/terraform-init.sh
 
       - name: Terraform Apply (Container Instance)
         id: tf
@@ -323,17 +319,16 @@ jobs:
             tfstate-rss-production-
 
       - name: Terraform Init
+        working-directory: apps/robot-shopping-suggestions
+        env:
+          TF_BACKEND_HCL: ${{ secrets.TF_BACKEND_HCL }}
+          TF_BACKEND_HCL_B64: ${{ secrets.TF_BACKEND_HCL_B64 }}
+        run: ./deploy/terraform-init.sh
+
+      - name: Check Terraform state
         id: tf
         working-directory: apps/robot-shopping-suggestions/deploy/terraform
         run: |
-          if [ -n "${{ secrets.TF_BACKEND_HCL }}" ]; then
-            printf '%s\n' "${{ secrets.TF_BACKEND_HCL }}" > backend.hcl
-            terraform init -input=false -reconfigure -backend-config=backend.hcl
-          else
-            echo "::warning::TF_BACKEND_HCL unset — using local state + Actions cache."
-            terraform init -input=false -backend=false
-          fi
-
           HAS_STATE="false"
           if terraform state list 2>/dev/null | grep -q .; then
             HAS_STATE="true"

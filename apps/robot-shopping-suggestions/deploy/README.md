@@ -73,10 +73,13 @@ same path is reused by the cost gate.
    ```bash
    TF_BACKEND_HCL=deploy/terraform/backend.hcl
    ```
-3. GitHub (`production` environment):
+3. GitHub (`production` environment) — use **base64** so Actions does not strip
+   quotes from multiline secrets:
    ```bash
-   gh secret set TF_BACKEND_HCL --env production < deploy/terraform/backend.hcl
+   base64 < deploy/terraform/backend.hcl | gh secret set TF_BACKEND_HCL_B64 --env production
    ```
+   Do not embed `${{ secrets.TF_BACKEND_HCL }}` inside a `run:` script; only pass
+   secrets through the step `env:` block (or use `TF_BACKEND_HCL_B64`).
 4. If you already have a local `terraform.tfstate`, migrate once:
    ```bash
    TF_BACKEND_MIGRATE=1 ./deploy/terraform-init.sh
@@ -119,7 +122,8 @@ Usage API data can lag ~24h, so the kill is eventual rather than instantaneous.
 | `OCIR_NAMESPACE` / `OCIR_USERNAME` / `OCIR_AUTH_TOKEN` | Push/pull the robot image |
 | `ROBOT_SHOPPING_SUGGESTIONS_ENV` | App `.env` → `TF_VAR_robot_env` ([ENV.md](../docs/ENV.md)) |
 | `COST_ALERT_EMAIL` | Budget alert recipient |
-| `TF_BACKEND_HCL` | Optional remote Terraform state |
+| `TF_BACKEND_HCL_B64` | Remote Terraform state (`base64 < backend.hcl`) — preferred in CI |
+| `TF_BACKEND_HCL` | Remote Terraform state (raw HCL; only safe via step `env:` block) |
 
 Repository/environment variables: `CONTAINER_OCPUS` (`2`), `CONTAINER_MEMORY_GB`
 (`4`), `AVAILABILITY_DOMAIN_INDEX` (`0`), `COST_LIMIT_USD` (`5`),

@@ -1,7 +1,11 @@
 # OCI Object Storage (S3-compatible API) remote state.
-# Copy to backend.hcl (gitignored), fill in, then:
-#   gh secret set TF_BACKEND_HCL --env production < backend.hcl
-#   echo 'TF_BACKEND_HCL=deploy/terraform/backend.hcl' >> deploy/local.env
+# Copy to backend.hcl (gitignored), fill in, then either:
+#
+#   Recommended for GitHub Actions (preserves quotes/newlines exactly):
+#     base64 < backend.hcl | gh secret set TF_BACKEND_HCL_B64 --env production
+#
+#   Local deploy/local.env:
+#     TF_BACKEND_HCL=deploy/terraform/backend.hcl
 
 bucket   = "YOUR_BUCKET_NAME"
 key      = "robot-shopping-suggestions/production.tfstate"
