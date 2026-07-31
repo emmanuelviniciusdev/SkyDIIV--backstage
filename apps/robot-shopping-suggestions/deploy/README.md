@@ -9,7 +9,7 @@ creating the stack starts the robot, deleting it stops the robot.
 | Workflow | Trigger | Does |
 |---|---|---|
 | `weekly-…` (create) | cron `0 10 * * 0` (Sun 07:00 BRT) · `workflow_dispatch action=create` | lint/test/build → build & push OCIR image → cost gate → `terraform apply` |
-| `weekly-…` (destroy) | cron `0 12 * * 0` (Sun 09:00 BRT) · `workflow_dispatch action=destroy` | `terraform destroy` — **absolute authority** |
+| `weekly-…` (destroy) | cron `0 12 * * 0` (Sun 09:00 BRT) · `workflow_dispatch action=destroy` | `terraform destroy` — **absolute authority** → purge OCIR image versions |
 | `cost-guard-…` | daily `0 12 * * *` · `workflow_dispatch` (`dry_run`) | `terraform destroy` when MTD spend ≥ limit |
 | `deploy-…` | PR / push to `main`, `staging` · `workflow_dispatch` | CI (lint, test, build); optionally pushes an OCIR image without creating infra |
 
@@ -22,6 +22,7 @@ is UTC-3 year-round, so the CRONs never drift.
 Sun 07:00 BRT  cost gate → build+push OCIR → terraform apply → Container Instance ACTIVE
                robot drains CF Queues (2 at a time) → self-deletes the instance
 Sun 09:00 BRT  terraform destroy (Container Instance + VCN + budget), absolute
+               → purge OCIR image versions (no registry storage between runs)
 Daily 12:00 UTC  cost guard → terraform destroy if MTD ≥ cost_limit_usd
 ```
 
@@ -156,6 +157,26 @@ problems, so it routinely points at the wrong subsystem. Bisect it:
 If `--public-image` reaches `ACTIVE` the VCN is fine and the problem is OCIR
 authorization — check the dynamic group and policy above before touching
 gateways, route tables or `ocir_registry_endpoint`.
+
+OCIR answers on both the region id (`us-ashburn-1.ocir.io`) and the region key
+(`iad.ocir.io`), but this tenancy only pulls successfully from the region-id
+host, so CI and `deploy/local.env` must both tag images with
+`${OCI_REGION}.ocir.io`. Docker credentials are stored per host, so the
+`docker login` in the workflow targets that same host.
+
+## OCIR storage
+
+Registry storage is billed continuously, and every create pushes a new image
+version (`:<sha>` plus `:latest`), so versions accumulate between runs. The
+destroy job deletes them all — the next create pushes a fresh image anyway:
+
+```bash
+python3 deploy/ocir_purge.py --dry-run   # list what would be deleted
+python3 deploy/ocir_purge.py             # delete every version
+python3 deploy/ocir_purge.py --keep 1    # keep the newest version
+```
+
+It uses the same OCI credentials as the cost guard and needs `pip install oci`.
 
 ## Self-delete vs destroy
 

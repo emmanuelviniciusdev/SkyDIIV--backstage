@@ -89,34 +89,31 @@ jobs:
           npm run test
           npm run build
 
+      # The region-id host is what the local deploy and the Container Instance
+      # pull use; oracle-actions/login-ocir only authenticates the region-key
+      # host (iad.ocir.io) and docker credentials are stored per host.
       - name: Log in to OCIR
-        id: login-ocir
-        uses: oracle-actions/login-ocir@v1.3.0
         env:
-          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT || secrets.OCI_API_PRIVATE_KEY }}
-          OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-        with:
-          auth_token: ${{ secrets.OCIR_AUTH_TOKEN }}
+          OCIR_AUTH_TOKEN: ${{ secrets.OCIR_AUTH_TOKEN }}
+          OCIR_USERNAME: ${{ secrets.OCIR_USERNAME }}
+        run: |
+          echo "$OCIR_AUTH_TOKEN" | docker login "${OCI_REGION}.ocir.io" \
+            -u "$OCIR_USERNAME" \
+            --password-stdin
 
       - name: Resolve infra defaults
         id: infra
-        env:
-          # Endpoint the login step authenticated against — OCIR uses the region
-          # key (iad.ocir.io), not the region id, and docker auth is per host.
-          REGISTRY: ${{ steps.login-ocir.outputs.ocir_endpoint }}
         run: |
           echo "container_ocpus=${CONTAINER_OCPUS:-2}" >> "$GITHUB_OUTPUT"
           echo "container_memory_gb=${CONTAINER_MEMORY_GB:-4}" >> "$GITHUB_OUTPUT"
           echo "ad_index=${AVAILABILITY_DOMAIN_INDEX:-0}" >> "$GITHUB_OUTPUT"
 
           NS="${OCIR_NAMESPACE}"
-          if [ -z "$REGISTRY" ] || [ -z "$NS" ]; then
-            echo "OCIR login endpoint and OCIR_NAMESPACE are required" >&2
+          if [ -z "$OCI_REGION" ] || [ -z "$NS" ]; then
+            echo "OCI_REGION and OCIR_NAMESPACE secrets are required" >&2
             exit 1
           fi
+          REGISTRY="${OCI_REGION}.ocir.io"
           IMAGE="${REGISTRY}/${NS}/robot-shopping-suggestions:${{ github.sha }}"
           echo "container_image_url=${IMAGE}" >> "$GITHUB_OUTPUT"
           echo "image_latest=${REGISTRY}/${NS}/robot-shopping-suggestions:latest" >> "$GITHUB_OUTPUT"
@@ -373,10 +370,27 @@ jobs:
           path: apps/robot-shopping-suggestions/deploy/terraform/terraform.tfstate
           key: tfstate-rss-production-${{ github.repository }}-${{ github.run_id }}
 
+      - name: Install OCI SDK (image purge)
+        run: pip install --quiet oci
+
+      # OCIR bills stored layers even with no instance running, and every create
+      # pushes a fresh version, so nothing needs to survive the destroy.
+      - name: Purge OCIR image versions
+        working-directory: apps/robot-shopping-suggestions
+        env:
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+        run: python3 deploy/ocir_purge.py --keep 0
+
       - name: Summary
         run: |
           echo "### Weekly destroy complete" >> "$GITHUB_STEP_SUMMARY"
           echo "No OCI Container Instance / VCN should remain for this stack." >> "$GITHUB_STEP_SUMMARY"
+          echo "OCIR image versions purged — no registry storage billed until the next create." >> "$GITHUB_STEP_SUMMARY"
           echo "Destroy ran with absolute authority regardless of queue depth." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup OCI key

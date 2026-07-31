@@ -66,28 +66,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The region-id host is what the local deploy and the Container Instance
+      # pull use; oracle-actions/login-ocir only authenticates the region-key
+      # host (iad.ocir.io) and docker credentials are stored per host.
       - name: Log in to OCIR
-        id: login-ocir
-        uses: oracle-actions/login-ocir@v1.3.0
         env:
-          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
-          OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-        with:
-          auth_token: ${{ secrets.OCIR_AUTH_TOKEN }}
+          OCIR_AUTH_TOKEN: ${{ secrets.OCIR_AUTH_TOKEN }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCIR_USERNAME: ${{ secrets.OCIR_USERNAME }}
+        run: |
+          echo "$OCIR_AUTH_TOKEN" | docker login "${OCI_REGION}.ocir.io" \
+            -u "$OCIR_USERNAME" \
+            --password-stdin
 
       - name: Build & push
         working-directory: apps/robot-shopping-suggestions
         env:
-          # Endpoint the login step authenticated against — OCIR uses the region
-          # key (iad.ocir.io), not the region id, and docker auth is per host.
-          REGISTRY: ${{ steps.login-ocir.outputs.ocir_endpoint }}
+          REGION: ${{ secrets.OCI_REGION }}
           NS: ${{ secrets.OCIR_NAMESPACE }}
         run: |
-          IMAGE="${REGISTRY}/${NS}/robot-shopping-suggestions:${{ github.sha }}"
-          LATEST="${REGISTRY}/${NS}/robot-shopping-suggestions:latest"
+          IMAGE="${REGION}.ocir.io/${NS}/robot-shopping-suggestions:${{ github.sha }}"
+          LATEST="${REGION}.ocir.io/${NS}/robot-shopping-suggestions:latest"
           docker build \
             --build-arg GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
             -t "$IMAGE" -t "$LATEST" .
