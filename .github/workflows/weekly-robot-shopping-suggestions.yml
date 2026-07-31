@@ -132,22 +132,24 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build & push Docker image
-        # Container Instances cannot pull manifest lists with attestations
+        # Container Instances cannot pull manifest lists with attestations —
+        # match deploy-from-local.sh (single-arch image via --output type=image).
         working-directory: apps/robot-shopping-suggestions
         env:
           IMAGE: ${{ steps.infra.outputs.container_image_url }}
+          LATEST: ${{ steps.infra.outputs.image_latest }}
+          OCIR_AUTH_TOKEN: ${{ secrets.OCIR_AUTH_TOKEN }}
+          OCIR_USERNAME: ${{ secrets.OCIR_USERNAME }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
         run: |
           docker buildx build \
             --platform linux/arm64 \
             --provenance=false \
             --sbom=false \
             --build-arg GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
-            -t "${{ steps.infra.outputs.container_image_url }}" \
-            -t "${{ steps.infra.outputs.image_latest }}" \
-            --push .
+            --output "type=image,name=${IMAGE},${LATEST},push=true" \
+            .
 
-          # A manifest list is pulled as "inadequate network configuration",
-          # which sends every investigation at the VCN instead of the image.
           media_type="$(docker buildx imagetools inspect --raw "$IMAGE" \
             | python3 -c 'import json,sys; print(json.load(sys.stdin).get("mediaType",""))')"
           echo "Remote manifest mediaType: ${media_type}"
@@ -157,6 +159,12 @@ jobs:
               exit 1
               ;;
           esac
+
+          # Prove the registry accepts a pull with the same credentials CI just used.
+          echo "$OCIR_AUTH_TOKEN" | docker login "${OCI_REGION}.ocir.io" \
+            -u "$OCIR_USERNAME" --password-stdin
+          docker pull --platform linux/arm64 "$IMAGE"
+          docker image inspect "$IMAGE" --format 'pulled {{.Os}}/{{.Architecture}} {{.Id}}'
 
       - name: Write OCI API key
         working-directory: apps/robot-shopping-suggestions/deploy/terraform

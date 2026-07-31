@@ -171,9 +171,9 @@ variable "ocir_auth_token" {
 variable "ocir_registry_endpoint" {
   type        = string
   description = <<-EOT
-    Override for the image_pull_secrets registry endpoint. Empty derives
-    <region>.ocir.io/<namespace> from container_image_url; set to the bare host
-    (<region>.ocir.io) if the tenancy expects a host-only prefix.
+    Override for the image_pull_secrets registry endpoint. Empty derives the
+    bare host from container_image_url (e.g. us-ashburn-1.ocir.io). Only used
+    for non-OCIR registries — private OCIR pulls use the resource principal.
   EOT
   default     = ""
 }

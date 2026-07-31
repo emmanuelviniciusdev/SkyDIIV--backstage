@@ -158,10 +158,11 @@ container runs no local SOCKS listener.
 ## OCIR pull authorization
 
 Container Instances authenticate to Container Registry with their **own resource
-principal**, not with `image_pull_secrets` — that field is only consulted for
+principal**, not with `image_pull_secrets` — that field is only attached for
 external registries such as Docker Hub or GHCR. A private OCIR image therefore
 needs a dynamic group plus a `read repos` policy, both created by
-`deploy/terraform/iam.tf`:
+`deploy/terraform/iam.tf` (BASIC pull secrets are intentionally omitted for
+`*.ocir.io` image URLs so a bad secret cannot mask the resource-principal path):
 
 ```
 ALL {resource.type='computecontainerinstance', resource.compartment.id = '<compartment>'}

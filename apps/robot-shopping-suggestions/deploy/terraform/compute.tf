@@ -7,22 +7,21 @@
  */
 
 locals {
-  # us-ashburn-1.ocir.io/<namespace>/<repo>:<tag> → us-ashburn-1.ocir.io/<namespace>
-  image_path_parts = split("/", split(":", var.container_image_url)[0])
+  # us-ashburn-1.ocir.io/<namespace>/<repo>:<tag> → us-ashburn-1.ocir.io
+  image_registry_host = split("/", split(":", var.container_image_url)[0])[0]
 
-  # The pull secret is matched against the image URL by prefix. Overridable
-  # because tenancies differ on whether the namespace segment is expected.
+  # The pull secret is matched against the image URL by prefix. Oracle's
+  # Container Instance examples use the bare registry host; some tenancies
+  # also accept host/namespace — override with ocir_registry_endpoint if needed.
   #
-  # Note: for OCIR this secret is *not* what authorizes the pull — Container
-  # Instances use their resource principal there (see iam.tf). It is kept for
-  # external registries (Docker Hub, GHCR) and verified harmless alongside the
-  # resource principal.
-  ocir_registry_endpoint = coalesce(
-    var.ocir_registry_endpoint,
-    join("/", slice(local.image_path_parts, 0, min(2, length(local.image_path_parts)))),
-  )
+  # For private OCIR, resource principal (iam.tf) is the real authorizer.
+  # image_pull_secrets remain for external registries (Docker Hub, GHCR).
+  ocir_registry_endpoint = coalesce(var.ocir_registry_endpoint, local.image_registry_host)
 
-  ocir_pull_configured = var.ocir_username != "" && var.ocir_auth_token != ""
+  # Only attach BASIC secrets for non-OCIR registries. Attaching them for OCIR
+  # has caused pulls to fail even when the dynamic-group policy is correct.
+  is_ocir_image        = endswith(local.image_registry_host, ".ocir.io") || strcontains(local.image_registry_host, ".ocir.")
+  ocir_pull_configured = !local.is_ocir_image && var.ocir_username != "" && var.ocir_auth_token != ""
 }
 
 resource "oci_container_instances_container_instance" "robot" {
@@ -60,6 +59,10 @@ resource "oci_container_instances_container_instance" "robot" {
   containers {
     display_name = "robot-shopping-suggestions"
     image_url    = var.container_image_url
+
+    # Resource principal must stay enabled so the instance can pull private OCIR
+    # via the dynamic group policy in iam.tf.
+    is_resource_principal_disabled = false
 
     environment_variables = merge(
       var.robot_env,
