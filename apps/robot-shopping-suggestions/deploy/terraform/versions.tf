@@ -1,6 +1,9 @@
 terraform {
   required_version = ">= 1.5.0"
 
+  # Values supplied at init time via backend.hcl or the TF_BACKEND_HCL secret.
+  backend "s3" {}
+
   required_providers {
     oci = {
       source  = "oracle/oci"

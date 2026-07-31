@@ -22,9 +22,7 @@ fi
 source "${ROOT}/deploy/local-deploy-env.sh"
 
 cd "${TF_DIR}"
-if [[ ! -f terraform.tfstate ]] && [[ -z "${TF_BACKEND_HCL:-}" ]]; then
-  echo "No local terraform.tfstate — ensure remote backend is configured if used." >&2
-fi
+"${ROOT}/deploy/terraform-init.sh"
 
 terraform destroy -auto-approve -input=false
 echo "Robot stack destroyed."

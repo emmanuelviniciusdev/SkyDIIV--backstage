@@ -1,0 +1,17 @@
+# OCI Object Storage (S3-compatible API) remote state.
+# Copy to backend.hcl (gitignored), fill in, then:
+#   gh secret set TF_BACKEND_HCL --env production < backend.hcl
+#   echo 'TF_BACKEND_HCL=deploy/terraform/backend.hcl' >> deploy/local.env
+
+bucket   = "YOUR_BUCKET_NAME"
+key      = "robot-shopping-suggestions/production.tfstate"
+region   = "us-ashburn-1"
+endpoint = "https://YOUR_NAMESPACE.compat.objectstorage.us-ashburn-1.oraclecloud.com"
+
+access_key = "YOUR_CUSTOMER_SECRET_ACCESS_KEY"
+secret_key = "YOUR_CUSTOMER_SECRET_SECRET_KEY"
+
+skip_region_validation      = true
+skip_credentials_validation = true
+skip_metadata_api_check     = true
+force_path_style            = true

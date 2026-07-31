@@ -40,9 +40,9 @@ gh workflow run weekly-robot-shopping-suggestions.yml -f action=destroy
 ./deploy/destroy-from-local.sh --yes              # plain terraform destroy
 ```
 
-Local and CI runs keep **separate Terraform state** unless `TF_BACKEND_HCL` is
-configured — without it, CI uses local state persisted in the Actions cache, so
-a stack created locally can only be destroyed locally.
+Local and CI share Terraform state when `TF_BACKEND_HCL` points at an OCI
+Object Storage bucket (S3-compatible API). Without it, CI falls back to state in
+the Actions cache and local runs keep `terraform.tfstate` on disk.
 
 ### Local setup (once)
 
@@ -51,6 +51,7 @@ cd apps/robot-shopping-suggestions
 cp deploy/terraform/terraform.tfvars.example deploy/terraform/terraform.tfvars  # OCI ids
 cp deploy/local.env.example deploy/local.env                                    # OCIR image + credentials
 cp .env.example .env                                                            # app secrets
+cp deploy/terraform/backend.hcl.example deploy/terraform/backend.hcl          # remote state (optional)
 ```
 
 Put the OCI API private key wherever `private_key_path` in `terraform.tfvars`
@@ -60,8 +61,30 @@ same path is reused by the cost gate.
 | File | Purpose |
 |---|---|
 | `deploy/terraform/terraform.tfvars` | OCI tenancy/user/region/compartment + `private_key_path` |
-| `deploy/local.env` | Image URL, OCIR username/token, optional `network_mode`, `GITHUB_TOKEN` |
+| `deploy/local.env` | Image URL, OCIR username/token, optional `network_mode`, `GITHUB_TOKEN`, `TF_BACKEND_HCL` |
+| `deploy/terraform/backend.hcl` | Object Storage backend config (gitignored) |
 | `.env` | App secrets — converted to `TF_VAR_robot_env` by `deploy/build-robot-env.py` |
+
+### Remote Terraform state
+
+1. Fill in `deploy/terraform/backend.hcl` from `backend.hcl.example` (bucket,
+   namespace endpoint, customer secret keys).
+2. Local: add to `deploy/local.env`:
+   ```bash
+   TF_BACKEND_HCL=deploy/terraform/backend.hcl
+   ```
+3. GitHub (`production` environment):
+   ```bash
+   gh secret set TF_BACKEND_HCL --env production < deploy/terraform/backend.hcl
+   ```
+4. If you already have a local `terraform.tfstate`, migrate once:
+   ```bash
+   TF_BACKEND_MIGRATE=1 ./deploy/terraform-init.sh
+   ```
+
+`deploy/terraform-init.sh` is used by local scripts and CI. State key defaults to
+`robot-shopping-suggestions/production.tfstate` — use a different `key` per
+environment if needed.
 
 The OCIR repo `robot-shopping-suggestions` must exist in the tenancy (the first
 push may create it). The Docker build downloads Camoufox from GitHub; if

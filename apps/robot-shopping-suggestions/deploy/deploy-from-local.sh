@@ -246,8 +246,7 @@ case "${ACTION}" in
         ;;
     esac
     cost_ceiling_gate
-    cd "${TF_DIR}"
-    terraform init -input=false -backend=false
+    "${ROOT}/deploy/terraform-init.sh"
     drop_unusable_container_instance
     echo "==> terraform apply (network_mode=${TF_VAR_network_mode:-public}, image ${TF_VAR_container_image_url})"
     # -var beats terraform.tfvars, so deploy/local.env always wins for the image
@@ -258,8 +257,8 @@ case "${ACTION}" in
     terraform output
     ;;
   destroy)
+    "${ROOT}/deploy/terraform-init.sh"
     cd "${TF_DIR}"
-    terraform init -input=false -backend=false
     # Sync state first: a Container Instance that failed to create is recorded as
     # CREATING locally, and only a refresh reveals the FAILED state that makes
     # the OCI delete work request fail.
