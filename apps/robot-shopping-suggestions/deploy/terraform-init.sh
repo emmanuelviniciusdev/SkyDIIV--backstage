@@ -3,12 +3,9 @@
 #
 # Local: set TF_BACKEND_HCL to a path, e.g. deploy/terraform/backend.hcl
 #
-# CI (recommended — avoids GitHub Actions eating double quotes in multiline secrets):
-#   base64 < deploy/terraform/backend.hcl | gh secret set TF_BACKEND_HCL_B64 --env production
-#
-# CI (alternate — only when TF_BACKEND_HCL is passed via the step env: block, never
-# inlined as ${{ secrets.TF_BACKEND_HCL }} inside a run: script):
-#   gh secret set TF_BACKEND_HCL --env production < deploy/terraform/backend.hcl
+# CI (recommended — avoids quote stripping on multiline secrets):
+#   base64 < deploy/terraform/backend.hcl | tr -d '\n' | \
+#     gh secret set TF_BACKEND_HCL_B64 --env production
 #
 # First-time migration from local state:
 #   TF_BACKEND_MIGRATE=1 ./deploy/terraform-init.sh
@@ -21,6 +18,7 @@ cd "${TF_DIR}"
 write_backend_hcl_from_env() {
   umask 077
   if [[ -n "${TF_BACKEND_HCL_B64:-}" ]]; then
+    echo "Using TF_BACKEND_HCL_B64 for remote state" >&2
     if ! printf '%s' "${TF_BACKEND_HCL_B64}" | base64 -d > backend.hcl 2>/dev/null; then
       echo "TF_BACKEND_HCL_B64 is not valid base64" >&2
       exit 1
@@ -34,6 +32,7 @@ write_backend_hcl_from_env() {
 
   # Multiline or HCL-shaped body — not a filesystem path.
   if [[ "${cfg}" == *$'\n'* ]] || [[ "${cfg}" =~ ^[[:space:]]*(#|bucket[[:space:]]*=) ]]; then
+    echo "Using TF_BACKEND_HCL env body for remote state" >&2
     printf '%s' "${cfg}" > backend.hcl
     [[ "${cfg}" == *$'\n' ]] || printf '\n' >> backend.hcl
     printf '%s\n' "${TF_DIR}/backend.hcl"
@@ -41,45 +40,129 @@ write_backend_hcl_from_env() {
   fi
 
   if [[ -f "${cfg}" ]]; then
+    echo "Using TF_BACKEND_HCL path ${cfg}" >&2
     printf '%s\n' "${cfg}"
     return 0
   fi
   if [[ -f "${ROOT}/${cfg}" ]]; then
+    echo "Using TF_BACKEND_HCL path ${ROOT}/${cfg}" >&2
     printf '%s\n' "${ROOT}/${cfg}"
     return 0
   fi
 
-  # Last resort: treat as inline HCL (single-line secrets are unlikely but valid).
+  echo "Using TF_BACKEND_HCL env body for remote state" >&2
   printf '%s' "${cfg}" > backend.hcl
   printf '\n' >> backend.hcl
   printf '%s\n' "${TF_DIR}/backend.hcl"
 }
 
+# GitHub Actions often strips " from multiline secrets when injecting them into
+# env. Re-quote known string keys so terraform init does not fail.
+repair_backend_hcl_quotes() {
+  local file="$1"
+  python3 - "$file" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text()
+string_keys = {
+    "bucket",
+    "key",
+    "region",
+    "endpoint",
+    "access_key",
+    "secret_key",
+}
+pattern = re.compile(
+    r'^(\s*)(' + "|".join(string_keys) + r')(\s*=\s*)(.*?)(\s*)$'
+)
+repaired = []
+changed = []
+for line in text.splitlines():
+    match = pattern.match(line)
+    if not match:
+        repaired.append(line)
+        continue
+    indent, key, eq, value, trailing = match.groups()
+    raw = value.strip()
+    if not raw or raw.startswith("#"):
+        repaired.append(line)
+        continue
+    if (raw.startswith('"') and raw.endswith('"')) or (
+        raw.startswith("'") and raw.endswith("'")
+    ):
+        repaired.append(line)
+        continue
+    # Drop a dangling comment so we don't quote it into the value.
+    if " #" in raw:
+        raw = raw.split(" #", 1)[0].rstrip()
+    repaired.append(f'{indent}{key}{eq}"{raw}"{trailing}')
+    changed.append(key)
+
+path.write_text("\n".join(repaired) + ("\n" if text.endswith("\n") or repaired else ""))
+if changed:
+    print(
+        "Re-quoted unquoted backend.hcl keys: " + ", ".join(changed),
+        file=sys.stderr,
+    )
+PY
+}
+
 validate_backend_hcl() {
   local file="$1"
-  if grep -E '^[[:space:]]*(bucket|key|region|endpoint|access_key|secret_key)[[:space:]]*=[[:space:]]*[^"'\''#]' "${file}"; then
-    cat >&2 <<'EOF'
-backend.hcl syntax error: string values must use double quotes.
+  local bad
+  bad="$(python3 - "$file" <<'PY'
+import re
+import sys
+from pathlib import Path
 
-If CI stripped the quotes, the workflow probably inlined the secret in a run:
-script (printf "...${{ secrets.TF_BACKEND_HCL }}..."). Re-set using base64:
+text = Path(sys.argv[1]).read_text()
+string_keys = {"bucket", "key", "region", "endpoint", "access_key", "secret_key"}
+pattern = re.compile(
+    r'^\s*(' + "|".join(string_keys) + r')\s*=\s*(.*?)\s*$'
+)
+bad = []
+for line in text.splitlines():
+    match = pattern.match(line)
+    if not match:
+        continue
+    key, value = match.groups()
+    raw = value.strip()
+    if not raw or raw.startswith("#"):
+        continue
+    if (raw.startswith('"') and raw.endswith('"')) or (
+        raw.startswith("'") and raw.endswith("'")
+    ):
+        continue
+    bad.append(key)
+if bad:
+    print(", ".join(bad))
+PY
+)"
+  if [[ -n "${bad}" ]]; then
+    cat >&2 <<EOF
+backend.hcl still has unquoted string keys: ${bad}
 
-  base64 < deploy/terraform/backend.hcl | gh secret set TF_BACKEND_HCL_B64 --env production
+Re-set the CI secret from a quoted local file:
 
-Or ensure TF_BACKEND_HCL is only passed through the step env: block and read as
-$TF_BACKEND_HCL in deploy/terraform-init.sh — never embedded in the script body.
+  base64 < deploy/terraform/backend.hcl | tr -d '\n' | \\
+    gh secret set TF_BACKEND_HCL_B64 --env production
 EOF
     exit 1
   fi
 }
 
 if backend_config="$(write_backend_hcl_from_env)"; then
+  repair_backend_hcl_quotes "${backend_config}"
   validate_backend_hcl "${backend_config}"
-  migrate=()
   if [[ "${TF_BACKEND_MIGRATE:-}" == "1" || "${TF_BACKEND_MIGRATE:-}" == "true" ]]; then
-    migrate=(-migrate-state)
+    terraform init -input=false -reconfigure -migrate-state -backend-config="${backend_config}"
+  else
+    terraform init -input=false -reconfigure -backend-config="${backend_config}"
   fi
-  terraform init -input=false -reconfigure "${migrate[@]}" -backend-config="${backend_config}"
 else
+  echo "TF_BACKEND_HCL / TF_BACKEND_HCL_B64 unset — local state only" >&2
   terraform init -input=false -backend=false
 fi

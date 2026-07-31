@@ -76,10 +76,12 @@ same path is reused by the cost gate.
 3. GitHub (`production` environment) — use **base64** so Actions does not strip
    quotes from multiline secrets:
    ```bash
-   base64 < deploy/terraform/backend.hcl | gh secret set TF_BACKEND_HCL_B64 --env production
+   base64 < deploy/terraform/backend.hcl | tr -d '\n' | \
+     gh secret set TF_BACKEND_HCL_B64 --env production
    ```
-   Do not embed `${{ secrets.TF_BACKEND_HCL }}` inside a `run:` script; only pass
-   secrets through the step `env:` block (or use `TF_BACKEND_HCL_B64`).
+   Include `skip_requesting_account_id = true` in `backend.hcl` (required for the
+   OCI S3-compatible endpoint). `terraform-init.sh` also re-quotes string keys if
+   Actions still strips `"`. Do not embed secrets inside a `run:` script body.
 4. If you already have a local `terraform.tfstate`, migrate once:
    ```bash
    TF_BACKEND_MIGRATE=1 ./deploy/terraform-init.sh
