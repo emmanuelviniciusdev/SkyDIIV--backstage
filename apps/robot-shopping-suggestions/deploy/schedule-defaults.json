@@ -20,6 +20,6 @@
     "Stack is an OCI Container Instance (OCIR image) — no boot volume.",
     "Robot drains Cloudflare Queues 2-at-a-time until empty, then self-deletes.",
     "Terraform destroy at 09:00 BRT has absolute authority even if messages remain.",
-    "Prefer secret TF_BACKEND_HCL so create and destroy share remote Terraform state."
+    "Local and GHA must share OCI Object Storage Terraform state (TF_BACKEND_HCL_B64)."
   ]
 }

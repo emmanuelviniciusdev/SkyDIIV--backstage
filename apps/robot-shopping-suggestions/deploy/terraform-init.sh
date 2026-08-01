@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# Initialize Terraform with optional OCI Object Storage remote state.
+# Initialize Terraform against the shared OCI Object Storage remote state.
 #
-# Local: set TF_BACKEND_HCL to a path, e.g. deploy/terraform/backend.hcl
+# Local (either):
+#   - keep deploy/terraform/backend.hcl (auto-detected), or
+#   - set TF_BACKEND_HCL=deploy/terraform/backend.hcl in deploy/local.env
 #
-# CI (recommended — avoids quote stripping on multiline secrets):
+# CI (required — avoids quote stripping on multiline secrets):
 #   base64 < deploy/terraform/backend.hcl | tr -d '\n' | \
 #     gh secret set TF_BACKEND_HCL_B64 --env production
 #
-# First-time migration from local state:
+# Local and GitHub Actions must share this bucket state. Missing backend config
+# is a hard error (no local terraform.tfstate fallback).
+#
+# First-time migration from a leftover local terraform.tfstate:
 #   TF_BACKEND_MIGRATE=1 ./deploy/terraform-init.sh
 set -euo pipefail
 
@@ -28,6 +33,12 @@ write_backend_hcl_from_env() {
   fi
 
   local cfg="${TF_BACKEND_HCL:-}"
+  if [[ -z "${cfg}" && -f "${TF_DIR}/backend.hcl" ]]; then
+    echo "Using ${TF_DIR}/backend.hcl for remote state" >&2
+    printf '%s\n' "${TF_DIR}/backend.hcl"
+    return 0
+  fi
+
   [[ -n "${cfg}" ]] || return 1
 
   # Multiline or HCL-shaped body — not a filesystem path.
@@ -163,6 +174,19 @@ if backend_config="$(write_backend_hcl_from_env)"; then
     terraform init -input=false -reconfigure -backend-config="${backend_config}"
   fi
 else
-  echo "TF_BACKEND_HCL / TF_BACKEND_HCL_B64 unset — local state only" >&2
-  terraform init -input=false -backend=false
+  cat >&2 <<'EOF'
+Remote Terraform state is required (OCI Object Storage). Local deploy and GitHub
+Actions must share the same bucket — local terraform.tfstate is not supported.
+
+Local:
+  cp deploy/terraform/backend.hcl.example deploy/terraform/backend.hcl
+  # fill bucket / endpoint / customer secret keys, then either keep the file
+  # (auto-detected) or set in deploy/local.env:
+  #   TF_BACKEND_HCL=deploy/terraform/backend.hcl
+
+CI (production environment):
+  base64 < deploy/terraform/backend.hcl | tr -d '\n' | \
+    gh secret set TF_BACKEND_HCL_B64 --env production
+EOF
+  exit 1
 fi

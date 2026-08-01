@@ -236,14 +236,6 @@ jobs:
           PY
           echo "path=/tmp/robot_env.json" >> "$GITHUB_OUTPUT"
 
-      - name: Restore Terraform state
-        uses: actions/cache/restore@v4
-        with:
-          path: apps/robot-shopping-suggestions/deploy/terraform/terraform.tfstate
-          key: tfstate-rss-production-${{ github.repository }}
-          restore-keys: |
-            tfstate-rss-production-
-
       - name: Terraform Init
         working-directory: apps/robot-shopping-suggestions
         env:
@@ -277,22 +269,29 @@ jobs:
           export TF_VAR_robot_env="$(cat /tmp/robot_env.json)"
           ../tf-apply.sh
           # Empty when the robot drained and self-deleted during the apply.
-          ocid="$(terraform output -raw container_instance_ocid 2>/dev/null || true)"
-          {
-            echo "container_instance_ocid=${ocid}"
-          } >> "$GITHUB_OUTPUT"
+          # Prefer -json so empty state never leaks "│ Warning…" into GITHUB_OUTPUT.
+          ocid="$(
+            terraform output -json 2>/dev/null | python3 -c '
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+          except Exception:
+              raise SystemExit(0)
+          value = (data.get("container_instance_ocid") or {}).get("value")
+          if isinstance(value, str) and value.startswith("ocid1."):
+              print(value, end="")
+          ' || true
+          )"
+          case "$ocid" in
+            ocid1.*) ;;
+            *) ocid="" ;;
+          esac
+          echo "container_instance_ocid=${ocid}" >> "$GITHUB_OUTPUT"
           if [[ -n "${ocid}" ]]; then
             echo "Container Instance ${ocid} created — robot draining queue"
           else
             echo "Robot completed its drain and self-deleted during apply"
           fi
-
-      - name: Save Terraform state
-        if: success()
-        uses: actions/cache/save@v4
-        with:
-          path: apps/robot-shopping-suggestions/deploy/terraform/terraform.tfstate
-          key: tfstate-rss-production-${{ github.repository }}-${{ github.run_id }}
 
       - name: Summary
         run: |
@@ -336,14 +335,6 @@ jobs:
           fi
           printf '%s\n' "$OCI_PRIVATE_KEY_PEM" > oci_api_key.pem
 
-      - name: Restore Terraform state
-        uses: actions/cache/restore@v4
-        with:
-          path: apps/robot-shopping-suggestions/deploy/terraform/terraform.tfstate
-          key: tfstate-rss-production-${{ github.repository }}
-          restore-keys: |
-            tfstate-rss-production-
-
       - name: Terraform Init
         working-directory: apps/robot-shopping-suggestions
         env:
@@ -357,8 +348,6 @@ jobs:
         run: |
           HAS_STATE="false"
           if terraform state list 2>/dev/null | grep -q .; then
-            HAS_STATE="true"
-          elif [ -f terraform.tfstate ] && [ -s terraform.tfstate ]; then
             HAS_STATE="true"
           fi
           echo "has_state=${HAS_STATE}" >> "$GITHUB_OUTPUT"
@@ -383,13 +372,6 @@ jobs:
         run: |
           terraform destroy -auto-approve -input=false
           echo "Stack destroyed — Container Instance + VCN removed (absolute authority)"
-
-      - name: Persist emptied Terraform state
-        if: success() && steps.tf.outputs.has_state == 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: apps/robot-shopping-suggestions/deploy/terraform/terraform.tfstate
-          key: tfstate-rss-production-${{ github.repository }}-${{ github.run_id }}
 
       - name: Install OCI SDK (image purge)
         run: pip install --quiet oci

@@ -2,7 +2,8 @@ terraform {
   # 1.7 is the floor for `import` blocks with for_each (see iam.tf).
   required_version = ">= 1.7.0"
 
-  # Values supplied at init time via backend.hcl or the TF_BACKEND_HCL secret.
+  # Values supplied at init time via backend.hcl or TF_BACKEND_HCL(_B64).
+  # Required: local deploy and GitHub Actions share this OCI Object Storage state.
   backend "s3" {}
 
   required_providers {
@@ -16,6 +17,4 @@ terraform {
       version = ">= 0.9.0"
     }
   }
-
-  # Optional: configure a remote backend in CI via TF_BACKEND_HCL secret.
 }

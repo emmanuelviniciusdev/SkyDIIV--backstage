@@ -33,16 +33,17 @@ Daily 12:00 UTC  cost guard → terraform destroy if MTD ≥ cost_limit_usd
 gh workflow run weekly-robot-shopping-suggestions.yml -f action=create
 gh workflow run weekly-robot-shopping-suggestions.yml -f action=destroy
 
-# From your machine (local Terraform state)
+# From your machine (shared Oracle Object Storage state)
 ./deploy/deploy-from-local.sh apply               # build+push image, then apply
 ./deploy/deploy-from-local.sh apply --skip-build  # terraform only
 ./deploy/deploy-from-local.sh destroy             # apply/destroy with state repair
 ./deploy/destroy-from-local.sh --yes              # plain terraform destroy
 ```
 
-Local and CI share Terraform state when `TF_BACKEND_HCL` points at an OCI
-Object Storage bucket (S3-compatible API). Without it, CI falls back to state in
-the Actions cache and local runs keep `terraform.tfstate` on disk.
+Local and CI **must** share Terraform state in an OCI Object Storage bucket
+(S3-compatible API). `terraform-init.sh` always initializes that remote backend —
+missing `backend.hcl` / `TF_BACKEND_HCL` / `TF_BACKEND_HCL_B64` is a hard error.
+Local `terraform.tfstate` is not supported.
 
 ### Local setup (once)
 
@@ -51,7 +52,7 @@ cd apps/robot-shopping-suggestions
 cp deploy/terraform/terraform.tfvars.example deploy/terraform/terraform.tfvars  # OCI ids
 cp deploy/local.env.example deploy/local.env                                    # OCIR image + credentials
 cp .env.example .env                                                            # app secrets
-cp deploy/terraform/backend.hcl.example deploy/terraform/backend.hcl          # remote state (optional)
+cp deploy/terraform/backend.hcl.example deploy/terraform/backend.hcl          # remote state (required)
 ```
 
 Put the OCI API private key wherever `private_key_path` in `terraform.tfvars`
@@ -62,19 +63,22 @@ same path is reused by the cost gate.
 |---|---|
 | `deploy/terraform/terraform.tfvars` | OCI tenancy/user/region/compartment + `private_key_path` |
 | `deploy/local.env` | Image URL, OCIR username/token, optional `network_mode`, `GITHUB_TOKEN`, `TF_BACKEND_HCL` |
-| `deploy/terraform/backend.hcl` | Object Storage backend config (gitignored) |
+| `deploy/terraform/backend.hcl` | Object Storage backend config (gitignored, **required**) |
 | `.env` | App secrets — converted to `TF_VAR_robot_env` by `deploy/build-robot-env.py` |
 
-### Remote Terraform state
+### Remote Terraform state (required)
+
+Local deploy and GitHub Actions share one state object. Without it, create /
+destroy / cost-guard desync.
 
 1. Fill in `deploy/terraform/backend.hcl` from `backend.hcl.example` (bucket,
-   namespace endpoint, customer secret keys).
-2. Local: add to `deploy/local.env`:
+   namespace endpoint, customer secret keys). `terraform-init.sh` auto-detects
+   this file; optionally also set in `deploy/local.env`:
    ```bash
    TF_BACKEND_HCL=deploy/terraform/backend.hcl
    ```
-3. GitHub (`production` environment) — use **base64** so Actions does not strip
-   quotes from multiline secrets:
+2. GitHub (`production` environment) — use **base64** so Actions does not strip
+   quotes from multiline secrets (same file as local):
    ```bash
    base64 < deploy/terraform/backend.hcl | tr -d '\n' | \
      gh secret set TF_BACKEND_HCL_B64 --env production
@@ -84,7 +88,7 @@ same path is reused by the cost gate.
    `aws-chunked` encoding, which OCI rejects with `501 NotImplemented`
    (`skip_s3_checksum`). `terraform-init.sh` also re-quotes string keys if Actions
    strips `"`. Do not embed secrets inside a `run:` script body.
-4. If you already have a local `terraform.tfstate`, migrate once:
+3. If you already have a leftover local `terraform.tfstate`, migrate once:
    ```bash
    TF_BACKEND_MIGRATE=1 ./deploy/terraform-init.sh
    ```
@@ -126,7 +130,7 @@ Usage API data can lag ~24h, so the kill is eventual rather than instantaneous.
 | `OCIR_NAMESPACE` / `OCIR_USERNAME` / `OCIR_AUTH_TOKEN` | Push/pull the robot image |
 | `ROBOT_SHOPPING_SUGGESTIONS_ENV` | App `.env` → `TF_VAR_robot_env` ([ENV.md](../docs/ENV.md)) |
 | `COST_ALERT_EMAIL` | Budget alert recipient |
-| `TF_BACKEND_HCL_B64` | Remote Terraform state (`base64 < backend.hcl`) — preferred in CI |
+| `TF_BACKEND_HCL_B64` | Remote Terraform state (`base64 < backend.hcl`) — **required** in CI |
 | `TF_BACKEND_HCL` | Remote Terraform state (raw HCL; only safe via step `env:` block) |
 
 Repository/environment variables: `CONTAINER_OCPUS` (`2`), `CONTAINER_MEMORY_GB`
@@ -180,8 +184,9 @@ already exist (lost state / first remote-backend run), then reconciled so the
 matching rule always targets `compartment_ocid`. The monthly budget is still
 looked up and adopted when present — OCI allows only one budget per target
 compartment, and budgets are free. `terraform destroy` removes the managed
-group and policy; an adopted budget is left in place. Configure
-`TF_BACKEND_HCL` / `TF_BACKEND_HCL_B64` so CI keeps durable state across runs.
+group and policy; an adopted budget is left in place. Local and CI both require
+`deploy/terraform/backend.hcl` (or `TF_BACKEND_HCL` / `TF_BACKEND_HCL_B64`) so
+they share the same OCI Object Storage state.
 
 ### Debugging image-pull failures
 

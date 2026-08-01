@@ -49,14 +49,6 @@ jobs:
           umask 077
           printf '%s\n' "${{ secrets.OCI_API_PRIVATE_KEY }}" > oci_api_key.pem
 
-      - name: Restore Terraform state
-        uses: actions/cache/restore@v4
-        with:
-          path: apps/robot-shopping-suggestions/deploy/terraform/terraform.tfstate
-          key: tfstate-rss-production-${{ github.repository }}
-          restore-keys: |
-            tfstate-rss-production-
-
       - name: Terraform Init
         working-directory: apps/robot-shopping-suggestions
         env:
@@ -80,15 +72,31 @@ jobs:
           HAS_STATE="false"
           if terraform state list 2>/dev/null | grep -q .; then
             HAS_STATE="true"
-          elif [ -f terraform.tfstate ] && [ -s terraform.tfstate ]; then
-            HAS_STATE="true"
           fi
           echo "has_state=${HAS_STATE}" >> "$GITHUB_OUTPUT"
 
-          INSTANCE_OCID="$(terraform output -raw instance_ocid 2>/dev/null || true)"
+          # Prefer -json: -raw prints "│ Warning: No outputs found" to stdout when
+          # the remote state is empty, which breaks GITHUB_OUTPUT (multiline / │).
+          INSTANCE_OCID="$(
+            terraform output -json 2>/dev/null | python3 -c '
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+          except Exception:
+              raise SystemExit(0)
+          value = (data.get("instance_ocid") or {}).get("value")
+          if isinstance(value, str) and value.startswith("ocid1."):
+              print(value, end="")
+          ' || true
+          )"
           if [ -z "$INSTANCE_OCID" ] && [ -n "${{ secrets.OCI_INSTANCE_OCID }}" ]; then
             INSTANCE_OCID="${{ secrets.OCI_INSTANCE_OCID }}"
           fi
+          # Last-resort sanitize: never write terraform UI / newlines into GITHUB_OUTPUT.
+          case "$INSTANCE_OCID" in
+            ocid1.*) ;;
+            *) INSTANCE_OCID="" ;;
+          esac
           echo "instance_ocid=${INSTANCE_OCID}" >> "$GITHUB_OUTPUT"
 
           if [ "$HAS_STATE" != "true" ] && [ -z "$INSTANCE_OCID" ]; then
@@ -136,25 +144,6 @@ jobs:
           set -e
           echo "exit_code=${CODE}" >> "$GITHUB_OUTPUT"
           exit "${CODE}"
-
-      - name: Detect emptied Terraform state
-        id: state
-        if: success() && steps.tf.outputs.skip != 'true' && steps.tf.outputs.has_state == 'true'
-        working-directory: apps/robot-shopping-suggestions/deploy/terraform
-        run: |
-          if terraform state list 2>/dev/null | grep -q .; then
-            echo "empty=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "empty=true" >> "$GITHUB_OUTPUT"
-            echo "Terraform state is empty after cost guard — persisting for next deploy"
-          fi
-
-      - name: Persist Terraform state after destroy
-        if: success() && steps.state.outputs.empty == 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: apps/robot-shopping-suggestions/deploy/terraform/terraform.tfstate
-          key: tfstate-rss-production-${{ github.repository }}-${{ github.run_id }}
 
       - name: Cleanup OCI key
         if: always()

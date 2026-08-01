@@ -1,12 +1,13 @@
-# OCI Object Storage (S3-compatible API) remote state.
-# Copy to backend.hcl (gitignored), fill in, then either:
+# OCI Object Storage (S3-compatible API) remote state — required for local + CI.
+# Copy to backend.hcl (gitignored), fill in, then:
 #
-#   Recommended for GitHub Actions (preserves quotes/newlines exactly):
-#     base64 < backend.hcl | gh secret set TF_BACKEND_HCL_B64 --env production
+#   Local: keep backend.hcl here (auto-detected by terraform-init.sh), or set
+#     TF_BACKEND_HCL=deploy/terraform/backend.hcl in deploy/local.env
 #
-#   Local deploy/local.env:
-#     TF_BACKEND_HCL=deploy/terraform/backend.hcl
-
+#   GitHub Actions (preserves quotes/newlines exactly):
+#     base64 < backend.hcl | tr -d '\n' | gh secret set TF_BACKEND_HCL_B64 --env production
+#
+# Local deploy and GHA must use the same bucket/key so they share one state.
 bucket   = "YOUR_BUCKET_NAME"
 key      = "robot-shopping-suggestions/production.tfstate"
 region   = "us-ashburn-1"
