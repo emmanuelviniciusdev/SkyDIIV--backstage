@@ -192,7 +192,17 @@ they share the same OCI Object Storage state.
 
 `A container's image could not be pulled due to inadequate network configuration`
 is a single generic message covering routing **and** registry-authorization
-problems, so it routinely points at the wrong subsystem. Bisect it:
+problems, so it routinely points at the wrong subsystem.
+
+After a full destroy, create rebuilds the dynamic group + policy from scratch.
+OCI IAM is eventually consistent and does **not** retry a denied pull, so a
+fresh weekly create can lose that race. `deploy/tf-apply.sh` detects this
+message, drops the failed Container Instance from state (best-effort OCI
+delete), waits, and re-applies (default 3 attempts, 90s between retries —
+override with `OCIR_PULL_MAX_ATTEMPTS` / `OCIR_PULL_RETRY_WAIT_SECONDS`). VCN
+and IAM stay; only the CI is recreated. Weekly destroy still removes everything.
+
+If retries still fail, bisect routing vs auth:
 
 ```bash
 ./deploy/deploy-from-local.sh apply --public-image  # Docker Hub, no pull secret
@@ -241,5 +251,7 @@ That linger is best-effort: Terraform's create-wait polls roughly once a minute
 and can still miss the window. `deploy/tf-apply.sh` wraps the apply and treats
 `unexpected state: DELETED|DELETING|INACTIVE|UPDATING` as success, because those
 states are only reachable once the container has pulled, run and exited — it
-then drops the resource from state. Pull and authorization problems arrive as
-`Work Request error` instead and still fail the apply.
+then drops the resource from state. The same wrapper retries the misleading
+OCIR “inadequate network configuration” pull error (IAM propagation race) by
+recreating only the Container Instance. Persistent pull/auth failures still
+fail the apply after those retries are exhausted.
