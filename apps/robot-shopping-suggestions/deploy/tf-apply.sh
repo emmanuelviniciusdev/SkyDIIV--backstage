@@ -17,7 +17,8 @@
 # as the misleading "inadequate network configuration" work-request error (the
 # pull is not retried by the service). This wrapper drops the failed Container
 # Instance from state, waits for IAM to propagate, and re-applies so only the
-# CI is recreated — VCN/IAM stay. Weekly destroy still tears everything down.
+# CI is recreated — VCN/IAM stay. Weekly soft destroy keeps free resources;
+# hard destroy still tears everything down.
 #
 # Env (optional):
 #   OCIR_PULL_MAX_ATTEMPTS        total apply attempts (default 3)

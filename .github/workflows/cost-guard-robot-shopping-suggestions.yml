@@ -1,8 +1,8 @@
 name: Cost guard — Robot Shopping Suggestions
 
-# Enforces the monthly OCI cost ceiling by destroying the robot Terraform stack
-# (Container Instance, VCN, budget, …) when spend >= limit.
-# OCI Budgets only email; this workflow is the hard kill switch.
+# Enforces the monthly OCI cost ceiling by hard-destroying the full robot
+# stack (IAM, budget, VCN, compute) when spend >= limit. OCI Budgets only
+# email; this workflow is the hard kill switch.
 
 on:
   schedule:

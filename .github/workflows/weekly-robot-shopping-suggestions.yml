@@ -1,12 +1,13 @@
 name: Weekly — Robot Shopping Suggestions (ephemeral)
 
-# PAYG Container Instance: create Sunday 07:00 BRT, destroy Sunday 09:00 BRT.
+# PAYG Container Instance: create Sunday 07:00 BRT, soft-destroy Sunday 09:00 BRT.
 # America/Sao_Paulo = UTC-3 year-round:
-#   Create  Sun 07:00 BRT → 0 10 * * 0 UTC
-#   Destroy Sun 09:00 BRT → 0 12 * * 0 UTC
+#   Create       Sun 07:00 BRT → 0 10 * * 0 UTC
+#   Soft destroy Sun 09:00 BRT → 0 12 * * 0 UTC
 #
-# Robot drains the queue (2 at a time) and self-deletes when empty.
-# Terraform destroy has absolute authority — tears down even if messages remain.
+# Soft destroy removes billable resources only (CI + NAT); free IAM/budget/VCN
+# stay for the next create. Hard destroy (workflow_dispatch) tears down everything.
+# Soft destroy has absolute authority over compute even if queue messages remain.
 
 on:
   schedule:
@@ -15,11 +16,14 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "create = apply Container Instance; destroy = terraform destroy"
+        description: >-
+          create = apply; destroy = soft (billable only); hard-destroy = full
+          stack including free IAM/budget/VCN
         type: choice
         options:
           - create
           - destroy
+          - hard-destroy
         default: create
 
 concurrency:
@@ -33,7 +37,7 @@ jobs:
     outputs:
       action: ${{ steps.pick.outputs.action }}
     steps:
-      - name: Pick create vs destroy
+      - name: Pick create vs destroy vs hard-destroy
         id: pick
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -307,7 +311,7 @@ jobs:
         run: rm -f oci_api_key.pem backend.hcl
 
   destroy:
-    name: Destroy stack (absolute authority)
+    name: Soft destroy (billable only)
     needs: resolve
     if: needs.resolve.outputs.action == 'destroy'
     runs-on: ubuntu-latest
@@ -355,9 +359,11 @@ jobs:
             echo "No Terraform state — nothing to destroy"
           fi
 
-      - name: Terraform Destroy
+      # Soft destroy: Container Instance (+ NAT if private). Keeps free IAM /
+      # budget / VCN so the next create reuses them and skips the OCIR IAM race.
+      - name: Terraform Soft Destroy
         if: steps.tf.outputs.has_state == 'true'
-        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        working-directory: apps/robot-shopping-suggestions
         env:
           TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
           TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
@@ -370,8 +376,8 @@ jobs:
           TF_VAR_container_image_url: "placeholder.invalid/robot:destroy"
           TF_VAR_robot_env: "{}"
         run: |
-          terraform destroy -auto-approve -input=false
-          echo "Stack destroyed — Container Instance + VCN removed (absolute authority)"
+          ./deploy/tf-destroy.sh soft
+          echo "Soft destroy complete — billable resources removed (absolute authority)"
 
       - name: Install OCI SDK (image purge)
         run: pip install --quiet oci
@@ -391,10 +397,103 @@ jobs:
 
       - name: Summary
         run: |
-          echo "### Weekly destroy complete" >> "$GITHUB_STEP_SUMMARY"
-          echo "No OCI Container Instance / VCN should remain for this stack." >> "$GITHUB_STEP_SUMMARY"
+          echo "### Weekly soft destroy complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "Cost-generating resources removed (Container Instance / NAT)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Free resources kept (IAM, budget, VCN) for the next create." >> "$GITHUB_STEP_SUMMARY"
           echo "OCIR image versions purged — no registry storage billed until the next create." >> "$GITHUB_STEP_SUMMARY"
-          echo "Destroy ran with absolute authority regardless of queue depth." >> "$GITHUB_STEP_SUMMARY"
+          echo "Soft destroy ran with absolute authority regardless of queue depth." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup OCI key
+        if: always()
+        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        run: rm -f oci_api_key.pem backend.hcl
+
+  hard-destroy:
+    name: Hard destroy (full stack)
+    needs: resolve
+    if: needs.resolve.outputs.action == 'hard-destroy'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    env:
+      OCI_PRIVATE_KEY_PEM: ${{ secrets.OCI_API_PRIVATE_KEY || secrets.OCI_CLI_KEY_CONTENT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Write OCI API key
+        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        run: |
+          umask 077
+          if [ -z "$OCI_PRIVATE_KEY_PEM" ]; then
+            echo "::error::Set OCI_API_PRIVATE_KEY or OCI_CLI_KEY_CONTENT in the production environment" >&2
+            exit 1
+          fi
+          printf '%s\n' "$OCI_PRIVATE_KEY_PEM" > oci_api_key.pem
+
+      - name: Terraform Init
+        working-directory: apps/robot-shopping-suggestions
+        env:
+          TF_BACKEND_HCL: ${{ secrets.TF_BACKEND_HCL }}
+          TF_BACKEND_HCL_B64: ${{ secrets.TF_BACKEND_HCL_B64 }}
+        run: ./deploy/terraform-init.sh
+
+      - name: Check Terraform state
+        id: tf
+        working-directory: apps/robot-shopping-suggestions/deploy/terraform
+        run: |
+          HAS_STATE="false"
+          if terraform state list 2>/dev/null | grep -q .; then
+            HAS_STATE="true"
+          fi
+          echo "has_state=${HAS_STATE}" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_STATE" != "true" ]; then
+            echo "No Terraform state — nothing to destroy"
+          fi
+
+      - name: Terraform Hard Destroy
+        if: steps.tf.outputs.has_state == 'true'
+        working-directory: apps/robot-shopping-suggestions
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_environment: production
+          TF_VAR_container_image_url: "placeholder.invalid/robot:destroy"
+          TF_VAR_robot_env: "{}"
+        run: |
+          ./deploy/tf-destroy.sh hard
+          echo "Hard destroy complete — full stack removed (IAM, budget, VCN, compute)"
+
+      - name: Install OCI SDK (image purge)
+        run: pip install --quiet oci
+
+      - name: Purge OCIR image versions
+        working-directory: apps/robot-shopping-suggestions
+        env:
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+        run: python3 deploy/ocir_purge.py --keep 0
+
+      - name: Summary
+        run: |
+          echo "### Hard destroy complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "Every managed resource was removed (IAM, budget, VCN, Container Instance)." >> "$GITHUB_STEP_SUMMARY"
+          echo "OCIR image versions purged." >> "$GITHUB_STEP_SUMMARY"
+          echo "Next create will reprovision free resources from scratch." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup OCI key
         if: always()

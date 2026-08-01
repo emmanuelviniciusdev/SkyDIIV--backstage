@@ -9,8 +9,9 @@ creating the stack starts the robot, deleting it stops the robot.
 | Workflow | Trigger | Does |
 |---|---|---|
 | `weekly-…` (create) | cron `0 10 * * 0` (Sun 07:00 BRT) · `workflow_dispatch action=create` | lint/test/build → build & push OCIR image → cost gate → `terraform apply` |
-| `weekly-…` (destroy) | cron `0 12 * * 0` (Sun 09:00 BRT) · `workflow_dispatch action=destroy` | `terraform destroy` — **absolute authority** → purge OCIR image versions |
-| `cost-guard-…` | daily `0 12 * * *` · `workflow_dispatch` (`dry_run`) | `terraform destroy` when MTD spend ≥ limit |
+| `weekly-…` (destroy) | cron `0 12 * * 0` (Sun 09:00 BRT) · `workflow_dispatch action=destroy` | **soft** destroy — billable only (CI + NAT) → purge OCIR; keeps free IAM/budget/VCN |
+| `weekly-…` (hard-destroy) | `workflow_dispatch action=hard-destroy` only | **hard** destroy — full stack including free IAM/budget/VCN → purge OCIR |
+| `cost-guard-…` | daily `0 12 * * *` · `workflow_dispatch` (`dry_run`) | **hard** destroy when MTD spend ≥ limit |
 | `deploy-…` | PR / push to `main`, `staging` · `workflow_dispatch` | CI (lint, test, build); optionally pushes an OCIR image without creating infra |
 
 Files: `.github/workflows/{weekly,cost-guard,deploy}-robot-shopping-suggestions.yml`.
@@ -21,9 +22,10 @@ is UTC-3 year-round, so the CRONs never drift.
 ```
 Sun 07:00 BRT  cost gate → build+push OCIR → terraform apply → Container Instance ACTIVE
                robot drains CF Queues (2 at a time) → self-deletes the instance
-Sun 09:00 BRT  terraform destroy (Container Instance + VCN + budget), absolute
+Sun 09:00 BRT  soft destroy (CI + NAT), absolute authority over compute
+               → keeps free IAM / budget / VCN for next create
                → purge OCIR image versions (no registry storage between runs)
-Daily 12:00 UTC  cost guard → terraform destroy if MTD ≥ cost_limit_usd
+Daily 12:00 UTC  cost guard → hard destroy if MTD ≥ cost_limit_usd
 ```
 
 ## Turning the stack on and off manually
@@ -31,13 +33,16 @@ Daily 12:00 UTC  cost guard → terraform destroy if MTD ≥ cost_limit_usd
 ```bash
 # GitHub Actions
 gh workflow run weekly-robot-shopping-suggestions.yml -f action=create
-gh workflow run weekly-robot-shopping-suggestions.yml -f action=destroy
+gh workflow run weekly-robot-shopping-suggestions.yml -f action=destroy       # soft
+gh workflow run weekly-robot-shopping-suggestions.yml -f action=hard-destroy  # full
 
 # From your machine (shared Oracle Object Storage state)
 ./deploy/deploy-from-local.sh apply               # build+push image, then apply
 ./deploy/deploy-from-local.sh apply --skip-build  # terraform only
-./deploy/deploy-from-local.sh destroy             # apply/destroy with state repair
-./deploy/destroy-from-local.sh --yes              # plain terraform destroy
+./deploy/deploy-from-local.sh destroy             # soft destroy
+./deploy/deploy-from-local.sh destroy --hard      # full stack
+./deploy/destroy-from-local.sh --yes              # soft destroy
+./deploy/destroy-from-local.sh --yes --hard       # full stack
 ```
 
 Local and CI **must** share Terraform state in an OCI Object Storage bucket
@@ -115,7 +120,7 @@ Default shape: `CI.Standard.A1.Flex` — 2 OCPU / 4 GB.
 | Layer | What it does |
 |---|---|
 | **OCI Budget** (`budget.tf`) | Monthly absolute amount; emails at 80% and 100% — alerts only |
-| **Cost guard** (`oci_cost_guard.py`) | Usage API MTD ≥ limit → `terraform destroy` (daily) |
+| **Cost guard** (`oci_cost_guard.py`) | Usage API MTD ≥ limit → hard destroy (daily) |
 | **Cost gate** (`--check-only`) | Runs before every apply; exit `10` refuses to create new infra |
 
 Usage API data can lag ~24h, so the kill is eventual rather than instantaneous.
@@ -183,10 +188,21 @@ The dynamic group and OCIR pull policy are **imported into state** when they
 already exist (lost state / first remote-backend run), then reconciled so the
 matching rule always targets `compartment_ocid`. The monthly budget is still
 looked up and adopted when present — OCI allows only one budget per target
-compartment, and budgets are free. `terraform destroy` removes the managed
-group and policy; an adopted budget is left in place. Local and CI both require
-`deploy/terraform/backend.hcl` (or `TF_BACKEND_HCL` / `TF_BACKEND_HCL_B64`) so
-they share the same OCI Object Storage state.
+compartment, and budgets are free.
+
+### Soft vs hard destroy
+
+| Mode | Removes | Keeps | When |
+|---|---|---|---|
+| **soft** (default weekly / local) | Container Instance, NAT Gateway | IAM, budget, VCN/networking | Stop compute spend; next create reuses free stack |
+| **hard** (`action=hard-destroy` / `--hard` / cost guard) | Everything managed | — | Clean slate / cost ceiling / abandon stack |
+
+`deploy/tf-destroy.sh` implements both. Soft destroy avoids recreating OCIR IAM
+every Sunday (the eventual-consistency race that OCI reports as “inadequate
+network configuration”). If free resources are missing on the next create,
+Terraform still creates them (and imports orphans by name). Local and CI both
+require `deploy/terraform/backend.hcl` (or `TF_BACKEND_HCL` / `TF_BACKEND_HCL_B64`)
+so they share the same OCI Object Storage state.
 
 ### Debugging image-pull failures
 
@@ -194,13 +210,14 @@ they share the same OCI Object Storage state.
 is a single generic message covering routing **and** registry-authorization
 problems, so it routinely points at the wrong subsystem.
 
-After a full destroy, create rebuilds the dynamic group + policy from scratch.
-OCI IAM is eventually consistent and does **not** retry a denied pull, so a
-fresh weekly create can lose that race. `deploy/tf-apply.sh` detects this
-message, drops the failed Container Instance from state (best-effort OCI
-delete), waits, and re-applies (default 3 attempts, 90s between retries —
-override with `OCIR_PULL_MAX_ATTEMPTS` / `OCIR_PULL_RETRY_WAIT_SECONDS`). VCN
-and IAM stay; only the CI is recreated. Weekly destroy still removes everything.
+After a **hard** destroy, create rebuilds the dynamic group + policy from scratch.
+OCI IAM is eventually consistent and does **not** retry a denied pull, so that
+path can lose the race. Weekly **soft** destroy keeps IAM/VCN, so normal creates
+skip that race. `deploy/tf-apply.sh` still detects the pull-error message, drops
+the failed Container Instance from state (best-effort OCI delete), waits, and
+re-applies (default 3 attempts, 90s between retries — override with
+`OCIR_PULL_MAX_ATTEMPTS` / `OCIR_PULL_RETRY_WAIT_SECONDS`) for hard-destroy
+recoveries and first-time creates.
 
 If retries still fail, bisect routing vs auth:
 
@@ -236,10 +253,13 @@ It uses the same OCI credentials as the cost guard and needs `pip install oci`.
 ## Self-delete vs destroy
 
 1. Drain finishes → the robot `DELETE`s its own Container Instance (compute
-   billing stops; the VCN is free and stays).
-2. Sunday 09:00 BRT `terraform destroy` removes the VCN and any remaining state,
-   regardless of queue depth.
-3. The cost guard is the safety net if either path fails while spend ≥ limit.
+   billing stops; free VCN / IAM stay in state).
+2. Sunday 09:00 BRT **soft** destroy removes any remaining billable resources
+   (CI + NAT), regardless of queue depth. Free IAM / budget / VCN are kept.
+3. Manual **hard** destroy (`action=hard-destroy` / `--hard`) removes the full
+   stack when a clean slate is needed.
+4. The cost guard **hard**-destroys the full stack if spend ≥ limit while
+   resources remain.
 
 A Container Instance is only deletable from `ACTIVE`, and a drain over an empty
 queue finishes in about a second — well before OCI promotes it out of

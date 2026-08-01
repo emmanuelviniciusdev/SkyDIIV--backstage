@@ -2,7 +2,8 @@
 """Monthly OCI cost ceiling helper for robot-shopping-suggestions.
 
 Modes:
-  (default)  If MTD cost >= limit → terraform destroy the robot stack
+  (default)  If MTD cost >= limit → hard-destroy the full robot stack
+             (IAM, budget, VCN, compute — clean slate)
              (fallback: delete Container Instance when OCI_INSTANCE_OCID is set)
   --check-only
              Report MTD cost vs limit and exit:
@@ -134,7 +135,11 @@ def terraform_state_has_resources(tf_dir: Path) -> bool:
 
 
 def destroy_terraform_stack(tf_dir: Path, dry_run: bool) -> bool:
-    """Destroy the robot Terraform stack. Returns True if destroy was attempted."""
+    """Hard-destroy every managed robot resource. Returns True if attempted.
+
+    Cost ceiling enforcement tears down the full stack (IAM, budget, VCN,
+    compute) so nothing from this robot remains while spend is over limit.
+    """
     if not tf_dir.is_dir():
         print(f"Terraform dir not found: {tf_dir}")
         return False
@@ -145,8 +150,13 @@ def destroy_terraform_stack(tf_dir: Path, dry_run: bool) -> bool:
         print(f"No Terraform resources in state under {tf_dir}")
         return False
 
+    destroy_script = tf_dir.parent / "tf-destroy.sh"
+    if not destroy_script.is_file():
+        print(f"Missing destroy helper: {destroy_script}")
+        return False
+
     if dry_run:
-        print(f"[dry-run] Would run: terraform destroy -auto-approve -input=false (cwd={tf_dir})")
+        print(f"[dry-run] Would run: {destroy_script} hard (cwd={tf_dir.parent})")
         plan = subprocess.run(
             ["terraform", "plan", "-destroy", "-input=false", "-no-color"],
             cwd=tf_dir,
@@ -161,16 +171,16 @@ def destroy_terraform_stack(tf_dir: Path, dry_run: bool) -> bool:
             print(plan.stderr[-2000:], file=sys.stderr)
         return True
 
-    print(f"Destroying robot Terraform stack in {tf_dir} …")
+    print(f"Hard-destroying full robot stack via {destroy_script} …")
     result = subprocess.run(
-        ["terraform", "destroy", "-auto-approve", "-input=false", "-no-color"],
-        cwd=tf_dir,
+        [str(destroy_script), "hard"],
+        cwd=tf_dir.parent,
         check=False,
         timeout=1800,
     )
     if result.returncode != 0:
-        raise SystemExit(f"terraform destroy failed with exit code {result.returncode}")
-    print("Terraform destroy completed — robot infrastructure removed")
+        raise SystemExit(f"terraform hard destroy failed with exit code {result.returncode}")
+    print("Hard destroy completed — full robot stack removed")
     return True
 
 

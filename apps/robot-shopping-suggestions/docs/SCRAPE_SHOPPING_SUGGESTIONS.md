@@ -130,7 +130,7 @@ Nothing is retried: every message is ACKed, and failures are recorded instead.
 | Unknown marketplace or scrape error | `ERROR` rows + metadata; ACKed |
 | Web Redis unavailable | Warning; persistence still proceeds |
 | CF Queues pull/ack HTTP error | Logged; drain aborts, self-delete still attempted |
-| Self-delete failure | Logged; the Sunday `terraform destroy` is the fallback |
+| Self-delete failure | Logged; Sunday soft destroy (and cost-guard hard destroy) are the fallback |
 
 ## Extending
 

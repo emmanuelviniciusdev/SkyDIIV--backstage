@@ -19,7 +19,8 @@
     "Sunday 07:00 BRT = 10:00 UTC; Sunday 09:00 BRT = 12:00 UTC.",
     "Stack is an OCI Container Instance (OCIR image) — no boot volume.",
     "Robot drains Cloudflare Queues 2-at-a-time until empty, then self-deletes.",
-    "Terraform destroy at 09:00 BRT has absolute authority even if messages remain.",
+    "Sunday 09:00 BRT soft-destroys billable resources (CI + NAT) even if messages remain.",
+    "Free IAM / budget / VCN survive soft destroy; hard-destroy tears everything down.",
     "Local and GHA must share OCI Object Storage Terraform state (TF_BACKEND_HCL_B64)."
   ]
 }

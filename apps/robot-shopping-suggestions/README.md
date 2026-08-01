@@ -41,10 +41,11 @@ readiness gate or idle state.
 
 | Path | Trigger | Scope |
 |---|---|---|
-| **Self-delete** (normal) | A pull returns empty → drain complete | Deletes the Container Instance; compute billing stops. VCN stays (free). |
-| **Weekly destroy** (absolute) | GHA cron `0 12 * * 0` (Sun 09:00 BRT), or `workflow_dispatch action=destroy` | `terraform destroy` — Container Instance + VCN + budget, **even if messages remain** |
-| **From your machine** | `./deploy/deploy-from-local.sh destroy` | Same destroy, local state |
-| **Cost guard** (safety net) | Daily 12:00 UTC, MTD spend ≥ `$5` | `terraform destroy`, and refuses the next apply |
+| **Self-delete** (normal) | A pull returns empty → drain complete | Deletes the Container Instance; compute billing stops. Free VCN/IAM stay. |
+| **Weekly destroy** (soft) | GHA cron `0 12 * * 0` (Sun 09:00 BRT), or `workflow_dispatch action=destroy` | Soft destroy — CI + NAT only; keeps free IAM/budget/VCN, **even if messages remain** |
+| **Hard destroy** | `workflow_dispatch action=hard-destroy` only | Full stack teardown including free IAM/budget/VCN |
+| **From your machine** | `./deploy/deploy-from-local.sh destroy` · `--hard` for full | Soft by default; `--hard` matches hard-destroy |
+| **Cost guard** (safety net) | Daily 12:00 UTC, MTD spend ≥ `$5` | Hard destroy full stack, and refuses the next apply |
 | **Local process** | `Ctrl-C` / `docker compose down` | `SIGINT`/`SIGTERM` finish in-flight messages, then exit |
 
 Self-delete only works from `ACTIVE`, and a drain over a short queue finishes
@@ -75,7 +76,7 @@ flowchart LR
   CI --> Router[EventRouter]
   Router --> UC[Use cases / scrapers]
   CI -->|queue empty| SelfDel[Self-delete CI]
-  GHA2[GHA Sun 09:00] -->|terraform destroy absolute| Stack[CI + VCN]
+  GHA2[GHA Sun 09:00] -->|soft destroy billable| Stack[CI + NAT]
 ```
 
 ## Tech stack
@@ -89,7 +90,7 @@ flowchart LR
 | Validation | Zod (per event) |
 | Tests | Vitest |
 | Infra | Terraform (ephemeral OCI Container Instance + VCN) + OCIR |
-| Deploy | Weekly GHA create (Sun 07:00 BRT) / destroy (Sun 09:00 BRT) |
+| Deploy | Weekly GHA create (Sun 07:00 BRT) / soft destroy (Sun 09:00 BRT) |
 
 ## Getting started (local)
 

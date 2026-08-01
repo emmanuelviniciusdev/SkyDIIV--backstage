@@ -11,7 +11,8 @@
 #   ./deploy/deploy-from-local.sh apply --skip-build    # terraform only
 #   ./deploy/deploy-from-local.sh apply --smoke-test    # tiny busybox in OCIR (isolates image size)
 #   ./deploy/deploy-from-local.sh apply --public-image  # Docker Hub busybox, no pull secret (isolates OCIR auth)
-#   ./deploy/deploy-from-local.sh destroy
+#   ./deploy/deploy-from-local.sh destroy               # soft: billable resources only
+#   ./deploy/deploy-from-local.sh destroy --hard        # full stack (IAM/budget/VCN too)
 #
 # Network mode is a Terraform variable; override per run without editing files:
 #   TF_VAR_network_mode=private ./deploy/deploy-from-local.sh apply --public-image
@@ -22,6 +23,7 @@ TF_DIR="${ROOT}/deploy/terraform"
 ACTION="${1:-}"
 SKIP_BUILD=false
 IMAGE_MODE=robot
+DESTROY_MODE=soft
 
 shift || true
 while [[ $# -gt 0 ]]; do
@@ -29,12 +31,14 @@ while [[ $# -gt 0 ]]; do
     --skip-build) SKIP_BUILD=true; shift ;;
     --smoke-test) IMAGE_MODE=smoke; shift ;;
     --public-image) IMAGE_MODE=public; shift ;;
+    --hard) DESTROY_MODE=hard; shift ;;
+    --soft) DESTROY_MODE=soft; shift ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
 
 if [[ -z "${ACTION}" ]]; then
-  echo "Usage: $0 <apply|destroy> [--skip-build] [--smoke-test|--public-image]" >&2
+  echo "Usage: $0 <apply|destroy> [--skip-build] [--smoke-test|--public-image] [--hard]" >&2
   exit 1
 fi
 
@@ -258,21 +262,7 @@ case "${ACTION}" in
     ;;
   destroy)
     "${ROOT}/deploy/terraform-init.sh"
-    cd "${TF_DIR}"
-    # Sync state first: a Container Instance that failed to create is recorded as
-    # CREATING locally, and only a refresh reveals the FAILED state that makes
-    # the OCI delete work request fail.
-    terraform apply -refresh-only -auto-approve -input=false >/dev/null 2>&1 || true
-    drop_unusable_container_instance
-    set +e
-    terraform destroy -auto-approve -input=false
-    code=$?
-    set -e
-    if [[ "${code}" -ne 0 ]]; then
-      echo "==> Destroy failed — dropping Container Instance from state and retrying" >&2
-      terraform state rm "${CI_ADDRESS}" >/dev/null 2>&1 || true
-      terraform destroy -auto-approve -input=false
-    fi
+    "${ROOT}/deploy/tf-destroy.sh" "${DESTROY_MODE}"
     ;;
   *)
     echo "Unknown action: ${ACTION}" >&2
