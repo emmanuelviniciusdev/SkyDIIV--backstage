@@ -48,7 +48,6 @@ jobs:
 
       - name: Test
         run: npm run test
-
   # ── Deploy: Staging ──────────────────────────────────────────────────────────
   deploy-staging:
     name: Deploy → Staging
@@ -78,12 +77,9 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          QSTASH_URL: ${{ secrets.QSTASH_URL }}
           QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
           QSTASH_CURRENT_SIGNING_KEY: ${{ secrets.QSTASH_CURRENT_SIGNING_KEY }}
           QSTASH_NEXT_SIGNING_KEY: ${{ secrets.QSTASH_NEXT_SIGNING_KEY }}
-          WORKER_AI_WORKFLOWS_URL: ${{ secrets.WORKER_AI_WORKFLOWS_URL }}
-          WORKER_OUTBOX_EVENTS_URL: ${{ secrets.WORKER_OUTBOX_EVENTS_URL }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
           NEON_BRANCH_ID: ${{ secrets.NEON_BRANCH_ID }}
@@ -92,21 +88,7 @@ jobs:
           REDIS_URL: ${{ secrets.REDIS_URL }}
         run: |
           node -e '
-            const keys = [
-              "DATABASE_URL",
-              "QSTASH_URL",
-              "QSTASH_TOKEN",
-              "QSTASH_CURRENT_SIGNING_KEY",
-              "QSTASH_NEXT_SIGNING_KEY",
-              "WORKER_AI_WORKFLOWS_URL",
-              "WORKER_OUTBOX_EVENTS_URL",
-              "NEON_API_KEY",
-              "NEON_PROJECT_ID",
-              "NEON_BRANCH_ID",
-              "UPSTASH_REDIS_REST_URL",
-              "UPSTASH_REDIS_REST_TOKEN",
-              "REDIS_URL",
-            ];
+            const keys = ["DATABASE_URL", "QSTASH_TOKEN", "QSTASH_CURRENT_SIGNING_KEY", "QSTASH_NEXT_SIGNING_KEY", "NEON_API_KEY", "NEON_PROJECT_ID", "NEON_BRANCH_ID", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "REDIS_URL"];
             const out = Object.fromEntries(
               keys
                 .map((k) => [k, process.env[k]])
@@ -118,11 +100,14 @@ jobs:
       - name: Sync Worker vars
         env:
           TOML_SECTION: '[env.staging.vars]'
+          QSTASH_URL: ${{ vars.QSTASH_URL }}
+          WORKER_AI_WORKFLOWS_URL: ${{ vars.WORKER_AI_WORKFLOWS_URL }}
+          WORKER_OUTBOX_EVENTS_URL: ${{ vars.WORKER_OUTBOX_EVENTS_URL }}
           OUTBOX_CATCHUP_MIN_AGE_MINUTES: ${{ vars.OUTBOX_CATCHUP_MIN_AGE_MINUTES }}
         run: |
           node -e '
             const fs = require("fs");
-            const keys = ["OUTBOX_CATCHUP_MIN_AGE_MINUTES"];
+            const keys = ["QSTASH_URL", "WORKER_AI_WORKFLOWS_URL", "WORKER_OUTBOX_EVENTS_URL", "OUTBOX_CATCHUP_MIN_AGE_MINUTES"];
             const entries = keys
               .map((k) => [k, process.env[k]])
               .filter(([, v]) => typeof v === "string" && v.length > 0);
@@ -176,12 +161,9 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          QSTASH_URL: ${{ secrets.QSTASH_URL }}
           QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
           QSTASH_CURRENT_SIGNING_KEY: ${{ secrets.QSTASH_CURRENT_SIGNING_KEY }}
           QSTASH_NEXT_SIGNING_KEY: ${{ secrets.QSTASH_NEXT_SIGNING_KEY }}
-          WORKER_AI_WORKFLOWS_URL: ${{ secrets.WORKER_AI_WORKFLOWS_URL }}
-          WORKER_OUTBOX_EVENTS_URL: ${{ secrets.WORKER_OUTBOX_EVENTS_URL }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
           NEON_BRANCH_ID: ${{ secrets.NEON_BRANCH_ID }}
@@ -190,21 +172,7 @@ jobs:
           REDIS_URL: ${{ secrets.REDIS_URL }}
         run: |
           node -e '
-            const keys = [
-              "DATABASE_URL",
-              "QSTASH_URL",
-              "QSTASH_TOKEN",
-              "QSTASH_CURRENT_SIGNING_KEY",
-              "QSTASH_NEXT_SIGNING_KEY",
-              "WORKER_AI_WORKFLOWS_URL",
-              "WORKER_OUTBOX_EVENTS_URL",
-              "NEON_API_KEY",
-              "NEON_PROJECT_ID",
-              "NEON_BRANCH_ID",
-              "UPSTASH_REDIS_REST_URL",
-              "UPSTASH_REDIS_REST_TOKEN",
-              "REDIS_URL",
-            ];
+            const keys = ["DATABASE_URL", "QSTASH_TOKEN", "QSTASH_CURRENT_SIGNING_KEY", "QSTASH_NEXT_SIGNING_KEY", "NEON_API_KEY", "NEON_PROJECT_ID", "NEON_BRANCH_ID", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "REDIS_URL"];
             const out = Object.fromEntries(
               keys
                 .map((k) => [k, process.env[k]])
@@ -216,11 +184,14 @@ jobs:
       - name: Sync Worker vars
         env:
           TOML_SECTION: '[vars]'
+          QSTASH_URL: ${{ vars.QSTASH_URL }}
+          WORKER_AI_WORKFLOWS_URL: ${{ vars.WORKER_AI_WORKFLOWS_URL }}
+          WORKER_OUTBOX_EVENTS_URL: ${{ vars.WORKER_OUTBOX_EVENTS_URL }}
           OUTBOX_CATCHUP_MIN_AGE_MINUTES: ${{ vars.OUTBOX_CATCHUP_MIN_AGE_MINUTES }}
         run: |
           node -e '
             const fs = require("fs");
-            const keys = ["OUTBOX_CATCHUP_MIN_AGE_MINUTES"];
+            const keys = ["QSTASH_URL", "WORKER_AI_WORKFLOWS_URL", "WORKER_OUTBOX_EVENTS_URL", "OUTBOX_CATCHUP_MIN_AGE_MINUTES"];
             const entries = keys
               .map((k) => [k, process.env[k]])
               .filter(([, v]) => typeof v === "string" && v.length > 0);

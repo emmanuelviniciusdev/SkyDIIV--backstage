@@ -48,7 +48,6 @@ jobs:
 
       - name: Test
         run: npm run test
-
   # ── Deploy: Staging ──────────────────────────────────────────────────────────
   deploy-staging:
     name: Deploy → Staging
@@ -79,24 +78,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
-          QSTASH_URL: ${{ secrets.QSTASH_URL }}
           QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
           QSTASH_CURRENT_SIGNING_KEY: ${{ secrets.QSTASH_CURRENT_SIGNING_KEY }}
           QSTASH_NEXT_SIGNING_KEY: ${{ secrets.QSTASH_NEXT_SIGNING_KEY }}
-          WORKER_NOTIFICATION_URL: ${{ secrets.WORKER_NOTIFICATION_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           node -e '
-            const keys = [
-              "DATABASE_URL",
-              "DATABASE_URL_UNPOOLED",
-              "QSTASH_URL",
-              "QSTASH_TOKEN",
-              "QSTASH_CURRENT_SIGNING_KEY",
-              "QSTASH_NEXT_SIGNING_KEY",
-              "WORKER_NOTIFICATION_URL",
-              "RESEND_API_KEY",
-            ];
+            const keys = ["DATABASE_URL", "DATABASE_URL_UNPOOLED", "QSTASH_TOKEN", "QSTASH_CURRENT_SIGNING_KEY", "QSTASH_NEXT_SIGNING_KEY", "RESEND_API_KEY"];
             const out = Object.fromEntries(
               keys
                 .map((k) => [k, process.env[k]])
@@ -108,6 +96,8 @@ jobs:
       - name: Sync Worker vars
         env:
           TOML_SECTION: '[env.staging.vars]'
+          QSTASH_URL: ${{ vars.QSTASH_URL }}
+          WORKER_NOTIFICATION_URL: ${{ vars.WORKER_NOTIFICATION_URL }}
           EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER }}
           EMAIL_FROM: ${{ vars.EMAIL_FROM }}
           EMAIL_REPLY_TO: ${{ vars.EMAIL_REPLY_TO }}
@@ -115,7 +105,7 @@ jobs:
         run: |
           node -e '
             const fs = require("fs");
-            const keys = ["EMAIL_PROVIDER", "EMAIL_FROM", "EMAIL_REPLY_TO", "APP_URL"];
+            const keys = ["QSTASH_URL", "WORKER_NOTIFICATION_URL", "EMAIL_PROVIDER", "EMAIL_FROM", "EMAIL_REPLY_TO", "APP_URL"];
             const entries = keys
               .map((k) => [k, process.env[k]])
               .filter(([, v]) => typeof v === "string" && v.length > 0);
@@ -170,24 +160,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
-          QSTASH_URL: ${{ secrets.QSTASH_URL }}
           QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
           QSTASH_CURRENT_SIGNING_KEY: ${{ secrets.QSTASH_CURRENT_SIGNING_KEY }}
           QSTASH_NEXT_SIGNING_KEY: ${{ secrets.QSTASH_NEXT_SIGNING_KEY }}
-          WORKER_NOTIFICATION_URL: ${{ secrets.WORKER_NOTIFICATION_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           node -e '
-            const keys = [
-              "DATABASE_URL",
-              "DATABASE_URL_UNPOOLED",
-              "QSTASH_URL",
-              "QSTASH_TOKEN",
-              "QSTASH_CURRENT_SIGNING_KEY",
-              "QSTASH_NEXT_SIGNING_KEY",
-              "WORKER_NOTIFICATION_URL",
-              "RESEND_API_KEY",
-            ];
+            const keys = ["DATABASE_URL", "DATABASE_URL_UNPOOLED", "QSTASH_TOKEN", "QSTASH_CURRENT_SIGNING_KEY", "QSTASH_NEXT_SIGNING_KEY", "RESEND_API_KEY"];
             const out = Object.fromEntries(
               keys
                 .map((k) => [k, process.env[k]])
@@ -199,6 +178,8 @@ jobs:
       - name: Sync Worker vars
         env:
           TOML_SECTION: '[vars]'
+          QSTASH_URL: ${{ vars.QSTASH_URL }}
+          WORKER_NOTIFICATION_URL: ${{ vars.WORKER_NOTIFICATION_URL }}
           EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER }}
           EMAIL_FROM: ${{ vars.EMAIL_FROM }}
           EMAIL_REPLY_TO: ${{ vars.EMAIL_REPLY_TO }}
@@ -206,7 +187,7 @@ jobs:
         run: |
           node -e '
             const fs = require("fs");
-            const keys = ["EMAIL_PROVIDER", "EMAIL_FROM", "EMAIL_REPLY_TO", "APP_URL"];
+            const keys = ["QSTASH_URL", "WORKER_NOTIFICATION_URL", "EMAIL_PROVIDER", "EMAIL_FROM", "EMAIL_REPLY_TO", "APP_URL"];
             const entries = keys
               .map((k) => [k, process.env[k]])
               .filter(([, v]) => typeof v === "string" && v.length > 0);

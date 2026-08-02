@@ -48,7 +48,6 @@ jobs:
 
       - name: Test
         run: npm run test
-
   # ── Deploy: Staging ──────────────────────────────────────────────────────────
   deploy-staging:
     name: Deploy → Staging
@@ -79,32 +78,16 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
-          QSTASH_URL: ${{ secrets.QSTASH_URL }}
           QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
           QSTASH_CURRENT_SIGNING_KEY: ${{ secrets.QSTASH_CURRENT_SIGNING_KEY }}
           QSTASH_NEXT_SIGNING_KEY: ${{ secrets.QSTASH_NEXT_SIGNING_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          WORKER_AI_WORKFLOWS_URL: ${{ secrets.WORKER_AI_WORKFLOWS_URL }}
-          WORKER_OUTBOX_EVENTS_URL: ${{ secrets.WORKER_OUTBOX_EVENTS_URL }}
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           REDIS_URL: ${{ secrets.REDIS_URL }}
         run: |
           node -e '
-            const keys = [
-              "DATABASE_URL",
-              "DATABASE_URL_UNPOOLED",
-              "QSTASH_URL",
-              "QSTASH_TOKEN",
-              "QSTASH_CURRENT_SIGNING_KEY",
-              "QSTASH_NEXT_SIGNING_KEY",
-              "GEMINI_API_KEY",
-              "WORKER_AI_WORKFLOWS_URL",
-              "WORKER_OUTBOX_EVENTS_URL",
-              "UPSTASH_REDIS_REST_URL",
-              "UPSTASH_REDIS_REST_TOKEN",
-              "REDIS_URL",
-            ];
+            const keys = ["DATABASE_URL", "DATABASE_URL_UNPOOLED", "QSTASH_TOKEN", "QSTASH_CURRENT_SIGNING_KEY", "QSTASH_NEXT_SIGNING_KEY", "GEMINI_API_KEY", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "REDIS_URL"];
             const out = Object.fromEntries(
               keys
                 .map((k) => [k, process.env[k]])
@@ -112,6 +95,34 @@ jobs:
             );
             process.stdout.write(JSON.stringify(out));
           ' | npx wrangler secret bulk --env staging
+
+      - name: Sync Worker vars
+        env:
+          TOML_SECTION: '[env.staging.vars]'
+          QSTASH_URL: ${{ vars.QSTASH_URL }}
+          WORKER_AI_WORKFLOWS_URL: ${{ vars.WORKER_AI_WORKFLOWS_URL }}
+          WORKER_OUTBOX_EVENTS_URL: ${{ vars.WORKER_OUTBOX_EVENTS_URL }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const keys = ["QSTASH_URL", "WORKER_AI_WORKFLOWS_URL", "WORKER_OUTBOX_EVENTS_URL"];
+            const entries = keys
+              .map((k) => [k, process.env[k]])
+              .filter(([, v]) => typeof v === "string" && v.length > 0);
+            if (!entries.length) process.exit(0);
+            const lines = entries.map(([k, v]) => k + " = " + JSON.stringify(String(v))).join("\n");
+            const header = process.env.TOML_SECTION;
+            let toml = fs.readFileSync("wrangler.toml", "utf8");
+            const rows = toml.split("\n");
+            const idx = rows.findIndex((l) => l.trim() === header);
+            if (idx >= 0) {
+              rows.splice(idx + 1, 0, lines);
+              toml = rows.join("\n");
+            } else {
+              toml = toml.trimEnd() + "\n\n" + header + "\n" + lines + "\n";
+            }
+            fs.writeFileSync("wrangler.toml", toml);
+          '
 
       - name: Deploy to Staging
         run: npm run deploy -- --env staging
@@ -149,32 +160,16 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
-          QSTASH_URL: ${{ secrets.QSTASH_URL }}
           QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
           QSTASH_CURRENT_SIGNING_KEY: ${{ secrets.QSTASH_CURRENT_SIGNING_KEY }}
           QSTASH_NEXT_SIGNING_KEY: ${{ secrets.QSTASH_NEXT_SIGNING_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          WORKER_AI_WORKFLOWS_URL: ${{ secrets.WORKER_AI_WORKFLOWS_URL }}
-          WORKER_OUTBOX_EVENTS_URL: ${{ secrets.WORKER_OUTBOX_EVENTS_URL }}
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           REDIS_URL: ${{ secrets.REDIS_URL }}
         run: |
           node -e '
-            const keys = [
-              "DATABASE_URL",
-              "DATABASE_URL_UNPOOLED",
-              "QSTASH_URL",
-              "QSTASH_TOKEN",
-              "QSTASH_CURRENT_SIGNING_KEY",
-              "QSTASH_NEXT_SIGNING_KEY",
-              "GEMINI_API_KEY",
-              "WORKER_AI_WORKFLOWS_URL",
-              "WORKER_OUTBOX_EVENTS_URL",
-              "UPSTASH_REDIS_REST_URL",
-              "UPSTASH_REDIS_REST_TOKEN",
-              "REDIS_URL",
-            ];
+            const keys = ["DATABASE_URL", "DATABASE_URL_UNPOOLED", "QSTASH_TOKEN", "QSTASH_CURRENT_SIGNING_KEY", "QSTASH_NEXT_SIGNING_KEY", "GEMINI_API_KEY", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "REDIS_URL"];
             const out = Object.fromEntries(
               keys
                 .map((k) => [k, process.env[k]])
@@ -182,6 +177,34 @@ jobs:
             );
             process.stdout.write(JSON.stringify(out));
           ' | npx wrangler secret bulk
+
+      - name: Sync Worker vars
+        env:
+          TOML_SECTION: '[vars]'
+          QSTASH_URL: ${{ vars.QSTASH_URL }}
+          WORKER_AI_WORKFLOWS_URL: ${{ vars.WORKER_AI_WORKFLOWS_URL }}
+          WORKER_OUTBOX_EVENTS_URL: ${{ vars.WORKER_OUTBOX_EVENTS_URL }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const keys = ["QSTASH_URL", "WORKER_AI_WORKFLOWS_URL", "WORKER_OUTBOX_EVENTS_URL"];
+            const entries = keys
+              .map((k) => [k, process.env[k]])
+              .filter(([, v]) => typeof v === "string" && v.length > 0);
+            if (!entries.length) process.exit(0);
+            const lines = entries.map(([k, v]) => k + " = " + JSON.stringify(String(v))).join("\n");
+            const header = process.env.TOML_SECTION;
+            let toml = fs.readFileSync("wrangler.toml", "utf8");
+            const rows = toml.split("\n");
+            const idx = rows.findIndex((l) => l.trim() === header);
+            if (idx >= 0) {
+              rows.splice(idx + 1, 0, lines);
+              toml = rows.join("\n");
+            } else {
+              toml = toml.trimEnd() + "\n\n" + header + "\n" + lines + "\n";
+            }
+            fs.writeFileSync("wrangler.toml", toml);
+          '
 
       - name: Deploy to Production
         run: npm run deploy
