@@ -74,54 +74,72 @@ jobs:
         run: npm ci
 
       - name: Sync Worker secrets
-        run: |
-          printf '%s' '${{ toJSON(secrets) }}' \
-            | node -e "
-                const raw = require('fs').readFileSync('/dev/stdin','utf8');
-                const all = JSON.parse(raw);
-                const skip = new Set([
-                  'CLOUDFLARE_API_TOKEN',
-                  'CLOUDFLARE_ACCOUNT_ID',
-                  'CLOUDFLARE_SUBDOMAIN',
-                  'github_token',
-                ]);
-                const out = Object.fromEntries(Object.entries(all).filter(([k]) => !skip.has(k)));
-                process.stdout.write(JSON.stringify(out));
-              " \
-            | npx wrangler secret bulk --env staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          QSTASH_URL: ${{ secrets.QSTASH_URL }}
+          QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
+          QSTASH_CURRENT_SIGNING_KEY: ${{ secrets.QSTASH_CURRENT_SIGNING_KEY }}
+          QSTASH_NEXT_SIGNING_KEY: ${{ secrets.QSTASH_NEXT_SIGNING_KEY }}
+          WORKER_AI_WORKFLOWS_URL: ${{ secrets.WORKER_AI_WORKFLOWS_URL }}
+          WORKER_OUTBOX_EVENTS_URL: ${{ secrets.WORKER_OUTBOX_EVENTS_URL }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          NEON_BRANCH_ID: ${{ secrets.NEON_BRANCH_ID }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+        run: |
+          node -e '
+            const keys = [
+              "DATABASE_URL",
+              "QSTASH_URL",
+              "QSTASH_TOKEN",
+              "QSTASH_CURRENT_SIGNING_KEY",
+              "QSTASH_NEXT_SIGNING_KEY",
+              "WORKER_AI_WORKFLOWS_URL",
+              "WORKER_OUTBOX_EVENTS_URL",
+              "NEON_API_KEY",
+              "NEON_PROJECT_ID",
+              "NEON_BRANCH_ID",
+              "UPSTASH_REDIS_REST_URL",
+              "UPSTASH_REDIS_REST_TOKEN",
+              "REDIS_URL",
+            ];
+            const out = Object.fromEntries(
+              keys
+                .map((k) => [k, process.env[k]])
+                .filter(([, v]) => typeof v === "string" && v.length > 0)
+            );
+            process.stdout.write(JSON.stringify(out));
+          ' | npx wrangler secret bulk --env staging
 
       - name: Sync Worker vars
         env:
-          ALL_VARS: ${{ toJSON(vars) }}
           TOML_SECTION: '[env.staging.vars]'
+          OUTBOX_CATCHUP_MIN_AGE_MINUTES: ${{ vars.OUTBOX_CATCHUP_MIN_AGE_MINUTES }}
         run: |
-          node -e "
-            const fs = require('fs');
-            const all = JSON.parse(process.env.ALL_VARS);
-            const skip = new Set([
-              'CLOUDFLARE_API_TOKEN',
-              'CLOUDFLARE_ACCOUNT_ID',
-              'CLOUDFLARE_SUBDOMAIN',
-              'github_token',
-            ]);
-            const entries = Object.entries(all).filter(([k]) => !skip.has(k));
+          node -e '
+            const fs = require("fs");
+            const keys = ["OUTBOX_CATCHUP_MIN_AGE_MINUTES"];
+            const entries = keys
+              .map((k) => [k, process.env[k]])
+              .filter(([, v]) => typeof v === "string" && v.length > 0);
             if (!entries.length) process.exit(0);
-            const lines = entries.map(([k,v]) => k + ' = ' + JSON.stringify(String(v))).join('\n');
+            const lines = entries.map(([k, v]) => k + " = " + JSON.stringify(String(v))).join("\n");
             const header = process.env.TOML_SECTION;
-            let toml = fs.readFileSync('wrangler.toml', 'utf8');
-            const rows = toml.split('\n');
-            const idx = rows.findIndex(l => l.trim() === header);
+            let toml = fs.readFileSync("wrangler.toml", "utf8");
+            const rows = toml.split("\n");
+            const idx = rows.findIndex((l) => l.trim() === header);
             if (idx >= 0) {
               rows.splice(idx + 1, 0, lines);
-              toml = rows.join('\n');
+              toml = rows.join("\n");
             } else {
-              toml = toml.trimEnd() + '\n\n' + header + '\n' + lines + '\n';
+              toml = toml.trimEnd() + "\n\n" + header + "\n" + lines + "\n";
             }
-            fs.writeFileSync('wrangler.toml', toml);
-          "
+            fs.writeFileSync("wrangler.toml", toml);
+          '
 
       - name: Deploy to Staging
         run: npm run deploy -- --env staging
@@ -154,54 +172,72 @@ jobs:
         run: npm ci
 
       - name: Sync Worker secrets
-        run: |
-          printf '%s' '${{ toJSON(secrets) }}' \
-            | node -e "
-                const raw = require('fs').readFileSync('/dev/stdin','utf8');
-                const all = JSON.parse(raw);
-                const skip = new Set([
-                  'CLOUDFLARE_API_TOKEN',
-                  'CLOUDFLARE_ACCOUNT_ID',
-                  'CLOUDFLARE_SUBDOMAIN',
-                  'github_token',
-                ]);
-                const out = Object.fromEntries(Object.entries(all).filter(([k]) => !skip.has(k)));
-                process.stdout.write(JSON.stringify(out));
-              " \
-            | npx wrangler secret bulk
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          QSTASH_URL: ${{ secrets.QSTASH_URL }}
+          QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
+          QSTASH_CURRENT_SIGNING_KEY: ${{ secrets.QSTASH_CURRENT_SIGNING_KEY }}
+          QSTASH_NEXT_SIGNING_KEY: ${{ secrets.QSTASH_NEXT_SIGNING_KEY }}
+          WORKER_AI_WORKFLOWS_URL: ${{ secrets.WORKER_AI_WORKFLOWS_URL }}
+          WORKER_OUTBOX_EVENTS_URL: ${{ secrets.WORKER_OUTBOX_EVENTS_URL }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          NEON_BRANCH_ID: ${{ secrets.NEON_BRANCH_ID }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+        run: |
+          node -e '
+            const keys = [
+              "DATABASE_URL",
+              "QSTASH_URL",
+              "QSTASH_TOKEN",
+              "QSTASH_CURRENT_SIGNING_KEY",
+              "QSTASH_NEXT_SIGNING_KEY",
+              "WORKER_AI_WORKFLOWS_URL",
+              "WORKER_OUTBOX_EVENTS_URL",
+              "NEON_API_KEY",
+              "NEON_PROJECT_ID",
+              "NEON_BRANCH_ID",
+              "UPSTASH_REDIS_REST_URL",
+              "UPSTASH_REDIS_REST_TOKEN",
+              "REDIS_URL",
+            ];
+            const out = Object.fromEntries(
+              keys
+                .map((k) => [k, process.env[k]])
+                .filter(([, v]) => typeof v === "string" && v.length > 0)
+            );
+            process.stdout.write(JSON.stringify(out));
+          ' | npx wrangler secret bulk
 
       - name: Sync Worker vars
         env:
-          ALL_VARS: ${{ toJSON(vars) }}
           TOML_SECTION: '[vars]'
+          OUTBOX_CATCHUP_MIN_AGE_MINUTES: ${{ vars.OUTBOX_CATCHUP_MIN_AGE_MINUTES }}
         run: |
-          node -e "
-            const fs = require('fs');
-            const all = JSON.parse(process.env.ALL_VARS);
-            const skip = new Set([
-              'CLOUDFLARE_API_TOKEN',
-              'CLOUDFLARE_ACCOUNT_ID',
-              'CLOUDFLARE_SUBDOMAIN',
-              'github_token',
-            ]);
-            const entries = Object.entries(all).filter(([k]) => !skip.has(k));
+          node -e '
+            const fs = require("fs");
+            const keys = ["OUTBOX_CATCHUP_MIN_AGE_MINUTES"];
+            const entries = keys
+              .map((k) => [k, process.env[k]])
+              .filter(([, v]) => typeof v === "string" && v.length > 0);
             if (!entries.length) process.exit(0);
-            const lines = entries.map(([k,v]) => k + ' = ' + JSON.stringify(String(v))).join('\n');
+            const lines = entries.map(([k, v]) => k + " = " + JSON.stringify(String(v))).join("\n");
             const header = process.env.TOML_SECTION;
-            let toml = fs.readFileSync('wrangler.toml', 'utf8');
-            const rows = toml.split('\n');
-            const idx = rows.findIndex(l => l.trim() === header);
+            let toml = fs.readFileSync("wrangler.toml", "utf8");
+            const rows = toml.split("\n");
+            const idx = rows.findIndex((l) => l.trim() === header);
             if (idx >= 0) {
               rows.splice(idx + 1, 0, lines);
-              toml = rows.join('\n');
+              toml = rows.join("\n");
             } else {
-              toml = toml.trimEnd() + '\n\n' + header + '\n' + lines + '\n';
+              toml = toml.trimEnd() + "\n\n" + header + "\n" + lines + "\n";
             }
-            fs.writeFileSync('wrangler.toml', toml);
-          "
+            fs.writeFileSync("wrangler.toml", toml);
+          '
 
       - name: Deploy to Production
         run: npm run deploy
