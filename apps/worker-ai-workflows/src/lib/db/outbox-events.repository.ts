@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto"
 import type postgres from "postgres"
 
 /** Catalog id for scrape-shopping-suggestions + CF Queues (mirrors web EVENTS). */
@@ -31,8 +32,12 @@ export class SqlOutboxEventsRepository implements OutboxEventsRepository {
   async insertScrapeShoppingSuggestions(
     payload: ScrapeShoppingSuggestionsOutboxPayload,
   ): Promise<string> {
-    const rows = await this.db<{ id: string }[]>`
+    // Prisma @default(uuid()) is app-side only — raw SQL must supply id.
+    const id = randomUUID()
+
+    await this.db`
       INSERT INTO outbox_events (
+        id,
         event_id,
         payload,
         status,
@@ -41,6 +46,7 @@ export class SqlOutboxEventsRepository implements OutboxEventsRepository {
         created_at,
         updated_at
       ) VALUES (
+        ${id},
         ${SCRAPE_SHOPPING_SUGGESTIONS_EVENT_ID},
         ${this.db.json(payload)},
         ${"PENDING"},
@@ -49,11 +55,8 @@ export class SqlOutboxEventsRepository implements OutboxEventsRepository {
         NOW(),
         NOW()
       )
-      RETURNING id
     `
 
-    const id = rows[0]?.id
-    if (!id) throw new Error("Failed to insert outbox_events row")
     return id
   }
 }
