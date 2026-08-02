@@ -6,13 +6,14 @@ This document describes the **generate-wardrobe-panorama** workflow end to end: 
 
 ## Overview
 
-The **generate-wardrobe-panorama** workflow produces a personalized **markdown panorama** of a user's wardrobe — an editorial-style analysis covering balance, style, and shopping suggestions. Given a `userId`, it:
+The **generate-wardrobe-panorama** workflow produces a personalized **markdown panorama** of a user's wardrobe — an editorial-style analysis covering balance, style, and shopping suggestions — and enqueues marketplace scrape search terms via the transactional outbox. Given a `userId`, it:
 
 1. Verifies the web app has marked the wardrobe as needing a refresh
-2. Loads the user's profile, preferences, and wardrobe from the database
-3. Calls a language model to generate the panorama text in the user's preferred language
-4. Persists the result to the database (one record per user, updated on re-run)
+2. Loads the user's profile, preferences, shopping-size preferences, and wardrobe from the database
+3. Calls a language model to generate the panorama text (user language) plus structured shopping search suggestions (2–5)
+4. Persists the markdown panorama to the database (one record per user, updated on re-run)
 5. Invalidates related cache entries and sets an unread notification
+6. Inserts a `scrape-shopping-suggestions` outbox event and triggers `worker-outbox-events` (which publishes to CF Queues in batch)
 
 **Hosted in:** `worker-ai-workflows` (workflow worker)  
 **Endpoint:** `POST /generate-wardrobe-panorama`  
@@ -48,20 +49,26 @@ graph TD
     S1 -.->|marker missing| SKIP["Exit — no-op"]
 
     S1 --> S2["Step 2: build-prompt"]
-    S2 --> DB1["Database\n(read user, preferences, wardrobe)"]
+    S2 --> DB1["Database\n(read user, prefs, shopping prefs, wardrobe)"]
 
     S2 --> S3["Step 3: execute-prompt"]
     S3 --> LLM["LLM"]
     S3 --> LLMLOG["Database\nllm_interactions audit log"]
 
     S3 --> S4["Step 4: save-panorama"]
-    S4 --> DB2["Database\n(write wardrobe_panorama)"]
+    S4 --> DB2["Database\n(write wardrobe_panorama markdown)"]
 
     S4 --> S5["Step 5: invalidate-wardrobe-panorama-cache"]
     S5 --> CACHE2["Cache\nclear marker + cached panorama"]
 
     S5 --> S6["Step 6: set-wardrobe-panorama-notification"]
     S6 --> CACHE3["Cache\nset unread notification"]
+
+    S6 --> S7["Step 7: enqueue-shopping-suggestions"]
+    S7 --> DB3["Database\noutbox_events PENDING"]
+    S7 --> QS["QStash batchJSON"]
+    QS --> OUTBOX["worker-outbox-events"]
+    OUTBOX --> CF["CF Queues\nmessages/batch"]
 ```
 
 ### Component roles
@@ -71,6 +78,8 @@ graph TD
 | SkyDIIV web app | _(separate repo)_ | Sets the wardrobe-update marker when the user changes their wardrobe; reads the panorama from the database (via cached API); consumes notification keys |
 | `worker-scheduler` | `apps/worker-scheduler/` | Optional upstream dispatcher; queries users with large enough wardrobes, filters by update marker, and publishes messages to the queue |
 | `worker-ai-workflows` | `apps/worker-ai-workflows/` | Hosts the durable workflow and all step implementations |
+| `worker-outbox-events` | `apps/worker-outbox-events/` | Processes `scrape-shopping-suggestions` outbox rows and batch-publishes to CF Queues |
+| `robot-shopping-suggestions` | `apps/robot-shopping-suggestions/` | Pulls CF Queues messages and scrapes marketplaces |
 
 ---
 
@@ -149,7 +158,7 @@ At the start of every run, `resetDbClients()` clears the database connection sin
 
 ### Early exit
 
-If step 1 returns `false`, the workflow logs a skip message and returns without running steps 2–6. This is intentional — not an error.
+If step 1 returns `false`, the workflow logs a skip message and returns without running steps 2–7. This is intentional — not an error.
 
 ---
 
@@ -187,11 +196,12 @@ Loads data and assembles the language model prompt via `buildWardrobePanoramaPro
 | User locale | `app_preferences` + `domains` | Resolved via `resolveUserLocale()`; used for output-language directive and pt-BR fallback strings |
 | User name | `users` | `first_name`; pt-BR fallback when missing |
 | Preferences | `weekly_outfit_preferences` | Optional — location and routine description |
+| Shopping preferences | `shopping_suggestions_preferences` | Optional — gender / top / bottom / foot sizes for scrape enrichment |
 | Wardrobe items | `clothing_items` + `tags` + `domains` | ID, title, tags, piece type and subtype per item (type/subtype always in en-US; title/tags in user's language) |
 
-**Parallel fetches:** locale, user profile, preferences, and wardrobe are loaded concurrently.
+**Parallel fetches:** locale, user profile, preferences, shopping preferences, and wardrobe are loaded concurrently.
 
-**Soft handling:** Missing preferences use locale-specific fallback text in the prompt. An empty wardrobe is represented with a localized "no items" string — the step does not throw. (In practice, the scheduler only dispatches users with ≥10 pieces.)
+**Soft handling:** Missing preferences use locale-specific fallback text in the prompt. An empty wardrobe is represented with a localized "no items" string — the step does not throw. (In practice, the scheduler only dispatches users with ≥10 pieces.) Missing shopping preferences still allow enqueue (sizes/gender published as `null`).
 
 **Outputs passed to later steps:**
 
@@ -201,18 +211,21 @@ Loads data and assembles the language model prompt via `buildWardrobePanoramaPro
 | `prompt` | Full localized prompt string for the language model |
 | `wardrobeItems` | Summary list for logging |
 | `validClothingItemIds` | All wardrobe IDs (reserved for future validation) |
+| `shoppingPreferences` | Size/gender prefs for step 7 (or `null`) |
 
 ---
 
 ### Step 3 — `execute-prompt`
 
-**Source:** `src/workflows/generate-wardrobe-panorama/steps/execute-prompt.ts`
+**Source:** `src/workflows/generate-wardrobe-panorama/steps/execute-prompt.ts`  
+**Parser:** `src/lib/prompt/panorama-response.ts`
 
 1. Calls the configured language model (temperature `0.2`)
-2. Logs the interaction to `llm_interactions` on success
-3. Returns the raw markdown response and the interaction ID for linking in step 4
+2. Parses the response into markdown content + shopping suggestions JSON (2–5 items)
+3. Logs the interaction to `llm_interactions` on success (or ERROR on LLM/parse failure)
+4. Returns `{ content, suggestions, llmInteractionId }` for steps 4 and 7
 
-**Expected model output:** Markdown prose with exactly three sections (see [Prompt Design](#prompt-design)), **in the user's language** (Portuguese, Spanish, or English, depending on locale):
+**Expected model output:** Markdown prose with exactly three sections (see [Prompt Design](#prompt-design)), **in the user's language**, followed by a trailing ` ```json ` fence:
 
 ```markdown
 ## equilíbrio do guarda-roupa
@@ -223,14 +236,20 @@ Loads data and assembles the language model prompt via `buildWardrobePanoramaPro
 
 ## o que vale buscar
 ...
+
+\`\`\`json
+[
+  { "searchTerm": "blazer casual bege", "brand": null, "sizeCategory": "top" },
+  { "searchTerm": "tênis branco minimalista", "brand": "Nike", "sizeCategory": "foot" }
+]
+\`\`\`
 ```
 
-The section headers above are written in the user's language as instructed by the prompt. For an `en-US` user, they would appear in English (e.g. `## wardrobe balance`); for `es-PE`, in Spanish.
-
-Unlike the weekly outfits workflow, there is **no JSON parsing** — the raw model text is stored as-is.
+Only the markdown (without the JSON fence) is stored in `wardrobe_panorama.content`.
 
 **Hard failures:**
 - Language model API error (logged to `llm_interactions` with `status = 'ERROR'`, then re-thrown)
+- Missing/invalid trailing JSON shopping-suggestions block (same ERROR log + re-throw)
 
 ---
 
@@ -239,7 +258,7 @@ Unlike the weekly outfits workflow, there is **no JSON parsing** — the raw mod
 **Source:** `src/workflows/generate-wardrobe-panorama/steps/save-panorama.ts`  
 **Repository:** `src/lib/db/wardrobe-panorama.repository.ts`
 
-Persists the markdown panorama to the database.
+Persists the **markdown-only** panorama to the database.
 
 **Idempotency:** One row per user in `wardrobe_panorama`:
 - **Insert** if no existing row for the user
@@ -282,6 +301,29 @@ Value: {"updatedAt":"<ISO timestamp>"}
 
 ---
 
+### Step 7 — `enqueue-shopping-suggestions`
+
+**Source:** `src/workflows/generate-wardrobe-panorama/steps/enqueue-shopping-suggestions.ts`
+
+Composes scrape `searchParams` from LLM suggestions + `shopping_suggestions_preferences`, inserts a `PENDING` `outbox_events` row for catalog event `scrape-shopping-suggestions` (`22526aec-…`), and triggers `worker-outbox-events` via QStash `batchJSON`.
+
+| Field | Source |
+|---|---|
+| `marketplace` | Fixed `"enjoei"` |
+| `userId` | Workflow payload |
+| `searchParams[].searchTerm` / `brand` | LLM JSON |
+| `searchParams[].gender` | Preferences (or `null`) |
+| `searchParams[].topSize` / `bottomSize` / `footSize` | Preferences for the LLM `sizeCategory` only; others `null` |
+
+**Behavior:**
+- Empty suggestions → no-op (logged)
+- Outbox insert failure → fatal
+- QStash publish failure after insert → warning only (catch-up reprocesses `PENDING`)
+
+Downstream: `worker-outbox-events` batch-publishes `{ event, payload }` to `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` via `POST .../messages/batch`.
+
+---
+
 ## Prompt Design
 
 **Source:** `src/lib/i18n/prompts/wardrobe-panorama.ts`
@@ -305,6 +347,7 @@ The prompt intro includes: `"Responda sempre em {languageName}."`, where `langua
 | `## equilíbrio do guarda-roupa` | Patterns, concentrations, and gaps based on pieces, types, subtypes, tags, and the summary |
 | `## seu estilo` | Predominant style in 2–3 sentences; compare with user-stated preferences when available |
 | `## o que vale buscar` | 2–4 specific piece types that would complement the wardrobe, with justification |
+| Trailing ` ```json ` block | 2–5 objects: `{ searchTerm, brand, sizeCategory }` where `sizeCategory` is `top` \| `bottom` \| `foot` \| `none` |
 
 ### Input sections in the prompt
 
@@ -342,11 +385,13 @@ The prompt intro includes: `"Responda sempre em {languageName}."`, where `langua
 |---|---|---|
 | `users` | Read | User's first name for personalized prompt |
 | `weekly_outfit_preferences` | Read | Optional location and routine description |
+| `shopping_suggestions_preferences` | Read | Optional gender / size filters for scrape payload |
 | `clothing_items` | Read | Wardrobe items with titles, image URLs, and piece type/subtype FKs |
 | `clothing_item_tags` / `tags` | Read (join) | Tags describing each piece |
 | `domains` | Read (join) | Piece type and subtype names (`type = 'piece_type'` / `'piece_subtype'`) |
 | `wardrobe_panorama` | Write | One markdown panorama per user (insert or update) |
 | `llm_interactions` | Write | Audit log of the language model call |
+| `outbox_events` | Write | PENDING `scrape-shopping-suggestions` for worker-outbox-events |
 
 ### Key conventions
 
@@ -432,10 +477,11 @@ Set via `wrangler secret put <KEY>` (production) or `.dev.vars` (local):
 | `GEMINI_MODEL` | — | Model name override |
 | `UPSTASH_REDIS_REST_URL` | ✅* | Cache gate, invalidation, notifications |
 | `UPSTASH_REDIS_REST_TOKEN` | ✅* | Cache gate, invalidation, notifications |
+| `WORKER_OUTBOX_EVENTS_URL` | ✅ | Origin of worker-outbox-events (step 7 QStash trigger) |
 
 \*Steps 1, 5, and 6 degrade gracefully when the cache is not configured (step 1 treats missing cache as "marker absent").
 
-This workflow does **not** use object storage or the image service binding.
+This workflow does **not** use object storage, the image service binding, or Cloudflare Queues credentials directly (CF publish is owned by `worker-outbox-events`).
 
 ### Scheduler worker secrets (separate deployable)
 
@@ -456,10 +502,12 @@ This workflow does **not** use object storage or the image service binding.
 |---|---|---|
 | Missing `userId` in payload | ✅ Fatal | Throws before any step runs |
 | Update marker absent | ❌ No-op | Step 1 returns `false`; workflow exits cleanly |
-| Language model failure | ✅ Fatal | Step 3 throws; prior steps not re-run on retry |
+| Language model / parse failure | ✅ Fatal | Step 3 throws; prior steps not re-run on retry |
 | Database save failure | ✅ Fatal | Step 4 throws |
 | Cache invalidation failure | ❌ Non-fatal | Warning logged |
 | Notification set failure | ❌ Non-fatal | Warning logged |
+| Outbox insert failure | ✅ Fatal | Step 7 throws |
+| QStash publish after outbox insert | ❌ Non-fatal | Warning logged; catch-up reprocesses `PENDING` |
 
 ### Idempotency
 
@@ -529,7 +577,11 @@ Unit and integration tests cover the workflow's critical paths:
 
 | Test file | Coverage |
 |---|---|
-| `tests/integration/generate-wardrobe-panorama.test.ts` | Prompt build, LLM call, and DB save (mocked externals) |
+| `tests/integration/generate-wardrobe-panorama.test.ts` | Prompt build, LLM parse (markdown + suggestions), DB save |
+| `tests/unit/panorama-response.test.ts` | Markdown/JSON split, schema, max 5 suggestions |
+| `tests/unit/compose-search-params.test.ts` | Size category enrichment from shopping prefs |
+| `tests/unit/enqueue-shopping-suggestions-step.test.ts` | Outbox insert + QStash batch trigger |
+| `tests/unit/outbox-publish.test.ts` | WORKER_OUTBOX_EVENTS_URL + batchJSON |
 | `tests/unit/check-wardrobe-update-step.test.ts` | Step 1 marker gate |
 | `tests/unit/wardrobe-panorama-cache.test.ts` | Cache key helpers |
 | `tests/unit/invalidate-wardrobe-panorama-cache-step.test.ts` | Step 5 behavior |

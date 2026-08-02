@@ -1,6 +1,10 @@
 import { getWriteDb } from "../../../lib/db/client"
 import { SqlLlmInteractionsRepository } from "../../../lib/db/llm-interactions.repository"
 import { getLlmProvider } from "../../../lib/llm"
+import {
+  parseWardrobePanoramaResponse,
+  type ParsedShoppingSuggestion,
+} from "../../../lib/prompt/panorama-response"
 import { createLogger } from "../../../lib/logger"
 
 export interface ExecutePromptInput {
@@ -10,7 +14,9 @@ export interface ExecutePromptInput {
 
 export interface ExecutePromptResult {
   llmInteractionId: string
-  response: string
+  /** Markdown panorama without the trailing shopping-suggestions JSON. */
+  content: string
+  suggestions: ParsedShoppingSuggestion[]
 }
 
 export async function executePromptStep(
@@ -30,17 +36,6 @@ export async function executePromptStep(
     rawResponse = await llm.generate(input.prompt)
     const latencyMs = Date.now() - startedAt
     log.info("LLM responded", { latencyMs, responseLength: rawResponse.length })
-
-    const llmInteractionId = await logRepo.logAndReturnId({
-      userId: input.userId,
-      model: llm.name,
-      prompt: input.prompt,
-      response: rawResponse,
-      status: "SUCCESS",
-      latencyMs,
-    })
-
-    return { llmInteractionId, response: rawResponse }
   } catch (err) {
     const latencyMs = Date.now() - startedAt
     log.error("LLM call failed", {
@@ -56,6 +51,47 @@ export async function executePromptStep(
       latencyMs,
     })
     throw err
+  }
+
+  const latencyMs = Date.now() - startedAt
+
+  let parsed: ReturnType<typeof parseWardrobePanoramaResponse>
+  try {
+    parsed = parseWardrobePanoramaResponse(rawResponse)
+    log.info("Response parsed", {
+      contentLength: parsed.content.length,
+      suggestionCount: parsed.suggestions.length,
+    })
+  } catch (err) {
+    log.error("Failed to parse LLM response", {
+      error: err instanceof Error ? err.message : String(err),
+      rawPreview: rawResponse.slice(0, 200),
+    })
+    await safeLog(log, logRepo, {
+      userId: input.userId,
+      model: llm.name,
+      prompt: input.prompt,
+      response: rawResponse,
+      status: "ERROR",
+      errorMessage: err instanceof Error ? err.message : String(err),
+      latencyMs,
+    })
+    throw err
+  }
+
+  const llmInteractionId = await logRepo.logAndReturnId({
+    userId: input.userId,
+    model: llm.name,
+    prompt: input.prompt,
+    response: rawResponse,
+    status: "SUCCESS",
+    latencyMs,
+  })
+
+  return {
+    llmInteractionId,
+    content: parsed.content,
+    suggestions: parsed.suggestions,
   }
 }
 

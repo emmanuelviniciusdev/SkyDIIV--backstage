@@ -27,10 +27,18 @@ const mocks = vi.hoisted(() => {
     name: "Português (BR)",
   }
 
+  const fakeShoppingPrefsRow = {
+    gender: "Female",
+    top_size: "M",
+    bottom_size: "40",
+    foot_size: "38",
+  }
+
   const readDb = vi.fn().mockImplementation((strings: TemplateStringsArray | string[]) => {
     const query = Array.isArray(strings) ? strings.join("") : String(strings)
     if (query.includes("app_preferences")) return Promise.resolve([fakeLanguageRow])
     if (query.includes("weekly_outfit_preferences")) return Promise.resolve([fakePreferencesRow])
+    if (query.includes("shopping_suggestions_preferences")) return Promise.resolve([fakeShoppingPrefsRow])
     if (query.includes("clothing_items")) return Promise.resolve(fakeWardrobeRows)
     if (query.includes("users")) return Promise.resolve([fakeUserRow])
     return Promise.resolve([])
@@ -38,7 +46,21 @@ const mocks = vi.hoisted(() => {
 
   const writeDb = vi.fn().mockResolvedValue([])
 
-  const fakePanorama = `## equilíbrio do guarda-roupa\nO seu guarda-roupa tem muitas camisas brancas e poucas peças de sobreposição, aparentando concentrar-se em looks formais.\n\n## seu estilo\nO conteúdo das peças indica um viés clássico com toques casuais.\n\n## o que vale buscar\nSugiro investir em 1) um blazer casual para multiplicar combinações formais-casuais e 2) algumas camisetas básicas neutras para equilibrar variações.`
+  const fakePanorama = `## equilíbrio do guarda-roupa
+O seu guarda-roupa tem muitas camisas brancas e poucas peças de sobreposição, aparentando concentrar-se em looks formais.
+
+## seu estilo
+O conteúdo das peças indica um viés clássico com toques casuais.
+
+## o que vale buscar
+Sugiro investir em um blazer casual e algumas camisetas básicas neutras.
+
+\`\`\`json
+[
+  { "searchTerm": "blazer casual bege", "brand": null, "sizeCategory": "top" },
+  { "searchTerm": "camiseta básica neutra", "brand": null, "sizeCategory": "top" }
+]
+\`\`\``
   const llmGenerate = vi.fn().mockResolvedValue(fakePanorama)
 
   return {
@@ -93,33 +115,44 @@ describe("generate-wardrobe-panorama workflow steps", () => {
     expect(result.prompt).toContain("Top: 1 peça → Shirt (1)")
     expect(result.prompt).toContain("Bottom: 1 peça → Jeans (1)")
     expect(result.prompt).toContain("Total: 2 peças")
-    // Verify the item formatting
     expect(result.prompt).toContain("ID: item-1 Título: Camisa branca; Tipo: Top; Subtipo: Shirt; Tags: formal, white")
     expect(result.prompt).toContain("ID: item-2 Título: Calça jeans; Tipo: Bottom; Subtipo: Jeans; Tags: casual, denim")
+    expect(result.prompt).toContain("sizeCategory")
+    expect(result.shoppingPreferences).toEqual({
+      gender: "Female",
+      topSize: "M",
+      bottomSize: "40",
+      footSize: "38",
+    })
   })
 
-  it("calls the LLM and returns an interaction id and response", async () => {
+  it("calls the LLM and returns markdown content plus parsed suggestions", async () => {
     const promptData = await buildPromptStep(mocks.USER_ID)
     const exec = await executePromptStep({ userId: promptData.userId, prompt: promptData.prompt })
 
     expect(exec.llmInteractionId).toBeTruthy()
-    expect(exec.response).toBe(mocks.fakePanorama)
-    expect(exec.response).toContain("## equilíbrio do guarda-roupa")
+    expect(exec.content).toContain("## equilíbrio do guarda-roupa")
+    expect(exec.content).not.toContain("```json")
+    expect(exec.suggestions).toEqual([
+      { searchTerm: "blazer casual bege", brand: null, sizeCategory: "top" },
+      { searchTerm: "camiseta básica neutra", brand: null, sizeCategory: "top" },
+    ])
   })
 
-  it("persists the panorama to the DB (no throw) and invokes write DB", async () => {
+  it("persists only the markdown panorama (no JSON fence)", async () => {
     const promptData = await buildPromptStep(mocks.USER_ID)
     const exec = await executePromptStep({ userId: promptData.userId, prompt: promptData.prompt })
 
-    // Clear write mock call history then save
     mocks.writeDb.mockClear()
     await expect(
-      savePanoramaStep({ userId: promptData.userId, llmInteractionId: exec.llmInteractionId, content: exec.response }),
+      savePanoramaStep({
+        userId: promptData.userId,
+        llmInteractionId: exec.llmInteractionId,
+        content: exec.content,
+      }),
     ).resolves.not.toThrow()
 
     expect(mocks.writeDb).toHaveBeenCalled()
-    // One of the calls should be an INSERT into wardrobe_panorama — assert the mock was invoked at least once
-    const calls = mocks.writeDb.mock.calls
-    expect(calls.length).toBeGreaterThanOrEqual(1)
+    expect(exec.content).not.toContain("searchTerm")
   })
 })

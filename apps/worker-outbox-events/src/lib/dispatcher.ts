@@ -1,5 +1,5 @@
 import { getQStashClient } from "./qstash"
-import { publishToCloudflareQueue, resolveCfQueueId } from "./cloudflare-queues"
+import { publishBatchToCloudflareQueue, resolveCfQueueId } from "./cloudflare-queues"
 import { resolveWorkerSyncUrl, resolveWorkerNotificationUrl } from "./downstream-urls"
 import type { OutboxEventRow } from "./db/outbox-events.repository"
 
@@ -51,8 +51,8 @@ export function outboxRouteKey(eventName: string, brokerName: string): string {
  * onto the outbox row).
  *
  * - **QStash routes** — `payload` forwarded verbatim to the downstream worker URL.
- * - **CF Queues routes** — publishes `{ event, payload }` to the queue ID env
- *   declared on that route (`queueIdEnv`).
+ * - **CF Queues routes** — publishes `{ event, payload }` in a batch to the
+ *   queue ID env declared on that route (`queueIdEnv`) via `/messages/batch`.
  *
  * Throws if the route is unknown or publish fails, so the caller can return
  * a 5xx and let QStash retry.
@@ -86,11 +86,13 @@ export async function dispatch(event: OutboxEventRow): Promise<void> {
       const queueId = resolveCfQueueId(
         OUTBOX_ROUTES.SCRAPE_SHOPPING_SUGGESTIONS_CF_QUEUES.queueIdEnv,
       )
-      await publishToCloudflareQueue(
-        {
-          event: event.event_name,
-          payload: event.payload,
-        },
+      await publishBatchToCloudflareQueue(
+        [
+          {
+            event: event.event_name,
+            payload: event.payload,
+          },
+        ],
         queueId,
       )
       break

@@ -6,9 +6,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
  * (event_name, broker_name) and error propagation.
  */
 
-const { mockPublishJSON, mockPublishToCloudflareQueue, mockResolveCfQueueId } = vi.hoisted(() => ({
+const { mockPublishJSON, mockPublishBatchToCloudflareQueue, mockResolveCfQueueId } = vi.hoisted(() => ({
   mockPublishJSON: vi.fn(),
-  mockPublishToCloudflareQueue: vi.fn(),
+  mockPublishBatchToCloudflareQueue: vi.fn(),
   mockResolveCfQueueId: vi.fn(),
 }))
 
@@ -17,7 +17,7 @@ vi.mock("../../src/lib/qstash", () => ({
 }))
 
 vi.mock("../../src/lib/cloudflare-queues", () => ({
-  publishToCloudflareQueue: mockPublishToCloudflareQueue,
+  publishBatchToCloudflareQueue: mockPublishBatchToCloudflareQueue,
   resolveCfQueueId: mockResolveCfQueueId,
 }))
 
@@ -70,7 +70,7 @@ describe("dispatch", () => {
       url: "https://worker-sync.example.workers.dev/sync/language",
       body: event.payload,
     })
-    expect(mockPublishToCloudflareQueue).not.toHaveBeenCalled()
+    expect(mockPublishBatchToCloudflareQueue).not.toHaveBeenCalled()
   })
 
   it("forwards the outbox event payload verbatim for language-changed", async () => {
@@ -129,7 +129,7 @@ describe("dispatch", () => {
   // ── scrape-shopping-suggestions + CF Queues ────────────────────────────────
 
   it("publishes scrape-shopping-suggestions to CF_SCRAPE_SHOPP_SUGG_QUEUE_ID", async () => {
-    mockPublishToCloudflareQueue.mockResolvedValueOnce(undefined)
+    mockPublishBatchToCloudflareQueue.mockResolvedValueOnce(undefined)
     const payload = {
       marketplace: "enjoei",
       userId: "user-9",
@@ -154,12 +154,14 @@ describe("dispatch", () => {
     await dispatch(event)
 
     expect(mockResolveCfQueueId).toHaveBeenCalledWith("CF_SCRAPE_SHOPP_SUGG_QUEUE_ID")
-    expect(mockPublishToCloudflareQueue).toHaveBeenCalledOnce()
-    expect(mockPublishToCloudflareQueue).toHaveBeenCalledWith(
-      {
-        event: "scrape-shopping-suggestions",
-        payload,
-      },
+    expect(mockPublishBatchToCloudflareQueue).toHaveBeenCalledOnce()
+    expect(mockPublishBatchToCloudflareQueue).toHaveBeenCalledWith(
+      [
+        {
+          event: "scrape-shopping-suggestions",
+          payload,
+        },
+      ],
       "queue-scrape-1",
     )
     expect(mockPublishJSON).not.toHaveBeenCalled()
@@ -178,11 +180,11 @@ describe("dispatch", () => {
     await expect(dispatch(event)).rejects.toThrow(
       "CF_SCRAPE_SHOPP_SUGG_QUEUE_ID environment variable is not set",
     )
-    expect(mockPublishToCloudflareQueue).not.toHaveBeenCalled()
+    expect(mockPublishBatchToCloudflareQueue).not.toHaveBeenCalled()
   })
 
   it("propagates Cloudflare Queues publish errors", async () => {
-    mockPublishToCloudflareQueue.mockRejectedValueOnce(new Error("CF Queues unavailable"))
+    mockPublishBatchToCloudflareQueue.mockRejectedValueOnce(new Error("CF Queues unavailable"))
     const event = makeEvent({
       event_name: OUTBOX_ROUTES.SCRAPE_SHOPPING_SUGGESTIONS_CF_QUEUES.eventName,
       broker_name: BROKER_NAMES.CF_QUEUES,
@@ -201,7 +203,7 @@ describe("dispatch", () => {
     await expect(dispatch(event)).rejects.toThrow(
       "Unknown outbox route: event_name=scrape-shopping-suggestions, broker_name=QStash",
     )
-    expect(mockPublishToCloudflareQueue).not.toHaveBeenCalled()
+    expect(mockPublishBatchToCloudflareQueue).not.toHaveBeenCalled()
     expect(mockPublishJSON).not.toHaveBeenCalled()
   })
 

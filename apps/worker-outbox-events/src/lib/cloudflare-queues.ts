@@ -1,10 +1,14 @@
 /**
- * Publishes a JSON message to a Cloudflare Queue via the HTTP API.
+ * Publishes JSON message(s) to a Cloudflare Queue via the HTTP API.
  *
  * Each CF Queues outbox event targets its own queue ID (env var resolved by
- * the dispatcher). Envelope: `{ event, payload }` inside the message `body`.
+ * the dispatcher). Envelope: `{ event, payload }` inside each message `body`.
  *
- * @see https://developers.cloudflare.com/queues/examples/publish-to-a-queue-via-http/
+ * Prefer {@link publishBatchToCloudflareQueue} (`POST .../messages/batch`).
+ * {@link publishToCloudflareQueue} is a thin wrapper around a single-message batch.
+ *
+ * @see https://developers.cloudflare.com/queues/configuration/pull-consumers/#send
+ * @see https://developers.cloudflare.com/api/resources/queues/subresources/messages/methods/bulk_push/
  */
 
 export interface CloudflareQueueMessage {
@@ -29,13 +33,17 @@ export function resolveCfQueueId(envVar: string): string {
 }
 
 /**
- * POSTs one message to the given Cloudflare Queue.
- * Throws when credentials are missing or the API reports failure.
+ * POSTs one or more messages to the given Cloudflare Queue via the batch API.
+ * Throws when credentials are missing, the message list is empty, or the API reports failure.
  */
-export async function publishToCloudflareQueue(
-  message: CloudflareQueueMessage,
+export async function publishBatchToCloudflareQueue(
+  messages: CloudflareQueueMessage[],
   queueId: string,
 ): Promise<void> {
+  if (messages.length === 0) {
+    throw new Error("Cloudflare Queues batch publish requires at least one message")
+  }
+
   const trimmedQueueId = queueId.trim()
   if (!trimmedQueueId) {
     throw new Error("Cloudflare queue ID must be a non-empty string")
@@ -44,7 +52,7 @@ export async function publishToCloudflareQueue(
   const accountId = requireEnv("CF_ACCOUNT_ID")
   const token = requireEnv("CF_QUEUES_API_TOKEN")
 
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/queues/${trimmedQueueId}/messages`
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/queues/${trimmedQueueId}/messages/batch`
 
   const response = await fetch(url, {
     method: "POST",
@@ -53,8 +61,10 @@ export async function publishToCloudflareQueue(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      body: message,
-      content_type: "json",
+      messages: messages.map((body) => ({
+        body,
+        content_type: "json",
+      })),
     }),
   })
 
@@ -69,7 +79,18 @@ export async function publishToCloudflareQueue(
   if (!response.ok || parsed?.success === false) {
     const apiErrors = parsed?.errors?.map((e) => e.message).filter(Boolean).join("; ")
     throw new Error(
-      `Cloudflare Queues publish failed (${response.status}): ${apiErrors || text || response.statusText}`,
+      `Cloudflare Queues batch publish failed (${response.status}): ${apiErrors || text || response.statusText}`,
     )
   }
+}
+
+/**
+ * POSTs one message via the batch API (single-element batch).
+ * Prefer {@link publishBatchToCloudflareQueue} when publishing multiple messages.
+ */
+export async function publishToCloudflareQueue(
+  message: CloudflareQueueMessage,
+  queueId: string,
+): Promise<void> {
+  await publishBatchToCloudflareQueue([message], queueId)
 }

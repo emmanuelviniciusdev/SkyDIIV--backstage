@@ -24,6 +24,7 @@ LLM_PROVIDER = "gemini_flash"
 #   wrangler secret put QSTASH_NEXT_SIGNING_KEY
 #   wrangler secret put GEMINI_API_KEY
 #   wrangler secret put WORKER_AI_WORKFLOWS_URL
+#   wrangler secret put WORKER_OUTBOX_EVENTS_URL
 #
 # ── Redis ─────────────────────────────────────────────────────────────────────
 #   wrangler secret put UPSTASH_REDIS_REST_URL

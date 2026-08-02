@@ -22,6 +22,8 @@ flowchart LR
     PFW --> DB
     WFW --> LLM["Gemini"]
     PFW --> LLM
+    PFW -->|outbox + QStash| OUT["worker-outbox-events"]
+    OUT -->|messages/batch| CF["CF Queues"]
 ```
 
 ---
@@ -175,6 +177,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `DATABASE_URL` / `DATABASE_URL_UNPOOLED` | All workflows |
 | `QSTASH_URL`, `QSTASH_TOKEN`, `QSTASH_*_SIGNING_KEY` | All workflows |
 | `WORKER_AI_WORKFLOWS_URL` | All workflows — this worker's public origin (no path) |
+| `WORKER_OUTBOX_EVENTS_URL` | `generate-wardrobe-panorama` — origin of worker-outbox-events (shopping suggestions enqueue) |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | All workflows |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | All workflows |
 

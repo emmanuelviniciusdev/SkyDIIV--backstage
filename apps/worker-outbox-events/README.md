@@ -64,7 +64,7 @@ flowchart LR
 │       ├── qstash.ts                       # QStash client singleton
 │       ├── dispatcher.ts                   # Routes (event_name, broker_name) → downstream via QStash / CF Queues
 │       ├── downstream-urls.ts              # URL resolvers for QStash downstream workers
-│       ├── cloudflare-queues.ts            # CF Queues HTTP publish helper
+│       ├── cloudflare-queues.ts            # CF Queues HTTP batch publish helper (`/messages/batch`)
 │       ├── cache/
 │       │   ├── redis.ts                    # Upstash REST primitives (exists, set, del)
 │       │   └── outbox-processing-cache.ts  # Per-event processing lock
@@ -124,8 +124,8 @@ case outboxRouteKey(...): {
   const queueId = resolveCfQueueId(
     OUTBOX_ROUTES.SCRAPE_SHOPPING_SUGGESTIONS_CF_QUEUES.queueIdEnv,
   )
-  await publishToCloudflareQueue(
-    { event: event.event_name, payload: event.payload },
+  await publishBatchToCloudflareQueue(
+    [{ event: event.event_name, payload: event.payload }],
     queueId,
   )
   break
@@ -233,7 +233,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 {WORKER_NOTIFICATION_URL}/email--welcome
 ```
 
-`scrape-shopping-suggestions` publishes `{ event, payload }` to `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` (consumed by `robot-shopping-suggestions`).
+`scrape-shopping-suggestions` batch-publishes `{ event, payload }` to `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` via `POST .../messages/batch` (consumed by `robot-shopping-suggestions`).
 
 ---
 

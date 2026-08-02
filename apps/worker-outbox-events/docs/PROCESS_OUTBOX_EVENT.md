@@ -126,7 +126,7 @@ LIMIT 1
 Calls `dispatch(event)` in `src/lib/dispatcher.ts`, which switches on `(event.event_name, event.broker_name)` from the `events` catalog and publishes to the matching broker:
 
 - **QStash routes** — `event.payload` is forwarded verbatim to the downstream worker URL.
-- **CF Queues routes** — publishes `{ event: event_name, payload }` to the Cloudflare Queues HTTP API for the queue ID env declared on that route (`queueIdEnv`).
+- **CF Queues routes** — batch-publishes `{ event: event_name, payload }` via `POST .../messages/batch` for the queue ID env declared on that route (`queueIdEnv`).
 
 This step returns `{ ok: true }` or `{ ok: false, error }` without throwing, so its outcome is cached as a durable step result. A workflow retry after a failed downstream publish does **not** re-run a step that already returned `{ ok: true }`.
 
@@ -192,7 +192,7 @@ Routing logic lives in `src/lib/dispatcher.ts`. The `dispatch()` function switch
 |---|---|---|---|---|
 | `language-changed` | `QStash` | `worker-sync` `POST /sync/language` | QStash `publishJSON` | `WORKER_SYNC_URL` |
 | `user-account-created` | `QStash` | `worker-notification` `POST /email--welcome` | QStash `publishJSON` | `WORKER_NOTIFICATION_URL` |
-| `scrape-shopping-suggestions` | `CF Queues` | Queue `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` (e.g. `robot-shopping-suggestions`) | CF Queues HTTP publish (`{ event, payload }`) | `CF_ACCOUNT_ID`, `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID`, `CF_QUEUES_API_TOKEN` |
+| `scrape-shopping-suggestions` | `CF Queues` | Queue `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` (e.g. `robot-shopping-suggestions`) | CF Queues HTTP **batch** publish (`POST .../messages/batch`, `{ event, payload }`) | `CF_ACCOUNT_ID`, `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID`, `CF_QUEUES_API_TOKEN` |
 
 Each CF Queues event publishes to its **own** queue ID env var (declared as `queueIdEnv` on the route in `OUTBOX_ROUTES`).
 
@@ -339,7 +339,7 @@ apps/worker-outbox-events/
 │       ├── qstash.ts                            # QStash client singleton
 │       ├── dispatcher.ts                        # (event_name, broker_name) → downstream routing
 │       ├── downstream-urls.ts                   # URL resolvers for QStash downstream workers
-│       ├── cloudflare-queues.ts                 # CF Queues HTTP publish helper
+│       ├── cloudflare-queues.ts                 # CF Queues HTTP batch publish helper
 │       ├── cache/
 │       │   ├── redis.ts                         # Upstash REST primitives (exists / set / del)
 │       │   └── outbox-processing-cache.ts       # acquire / check / release lock
