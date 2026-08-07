@@ -23,12 +23,13 @@ const THUMBNAIL_MAX_SIDE = 800
 const DRAWS_PER_BATCH = 3
 
 /**
- * Minimal 1×1 transparent PNG (89 bytes). Used as the CF Images canvas base so
- * the composite matches creative-board transparent PNG exports.
+ * Minimal 1×1 fully-transparent RGBA PNG (R=G=B=A=0).
+ * Do not substitute the common "tracking pixel" 1×1s — many are opaque red/pink
+ * and become a solid pink canvas when CF Images stretches them to thumbnail size.
  */
 const TRANSPARENT_PNG_1X1 = Uint8Array.from(
   atob(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=",
   ),
   (c) => c.charCodeAt(0),
 )
@@ -184,7 +185,8 @@ async function buildBoardComposite(
     height: Math.max(1, Math.round(item.height * scale)),
   }))
 
-  // Transparent base establishes canvas dimensions.
+  // Stretch a transparent pixel to the canvas size — avoids pad/background
+  // colour parsing and keeps the composite alpha channel intact.
   let canvas: ArrayBuffer = await (
     await images
       .input(TRANSPARENT_PNG_1X1.buffer.slice(
@@ -194,9 +196,7 @@ async function buildBoardComposite(
       .transform({
         width: canvasWidth,
         height: canvasHeight,
-        fit: "pad",
-        // CF Images rejects 8-digit hex (#RRGGBBAA); use rgba() for transparency.
-        background: "rgba(0,0,0,0)",
+        fit: "squeeze",
       })
       .output({ format: "image/png" })
   ).response().arrayBuffer()
@@ -208,11 +208,21 @@ async function buildBoardComposite(
     for (const cell of batch) {
       const stream = streams[cell.streamIndex]
       if (!stream) continue
+      // Pad (not cover) so the full piece stays visible inside its layout cell;
+      // transparent letterboxing lets pieces overlap neighbours without cropping.
       pipeline = pipeline.draw(
-        images
-          .input(stream)
-          .transform({ width: cell.width, height: cell.height, fit: "contain" }),
-        { top: cell.top, left: cell.left },
+        images.input(stream).transform({
+          width: cell.width,
+          height: cell.height,
+          fit: "pad",
+          background: "rgba(0,0,0,0)",
+        }),
+        {
+          top: cell.top,
+          left: cell.left,
+          width: cell.width,
+          height: cell.height,
+        },
       )
     }
 

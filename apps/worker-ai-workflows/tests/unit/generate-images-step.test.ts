@@ -127,21 +127,51 @@ describe("generateImageStep()", () => {
     expect(result).toBe(true)
   })
 
-  it("pads the transparent canvas with rgba background (CF Images rejects #RRGGBBAA)", async () => {
+  it("squeezes a transparent pixel to canvas size (avoids pink pad base)", async () => {
     await generateImageStep({
       userId: USER_ID,
       outfit: OUTFIT_1,
       wardrobeImageMap: WARDROBE_IMAGE_MAP,
     })
 
-    const padCall = mocks.mockTransform.mock.calls.find(
+    const squeezeCall = mocks.mockTransform.mock.calls.find(
+      (args) => (args[0] as { fit?: string }).fit === "squeeze",
+    )
+    expect(squeezeCall).toBeDefined()
+    expect(squeezeCall![0]).toMatchObject({
+      fit: "squeeze",
+      width: expect.any(Number),
+      height: expect.any(Number),
+    })
+    expect((squeezeCall![0] as { background?: string }).background).toBeUndefined()
+  })
+
+  it("pads each piece into its layout cell so the full image stays visible", async () => {
+    await generateImageStep({
+      userId: USER_ID,
+      outfit: OUTFIT_1,
+      wardrobeImageMap: WARDROBE_IMAGE_MAP,
+    })
+
+    const piecePadCalls = mocks.mockTransform.mock.calls.filter(
       (args) => (args[0] as { fit?: string }).fit === "pad",
     )
-    expect(padCall).toBeDefined()
-    expect(padCall![0]).toMatchObject({
-      fit: "pad",
-      background: "rgba(0,0,0,0)",
-    })
+    expect(piecePadCalls.length).toBe(2)
+    for (const call of piecePadCalls) {
+      expect(call[0]).toMatchObject({
+        fit: "pad",
+        background: "rgba(0,0,0,0)",
+      })
+    }
+
+    const firstDrawOpts = mocks.mockDraw.mock.calls[0][1] as {
+      top: number
+      left: number
+      width: number
+      height: number
+    }
+    expect(firstDrawOpts.width).toBeGreaterThan(0)
+    expect(firstDrawOpts.height).toBeGreaterThan(0)
   })
 
   it("draws one overlay per piece image at scaled board positions", async () => {

@@ -9,6 +9,8 @@ export interface DrawOptions {
   left?: number
   bottom?: number
   right?: number
+  width?: number
+  height?: number
   opacity?: number
   repeat?: boolean | "x" | "y"
 }
@@ -16,7 +18,7 @@ export interface DrawOptions {
 export interface ImageTransformOptions {
   width?: number
   height?: number
-  fit?: "scale-down" | "contain" | "cover" | "crop" | "pad"
+  fit?: "scale-down" | "contain" | "cover" | "crop" | "pad" | "squeeze"
   background?: string
   quality?: number
   format?: string
