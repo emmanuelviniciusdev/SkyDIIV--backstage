@@ -229,10 +229,10 @@ Persists outfit suggestions atomically and idempotently.
 **Pre-save sanitization:** Any clothing item ID returned by the model that is not in `validClothingItemIds` is dropped with a warning. This prevents foreign-key violations from invalid IDs.
 
 **Idempotency:** For the same `(weeklyOutfitPreferencesId, weekStartDate)`:
-1. Existing outfit IDs are looked up
+1. Existing outfit IDs are looked up on the **write** (direct) connection — avoids missing rows due to read-replica lag on the pooled endpoint
 2. Prior R2 thumbnails are best-effort deleted (`outfits/{id}.png` and legacy `.jpg`)
 3. Inside a single database transaction:
-   - Old `outfits` rows are deleted (cascades to `outfit_items` and `weekly_outfits`)
+   - Old `outfits` rows are deleted with `WHERE id IN ${sql(ids)}` (postgres.js dynamic value-list helper; cascades to `outfit_items` and `weekly_outfits`)
    - New `outfits`, `outfit_items` (with creative-board layout columns), and `weekly_outfits` rows are inserted (`outfits.image_url` is NULL until step 4)
 
 **Creative-board layout:** Each `outfit_items` row is written with `pos_x`, `pos_y`, `width`, `height`, `z_index`, and `rotation` from `buildDefaultBoardLayout` in `src/lib/outfits/board-layout.ts`. This mirrors the SkyDIIV web app's default layout on the **1600×1600** creative-board canvas (`rotation` is always `0` for weekly defaults).

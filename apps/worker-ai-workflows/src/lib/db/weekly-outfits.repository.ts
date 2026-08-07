@@ -71,7 +71,9 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
     const { userId, weeklyOutfitPreferencesId, weekStartDate, suggestions, dayWeatherByWeekday } = input
     const log = createLogger("weekly-outfits-repo", userId)
 
-    const existing = await this.readDb<{ outfit_id: string }[]>`
+    // Look up on the write (direct) connection so we never miss rows due to
+    // read-replica lag on the pooled DATABASE_URL endpoint.
+    const existing = await this.writeDb<{ outfit_id: string }[]>`
       SELECT outfit_id
       FROM weekly_outfits
       WHERE weekly_outfit_preferences_id = ${weeklyOutfitPreferencesId}
@@ -105,9 +107,12 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
       log.debug("Transaction started")
 
       if (existingOutfitIds.length > 0) {
+        // postgres.js requires `IN ${sql(ids)}` for dynamic value lists.
+        // `ANY(${jsArray})` binds as a single opaque parameter and does not
+        // match UUID rows, so old outfits / outfit_items were left behind.
         await tx`
           DELETE FROM outfits
-          WHERE id = ANY(${existingOutfitIds})
+          WHERE id IN ${tx(existingOutfitIds)}
         `
         log.info("Deleted existing outfits", { count: existingOutfitIds.length })
       }
