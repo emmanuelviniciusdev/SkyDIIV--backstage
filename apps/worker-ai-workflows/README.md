@@ -183,7 +183,8 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `WORKER_OUTBOX_EVENTS_URL` | `generate-wardrobe-panorama` — origin of worker-outbox-events (shopping suggestions enqueue) |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | All workflows |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | All workflows |
-| `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL` | `generate-weekly-outfits` — outfit thumbnail uploads |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | `generate-weekly-outfits` — R2 credentials (secrets) |
+| `R2_BUCKET`, `R2_PUBLIC_URL` | `generate-weekly-outfits` — bucket name and public URL prefix (vars) |
 
 Per-workflow env requirements and scheduler upstream URLs are documented in each workflow's doc.
 
@@ -223,8 +224,8 @@ Configure these in the **staging** and **production** GitHub environments (Setti
 | `QSTASH_TOKEN`, `QSTASH_*_SIGNING_KEY` | Upstash Workflow / QStash |
 | `GEMINI_API_KEY` | LLM provider |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Redis cache + notifications |
-| `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL` | Outfit thumbnail uploads (`generate-weekly-outfits`) |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Outfit thumbnail uploads (R2 credentials) |
 
-Also configure GitHub **environment variables** (`QSTASH_URL`, `WORKER_AI_WORKFLOWS_URL`, `WORKER_OUTBOX_EVENTS_URL`) — CI injects these into `wrangler.toml` `[vars]` before deploy.
+Also configure GitHub **environment variables** (`QSTASH_URL`, `WORKER_AI_WORKFLOWS_URL`, `WORKER_OUTBOX_EVENTS_URL`, `R2_BUCKET`, `R2_PUBLIC_URL`) — CI injects these into `wrangler.toml` `[vars]` before deploy.
 
 The Cloudflare Images binding (`[images] binding = "IMAGES"`) is declared in `wrangler.toml` and does not require a GitHub secret.

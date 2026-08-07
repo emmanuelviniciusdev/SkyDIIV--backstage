@@ -32,15 +32,18 @@ LLM_PROVIDER = "gemini_flash"
 #   # or:
 #   wrangler secret put REDIS_URL
 #
-# ── R2 / image storage secrets ────────────────────────────────────────────────
+# ── R2 / image storage ────────────────────────────────────────────────────────
 # Used by step 4 (generate-images) to upload composite outfit thumbnails.
 # Must match the same R2 bucket used by the skydiiv web app.
 #
-#   wrangler secret put R2_ACCOUNT_ID
-#   wrangler secret put R2_BUCKET
-#   wrangler secret put R2_ACCESS_KEY_ID
-#   wrangler secret put R2_SECRET_ACCESS_KEY
-#   wrangler secret put R2_PUBLIC_URL
+# Secrets (wrangler secret put):
+#   R2_ACCOUNT_ID
+#   R2_ACCESS_KEY_ID
+#   R2_SECRET_ACCESS_KEY
+#
+# Vars (wrangler.toml [vars] or GitHub environment variables in CI):
+#   R2_BUCKET
+#   R2_PUBLIC_URL
 
 # ── Cloudflare Images binding ─────────────────────────────────────────────────
 # Provides the IMAGES binding used by step 4 (generate-images) to composite

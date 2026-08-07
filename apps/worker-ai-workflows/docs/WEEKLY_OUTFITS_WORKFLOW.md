@@ -451,11 +451,11 @@ Set via `wrangler secret put <KEY>` (production) or `.dev.vars` (local):
 | `GEMINI_MODEL` | — | Model name override |
 | `UPSTASH_REDIS_REST_URL` | ✅* | Cache + notifications |
 | `UPSTASH_REDIS_REST_TOKEN` | ✅* | Cache + notifications |
-| `R2_ACCOUNT_ID` | ✅ | Outfit thumbnail uploads |
-| `R2_BUCKET` | ✅ | Outfit thumbnail uploads |
-| `R2_ACCESS_KEY_ID` | ✅ | Outfit thumbnail uploads |
-| `R2_SECRET_ACCESS_KEY` | ✅ | Outfit thumbnail uploads |
-| `R2_PUBLIC_URL` | ✅ | Public URL prefix for uploaded thumbnails |
+| `R2_ACCOUNT_ID` | ✅ | R2 account (secret) |
+| `R2_ACCESS_KEY_ID` | ✅ | R2 credentials (secret) |
+| `R2_SECRET_ACCESS_KEY` | ✅ | R2 credentials (secret) |
+| `R2_BUCKET` | ✅ | R2 bucket name (var) |
+| `R2_PUBLIC_URL` | ✅ | Public URL prefix for uploaded thumbnails (var) |
 
 \*Cache-related steps degrade gracefully when not configured.
 
@@ -465,6 +465,8 @@ Also required in `wrangler.toml`:
 [images]
 binding = "IMAGES"
 ```
+
+GitHub environment **variables** (not secrets): `R2_BUCKET`, `R2_PUBLIC_URL` — synced into `[vars]` by CI.
 
 ### Scheduler worker secrets (separate deployable)
 
