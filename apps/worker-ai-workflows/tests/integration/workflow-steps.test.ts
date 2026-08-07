@@ -158,7 +158,7 @@ import { buildPromptStep } from "../../src/workflows/generate-weekly-outfits/ste
 import { executePromptStep } from "../../src/workflows/generate-weekly-outfits/steps/execute-prompt"
 import { saveOutfitsStep } from "../../src/workflows/generate-weekly-outfits/steps/save-outfits"
 import { generateImageStep } from "../../src/workflows/generate-weekly-outfits/steps/generate-images"
-import { buildDefaultBoardLayout } from "../../src/lib/outfits/board-layout"
+import { buildOutfitCollageLayout } from "../../src/lib/outfits/board-layout"
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -314,12 +314,24 @@ describe("Step 3 — saveOutfitsStep()", () => {
         },
       },
       validClothingItemIds: ["item-1", "item-2", "item-3"],
+      pieceTypeById: {
+        "item-1": "Top",
+        "item-2": "Bottom",
+        "item-3": "Footwear",
+      },
     })
 
     expect(Array.isArray(result)).toBe(true)
     expect(result).toHaveLength(2)
-    expect(result[0].layout).toEqual(buildDefaultBoardLayout(["item-1", "item-2"]))
-    expect(result[1].layout).toEqual(buildDefaultBoardLayout(["item-3"]))
+    expect(result[0].layout).toEqual(
+      buildOutfitCollageLayout([
+        { id: "item-1", pieceType: "Top" },
+        { id: "item-2", pieceType: "Bottom" },
+      ]),
+    )
+    expect(result[1].layout).toEqual(
+      buildOutfitCollageLayout([{ id: "item-3", pieceType: "Footwear" }]),
+    )
   })
 })
 
@@ -337,7 +349,10 @@ describe("Step 4 — generateImageStep()", () => {
       outfitId: "outfit-integration-1",
       weekday: "sunday",
       clothingPieceIds: ["item-1", "item-2"],
-      layout: buildDefaultBoardLayout(["item-1", "item-2"]),
+      layout: buildOutfitCollageLayout([
+        { id: "item-1", pieceType: "Top" },
+        { id: "item-2", pieceType: "Bottom" },
+      ]),
     }
 
     const generated = await generateImageStep({
@@ -379,12 +394,14 @@ describe("Full pipeline (Step 1 → 2 → 3 → 4)", () => {
       suggestions,
       dayWeatherByWeekday: promptData.dayWeatherByWeekday,
       validClothingItemIds: promptData.validClothingItemIds,
+      pieceTypeById: promptData.pieceTypeById,
     })
 
     expect(suggestions).toHaveLength(7)
     expect(suggestions.every((s) => s.clothingPieceIds.length > 0)).toBe(true)
     expect(Array.isArray(savedOutfits)).toBe(true)
     expect(savedOutfits.every((o) => o.layout.length === o.clothingPieceIds.length)).toBe(true)
+    expect(promptData.pieceTypeById["item-1"]).toBe("Top")
 
     const firstWithImages = savedOutfits.find((o) =>
       o.clothingPieceIds.some((id) => promptData.wardrobeImageMap[id]),

@@ -5,7 +5,7 @@
  * vi mocks so the tests run without any real network calls or Worker bindings.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { buildDefaultBoardLayout } from "../../src/lib/outfits/board-layout"
+import { buildOutfitCollageLayout } from "../../src/lib/outfits/board-layout"
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks — must be created before any imports that reference them
@@ -74,18 +74,22 @@ const USER_ID = "user-generate-images-test"
 function outfitWithLayout(
   outfitId: string,
   weekday: string,
-  clothingPieceIds: string[],
+  pieces: Array<{ id: string; pieceType: string }>,
 ) {
+  const clothingPieceIds = pieces.map((p) => p.id)
   return {
     outfitId,
     weekday,
     clothingPieceIds,
-    layout: buildDefaultBoardLayout(clothingPieceIds),
+    layout: buildOutfitCollageLayout(pieces),
   }
 }
 
-const OUTFIT_1 = outfitWithLayout("outfit-1", "sunday", ["item-1", "item-2"])
-const OUTFIT_2 = outfitWithLayout("outfit-2", "monday", ["item-3"])
+const OUTFIT_1 = outfitWithLayout("outfit-1", "sunday", [
+  { id: "item-1", pieceType: "Top" },
+  { id: "item-2", pieceType: "Bottom" },
+])
+const OUTFIT_2 = outfitWithLayout("outfit-2", "monday", [{ id: "item-3", pieceType: "Footwear" }])
 
 const WARDROBE_IMAGE_MAP = {
   "item-1": "https://r2.example.com/items/item-1.jpg",
@@ -186,9 +190,8 @@ describe("generateImageStep()", () => {
     const secondDrawOpts = mocks.mockDraw.mock.calls[1][1] as { top: number; left: number }
     expect(typeof firstDrawOpts.top).toBe("number")
     expect(typeof firstDrawOpts.left).toBe("number")
-    // Second piece is to the right of the first in the default 2-col layout
-    expect(secondDrawOpts.left).toBeGreaterThan(firstDrawOpts.left)
-    expect(secondDrawOpts.top).toBe(firstDrawOpts.top)
+    // Flat-lay: bottom piece sits below the top piece
+    expect(secondDrawOpts.top).toBeGreaterThan(firstDrawOpts.top)
   })
 
   it("batches draws across multiple pipelines for outfits with many pieces", async () => {
@@ -196,7 +199,14 @@ describe("generateImageStep()", () => {
     const manyPieceMap = Object.fromEntries(
       pieceIds.map((id) => [id, `https://r2.example.com/items/${id}.jpg`]),
     )
-    const outfit = outfitWithLayout("outfit-many", "sunday", pieceIds)
+    const outfit = outfitWithLayout(
+      "outfit-many",
+      "sunday",
+      pieceIds.map((id, i) => {
+        const types = ["Top", "Bottom", "Footwear", "Accessory", "Outerwear"] as const
+        return { id, pieceType: types[i % types.length] }
+      }),
+    )
 
     const result = await generateImageStep({
       userId: USER_ID,
@@ -238,7 +248,7 @@ describe("generateImageStep()", () => {
   it("returns false and skips the binding when outfit pieces have no images", async () => {
     const result = await generateImageStep({
       userId: USER_ID,
-      outfit: outfitWithLayout("outfit-noimg", "tuesday", ["item-unknown"]),
+      outfit: outfitWithLayout("outfit-noimg", "tuesday", [{ id: "item-unknown", pieceType: "Top" }]),
       wardrobeImageMap: {},
     })
     expect(result).toBe(false)

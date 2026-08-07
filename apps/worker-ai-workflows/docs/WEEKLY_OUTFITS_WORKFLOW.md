@@ -235,7 +235,7 @@ Persists outfit suggestions atomically and idempotently.
    - Old `outfits` rows are deleted with `WHERE id IN ${sql(ids)}` (postgres.js dynamic value-list helper; cascades to `outfit_items` and `weekly_outfits`)
    - New `outfits`, `outfit_items` (with creative-board layout columns), and `weekly_outfits` rows are inserted (`outfits.image_url` is NULL until step 4)
 
-**Creative-board layout:** Each `outfit_items` row is written with `pos_x`, `pos_y`, `width`, `height`, `z_index`, and `rotation` from `buildDefaultBoardLayout` in `src/lib/outfits/board-layout.ts`. This mirrors the SkyDIIV web app's default layout on the **1600×1600** creative-board canvas (`rotation` is always `0` for weekly defaults).
+**Creative-board layout:** Each `outfit_items` row is written with `pos_x`, `pos_y`, `width`, `height`, `z_index`, and `rotation` from `buildOutfitCollageLayout` in `src/lib/outfits/board-layout.ts`. Pieces are arranged as a flat-lay outfit collage by garment type (tops upper-center, bottoms below with overlap, footwear lower, outerwear behind, accessories on top) on the **1600×1600** creative-board canvas.
 
 **Records created per valid suggestion:**
 
@@ -374,7 +374,7 @@ The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of 
 | `weekly_outfits.day_of_week` | `0` (Sunday) through `6` (Saturday) |
 | `outfits.type` | `'AI_GENERATED'` |
 | `outfits.created_by` / `updated_by` | `'worker-ai-workflows'` |
-| `outfit_items.pos_x/y`, `width`, `height`, `z_index`, `rotation` | Creative-board layout (1600 canvas; mirrors web `buildDefaultBoardLayout`) |
+| `outfit_items.pos_x/y`, `width`, `height`, `z_index`, `rotation` | Creative-board flat-lay collage layout (1600 canvas; by piece type) |
 | `weekly_outfits.weather_summary` | Localized string in the user's locale, e.g. `"Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%"` (pt-BR) |
 | `weekly_outfits.weather_code` | WMO weather interpretation code from Open-Meteo (e.g. `0` = clear sky) |
 | `weekly_outfits.min_temperature` | Minimum daily temperature from the forecast (°C, raw float from Open-Meteo) |
@@ -558,7 +558,7 @@ Unit and integration tests cover the workflow's critical paths:
 |---|---|
 | `tests/integration/workflow-steps.test.ts` | End-to-end data flow through steps 1–4 (mocked externals) |
 | `tests/unit/prompt-builder.test.ts` | Prompt construction and response parsing |
-| `tests/unit/board-layout.test.ts` | Creative-board default layout + export bounds |
+| `tests/unit/board-layout.test.ts` | Flat-lay collage layout by piece type + export bounds |
 | `tests/unit/weekly-outfits-repository.test.ts` | Idempotent save, layout columns, image_url update |
 | `tests/unit/generate-images-step.test.ts` | Board-position CF Images composite + R2 upload |
 | `tests/unit/weekly-outfits-cache.test.ts` | Cache key deletion |

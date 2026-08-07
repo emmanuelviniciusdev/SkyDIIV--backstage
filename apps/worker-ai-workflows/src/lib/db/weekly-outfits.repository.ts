@@ -3,7 +3,7 @@ import type postgres from "postgres"
 import { createLogger } from "../logger"
 import type { DayWeatherInfo } from "../i18n/weather/formatters"
 import {
-  buildDefaultBoardLayout,
+  buildOutfitCollageLayout,
   type BoardLayoutItem,
 } from "../outfits/board-layout"
 import { deleteImageFromR2 } from "../storage/r2-client"
@@ -21,6 +21,8 @@ export interface SaveWeeklyOutfitsInput {
   suggestions: OutfitSuggestion[]
   /** Maps English weekday name (e.g. "sunday") → weather data stored in weekly_outfits. */
   dayWeatherByWeekday: Record<string, DayWeatherInfo>
+  /** clothing item ID → piece type name (e.g. "Top") for flat-lay collage layout. */
+  pieceTypeById?: Record<string, string | null>
 }
 
 /** A reference to an outfit that was successfully saved to the database. */
@@ -61,15 +63,17 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
    * transaction (sql.begin), making the operation atomic and idempotent.
    *
    * Each outfit_item is written with creative-board layout columns
-   * (pos_x/y, width, height, z_index, rotation) from buildDefaultBoardLayout.
+   * (pos_x/y, width, height, z_index, rotation) from buildOutfitCollageLayout.
    * `outfits.image_url` is left NULL here — thumbnails are generated in a
    * later workflow step.
    *
    * Returns refs for every outfit that was successfully inserted (including layout).
    */
   async saveWeeklyOutfits(input: SaveWeeklyOutfitsInput): Promise<SavedOutfitRef[]> {
-    const { userId, weeklyOutfitPreferencesId, weekStartDate, suggestions, dayWeatherByWeekday } = input
+    const { userId, weeklyOutfitPreferencesId, weekStartDate, suggestions, dayWeatherByWeekday, pieceTypeById } =
+      input
     const log = createLogger("weekly-outfits-repo", userId)
+    const typeById = pieceTypeById ?? {}
 
     // Look up on the write (direct) connection so we never miss rows due to
     // read-replica lag on the pooled DATABASE_URL endpoint.
@@ -136,7 +140,12 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
         const title = `Weekly AI Outfit — ${capitalise(suggestion.weekday)}`
         const dayWeather = dayWeatherByWeekday[suggestion.weekday.toLowerCase()] ?? null
         const weatherSummary = dayWeather?.weatherSummary ?? null
-        const layout = buildDefaultBoardLayout(suggestion.clothingPieceIds)
+        const layout = buildOutfitCollageLayout(
+          suggestion.clothingPieceIds.map((id) => ({
+            id,
+            pieceType: typeById[id] ?? null,
+          })),
+        )
 
         log.debug("Inserting outfit", {
           weekday: suggestion.weekday,

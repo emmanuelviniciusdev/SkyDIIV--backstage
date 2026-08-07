@@ -18,6 +18,8 @@ export interface BuildPromptResult {
   dayWeatherByWeekday: Record<string, DayWeatherInfo>
   /** Maps clothing item ID → public image URL for every wardrobe piece that has an image. */
   wardrobeImageMap: Record<string, string>
+  /** clothing item ID → piece type name (e.g. "Top") for collage layout. */
+  pieceTypeById: Record<string, string | null>
   /**
    * Every clothing item ID that belongs to this user's wardrobe.
    * Used in step 3 to filter out any IDs the LLM hallucinated so they never
@@ -105,8 +107,10 @@ export async function buildPromptStep(
   const dayWeatherByWeekday = buildDayWeatherByWeekday(forecast?.days ?? [], locale)
 
   const wardrobeImageMap: Record<string, string> = {}
+  const pieceTypeById: Record<string, string | null> = {}
   for (const item of wardrobeItems) {
     if (item.imageUrl) wardrobeImageMap[item.id] = item.imageUrl
+    pieceTypeById[item.id] = item.pieceType
   }
 
   log.info("Prompt built", {
@@ -124,6 +128,7 @@ export async function buildPromptStep(
     prompt,
     dayWeatherByWeekday,
     wardrobeImageMap,
+    pieceTypeById,
     validClothingItemIds: wardrobeItems.map((item) => item.id),
   }
 }

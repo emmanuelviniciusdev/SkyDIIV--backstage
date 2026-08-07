@@ -12,7 +12,7 @@ vi.mock("../../src/lib/storage/r2-client", () => ({
 import { SqlWeeklyOutfitsRepository } from "../../src/lib/db/weekly-outfits.repository"
 import type postgres from "postgres"
 import type { SavedOutfitRef } from "../../src/lib/db/weekly-outfits.repository"
-import { buildDefaultBoardLayout } from "../../src/lib/outfits/board-layout"
+import { buildOutfitCollageLayout } from "../../src/lib/outfits/board-layout"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -76,6 +76,12 @@ function getInterpolatedValues(mock: ReturnType<typeof vi.fn>): unknown[] {
   })
 }
 
+const PIECE_TYPES = {
+  "item-1": "Top",
+  "item-2": "Bottom",
+  "item-3": "Footwear",
+}
+
 const BASE_INPUT = {
   userId: "user-123",
   weeklyOutfitPreferencesId: "prefs-456",
@@ -102,6 +108,7 @@ const BASE_INPUT = {
       descriptionTemperature: "Parcialmente nublado",
     },
   },
+  pieceTypeById: PIECE_TYPES,
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +186,10 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     expect(sql).toMatch(/z_index/i)
     expect(sql).toMatch(/rotation/i)
 
-    const expected = buildDefaultBoardLayout(["item-1", "item-2"])
+    const expected = buildOutfitCollageLayout([
+      { id: "item-1", pieceType: "Top" },
+      { id: "item-2", pieceType: "Bottom" },
+    ])
     const values = getInterpolatedValues(tx)
     expect(values).toContain(expected[0].posX)
     expect(values).toContain(expected[0].posY)
@@ -285,11 +295,18 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     expect(sunday?.clothingPieceIds).toEqual(["item-1", "item-2"])
     expect(typeof sunday?.outfitId).toBe("string")
     expect(sunday?.outfitId.length).toBeGreaterThan(0)
-    expect(sunday?.layout).toEqual(buildDefaultBoardLayout(["item-1", "item-2"]))
+    expect(sunday?.layout).toEqual(
+      buildOutfitCollageLayout([
+        { id: "item-1", pieceType: "Top" },
+        { id: "item-2", pieceType: "Bottom" },
+      ]),
+    )
 
     expect(monday).toBeDefined()
     expect(monday?.clothingPieceIds).toEqual(["item-3"])
-    expect(monday?.layout).toEqual(buildDefaultBoardLayout(["item-3"]))
+    expect(monday?.layout).toEqual(
+      buildOutfitCollageLayout([{ id: "item-3", pieceType: "Footwear" }]),
+    )
   })
 
   it("returns an empty array when all suggestions are skipped", async () => {

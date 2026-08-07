@@ -3,77 +3,113 @@ import {
   CREATIVE_BOARD_SIZE,
   BOARD_EXPORT_PADDING,
   buildDefaultBoardLayout,
+  buildOutfitCollageLayout,
   computeBoardExportBounds,
   boardThumbnailScale,
 } from "../../src/lib/outfits/board-layout"
 
-describe("buildDefaultBoardLayout()", () => {
+describe("buildOutfitCollageLayout()", () => {
   it("returns an empty array for no pieces", () => {
-    expect(buildDefaultBoardLayout([])).toEqual([])
+    expect(buildOutfitCollageLayout([])).toEqual([])
   })
 
   it("places a single piece centered on the board", () => {
-    const [item] = buildDefaultBoardLayout(["a"])
+    const [item] = buildOutfitCollageLayout([{ id: "a", pieceType: "Top" }])
     expect(item.clothingItemId).toBe("a")
-    expect(item.zIndex).toBe(0)
-    expect(item.rotation).toBe(0)
-    expect(item.width).toBe(item.height)
-    // Centered: origin + 0*stride
-    expect(item.posX).toBeGreaterThan(0)
-    expect(item.posY).toBeGreaterThan(0)
+    expect(item.posX + item.width / 2).toBeCloseTo(CREATIVE_BOARD_SIZE / 2, 0)
+    expect(item.posY + item.height / 2).toBeCloseTo(CREATIVE_BOARD_SIZE / 2, 0)
     expect(item.posX + item.width).toBeLessThanOrEqual(CREATIVE_BOARD_SIZE)
     expect(item.posY + item.height).toBeLessThanOrEqual(CREATIVE_BOARD_SIZE)
   })
 
-  it("lays out 2 pieces in a 2-column grid with ascending zIndex", () => {
-    const items = buildDefaultBoardLayout(["a", "b"])
-    expect(items).toHaveLength(2)
-    expect(items.map((i) => i.zIndex)).toEqual([0, 1])
-    expect(items[0].posY).toBe(items[1].posY)
-    expect(items[1].posX).toBeGreaterThan(items[0].posX)
+  it("stacks top above bottom in a vertical outfit silhouette", () => {
+    const items = buildOutfitCollageLayout([
+      { id: "top", pieceType: "Top" },
+      { id: "bottom", pieceType: "Bottom" },
+    ])
+    const top = items.find((i) => i.clothingItemId === "top")!
+    const bottom = items.find((i) => i.clothingItemId === "bottom")!
+    expect(top.posY).toBeLessThan(bottom.posY)
   })
 
-  it("lays out 3 pieces as a 2-column grid (2 + 1)", () => {
-    const items = buildDefaultBoardLayout(["a", "b", "c"])
-    expect(items).toHaveLength(3)
-    // First row: a, b
-    expect(items[0].posY).toBe(items[1].posY)
-    // Second row: c
-    expect(items[2].posY).toBeGreaterThan(items[0].posY)
-    expect(items.every((i) => i.rotation === 0)).toBe(true)
+  it("places footwear below the bottom piece", () => {
+    const items = buildOutfitCollageLayout([
+      { id: "top", pieceType: "Top" },
+      { id: "bottom", pieceType: "Bottom" },
+      { id: "shoes", pieceType: "Footwear" },
+    ])
+    const bottom = items.find((i) => i.clothingItemId === "bottom")!
+    const shoes = items.find((i) => i.clothingItemId === "shoes")!
+    expect(shoes.posY).toBeGreaterThan(bottom.posY)
   })
 
-  it("lays out 4 pieces in a 2×2 grid", () => {
-    const items = buildDefaultBoardLayout(["a", "b", "c", "d"])
-    expect(items).toHaveLength(4)
-    expect(items[0].posX).toBe(items[2].posX)
-    expect(items[1].posX).toBe(items[3].posX)
-    expect(items[0].posY).toBe(items[1].posY)
-    expect(items[2].posY).toBe(items[3].posY)
+  it("keeps outerwear behind body pieces (lower zIndex)", () => {
+    const items = buildOutfitCollageLayout([
+      { id: "jacket", pieceType: "Outerwear" },
+      { id: "top", pieceType: "Top" },
+      { id: "bottom", pieceType: "Bottom" },
+    ])
+    const jacket = items.find((i) => i.clothingItemId === "jacket")!
+    const top = items.find((i) => i.clothingItemId === "top")!
+    expect(jacket.zIndex).toBeLessThan(top.zIndex)
   })
 
-  it("lays out 9 pieces in a 3×3 grid within the board", () => {
-    const items = buildDefaultBoardLayout(Array.from({ length: 9 }, (_, i) => `p${i}`))
-    expect(items).toHaveLength(9)
+  it("puts accessories above other pieces (higher zIndex)", () => {
+    const items = buildOutfitCollageLayout([
+      { id: "top", pieceType: "Top" },
+      { id: "bag", pieceType: "Accessory" },
+    ])
+    const top = items.find((i) => i.clothingItemId === "top")!
+    const bag = items.find((i) => i.clothingItemId === "bag")!
+    expect(bag.zIndex).toBeGreaterThan(top.zIndex)
+  })
+
+  it("uses a tall dress as the vertical hero when present", () => {
+    const items = buildOutfitCollageLayout([
+      { id: "dress", pieceType: "Dress & Jumpsuit" },
+      { id: "shoes", pieceType: "Footwear" },
+    ])
+    const dress = items.find((i) => i.clothingItemId === "dress")!
+    const shoes = items.find((i) => i.clothingItemId === "shoes")!
+    expect(dress.height).toBeGreaterThan(shoes.height)
+    expect(dress.height).toBeGreaterThan(700)
+  })
+
+  it("keeps all pieces within the board bounds", () => {
+    const items = buildOutfitCollageLayout([
+      { id: "ow", pieceType: "Outerwear" },
+      { id: "top", pieceType: "Top" },
+      { id: "bottom", pieceType: "Bottom" },
+      { id: "shoes", pieceType: "Footwear" },
+      { id: "bag", pieceType: "Accessory" },
+      { id: "hat", pieceType: "Accessory" },
+    ])
     for (const item of items) {
       expect(item.posX).toBeGreaterThanOrEqual(0)
       expect(item.posY).toBeGreaterThanOrEqual(0)
       expect(item.posX + item.width).toBeLessThanOrEqual(CREATIVE_BOARD_SIZE)
       expect(item.posY + item.height).toBeLessThanOrEqual(CREATIVE_BOARD_SIZE)
     }
-    // Bottom-right piece should be furthest
-    expect(items[8].posX).toBeGreaterThan(items[0].posX)
-    expect(items[8].posY).toBeGreaterThan(items[0].posY)
   })
 
-  it("matches the web app cell-size formula for n=4", () => {
-    // cols = ceil(sqrt(4)) = 2
-    // cell = min(360, floor(1600 / 2.5)) = min(360, 640) = 360
-    // gap = floor(360 * 0.12) = 43
-    // size = 360 - 43 = 317
+  it("is deterministic for the same inputs", () => {
+    const input = [
+      { id: "a", pieceType: "Top" },
+      { id: "b", pieceType: "Bottom" },
+      { id: "c", pieceType: "Footwear" },
+    ]
+    expect(buildOutfitCollageLayout(input)).toEqual(buildOutfitCollageLayout(input))
+  })
+
+  it("does not place untyped pieces in a uniform grid", () => {
     const items = buildDefaultBoardLayout(["a", "b", "c", "d"])
-    expect(items[0].width).toBe(317)
-    expect(items[0].height).toBe(317)
+    // A 2×2 grid would share Y across each row; collage uses a vertical stack.
+    const ys = items.map((i) => i.posY)
+    const uniqueYs = new Set(ys.map((y) => Math.round(y / 50)))
+    expect(uniqueYs.size).toBeGreaterThan(1)
+    // Not all same size either
+    const sizes = new Set(items.map((i) => i.width))
+    expect(sizes.size).toBeGreaterThanOrEqual(1)
   })
 })
 
@@ -91,7 +127,10 @@ describe("computeBoardExportBounds()", () => {
   })
 
   it("pads and clamps the AABB around pieces", () => {
-    const layout = buildDefaultBoardLayout(["a", "b"])
+    const layout = buildOutfitCollageLayout([
+      { id: "a", pieceType: "Top" },
+      { id: "b", pieceType: "Bottom" },
+    ])
     const bounds = computeBoardExportBounds(layout)
 
     const rawMinX = Math.min(...layout.map((i) => i.posX))

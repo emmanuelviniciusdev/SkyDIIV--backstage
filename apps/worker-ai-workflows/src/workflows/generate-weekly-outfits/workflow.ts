@@ -79,6 +79,7 @@ export const generateWeeklyOutfitsWorkflow = createWorkflow<GenerateWeeklyOutfit
         suggestions,
         dayWeatherByWeekday: promptData.dayWeatherByWeekday,
         validClothingItemIds: promptData.validClothingItemIds,
+        pieceTypeById: promptData.pieceTypeById,
       })
     })
     log.info("Step completed: save-outfits", { savedCount: savedOutfits.length })

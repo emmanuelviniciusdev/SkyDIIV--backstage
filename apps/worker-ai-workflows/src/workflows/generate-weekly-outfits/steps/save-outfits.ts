@@ -20,6 +20,8 @@ export interface SaveOutfitsInput {
    * foreign-key constraint violation.
    */
   validClothingItemIds: string[]
+  /** clothing item ID → piece type name for flat-lay collage layout. */
+  pieceTypeById?: Record<string, string | null>
 }
 
 /**
@@ -62,6 +64,7 @@ export async function saveOutfitsStep(input: SaveOutfitsInput): Promise<SavedOut
     weekStartDate: input.weekStartDate,
     suggestions: sanitisedSuggestions,
     dayWeatherByWeekday: input.dayWeatherByWeekday,
+    pieceTypeById: input.pieceTypeById,
   })
 
   log.info("Step completed — outfits saved", {
