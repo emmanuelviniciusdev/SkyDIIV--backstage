@@ -195,7 +195,8 @@ async function buildBoardComposite(
         width: canvasWidth,
         height: canvasHeight,
         fit: "pad",
-        background: "#00000000",
+        // CF Images rejects 8-digit hex (#RRGGBBAA); use rgba() for transparency.
+        background: "rgba(0,0,0,0)",
       })
       .output({ format: "image/png" })
   ).response().arrayBuffer()

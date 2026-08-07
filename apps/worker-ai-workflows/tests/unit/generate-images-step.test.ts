@@ -127,6 +127,23 @@ describe("generateImageStep()", () => {
     expect(result).toBe(true)
   })
 
+  it("pads the transparent canvas with rgba background (CF Images rejects #RRGGBBAA)", async () => {
+    await generateImageStep({
+      userId: USER_ID,
+      outfit: OUTFIT_1,
+      wardrobeImageMap: WARDROBE_IMAGE_MAP,
+    })
+
+    const padCall = mocks.mockTransform.mock.calls.find(
+      (args) => (args[0] as { fit?: string }).fit === "pad",
+    )
+    expect(padCall).toBeDefined()
+    expect(padCall![0]).toMatchObject({
+      fit: "pad",
+      background: "rgba(0,0,0,0)",
+    })
+  })
+
   it("draws one overlay per piece image at scaled board positions", async () => {
     await generateImageStep({
       userId: USER_ID,
