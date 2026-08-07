@@ -38,6 +38,8 @@ flowchart LR
 | Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Shared schema with the SkyDIIV web app |
 | Cache | [Upstash Redis](https://upstash.com/docs/redis) (REST API) | Web app cache keys and notifications |
 | Language model | [Google Gemini](https://ai.google.dev/) (`gemini-2.5-flash` default) | Wardrobe selection and panorama generation |
+| Image compositing | [Cloudflare Images](https://developers.cloudflare.com/images/) binding | Weekly outfit thumbnails (board-position PNG) |
+| Object storage | [Cloudflare R2](https://developers.cloudflare.com/r2/) | Outfit thumbnail uploads (`outfits/{id}.png`) |
 | Weather | [Open-Meteo](https://open-meteo.com) | Forecast + geocoding (`generate-weekly-outfits` only) |
 | Validation | [Zod](https://zod.dev/) | LLM response parsing |
 | Dev / deploy | Wrangler 4 | Local dev and Cloudflare deployment |
@@ -167,6 +169,7 @@ npm run lint:fix
 | Compatibility date | `2025-01-01` |
 | Compatibility flags | `nodejs_compat` |
 | Default LLM provider | `gemini_flash` |
+| Images binding | `[images] binding = "IMAGES"` |
 
 ### Secrets
 
@@ -180,6 +183,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `WORKER_OUTBOX_EVENTS_URL` | `generate-wardrobe-panorama` — origin of worker-outbox-events (shopping suggestions enqueue) |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | All workflows |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | All workflows |
+| `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL` | `generate-weekly-outfits` — outfit thumbnail uploads |
 
 Per-workflow env requirements and scheduler upstream URLs are documented in each workflow's doc.
 
@@ -208,8 +212,19 @@ Configure `worker-scheduler` with `WORKER_AI_WORKFLOWS_URL` (origin only). Flows
 
 ### GitHub Secrets (deploy)
 
+Configure these in the **staging** and **production** GitHub environments (Settings → Environments). CI syncs them via `wrangler secret bulk` before each deploy.
+
 | Secret | Description |
 |---|---|
 | `CLOUDFLARE_API_TOKEN` | Workers deploy permissions |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
 | `CLOUDFLARE_SUBDOMAIN` | `*.workers.dev` subdomain |
+| `DATABASE_URL` / `DATABASE_URL_UNPOOLED` | Neon PostgreSQL |
+| `QSTASH_TOKEN`, `QSTASH_*_SIGNING_KEY` | Upstash Workflow / QStash |
+| `GEMINI_API_KEY` | LLM provider |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Redis cache + notifications |
+| `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL` | Outfit thumbnail uploads (`generate-weekly-outfits`) |
+
+Also configure GitHub **environment variables** (`QSTASH_URL`, `WORKER_AI_WORKFLOWS_URL`, `WORKER_OUTBOX_EVENTS_URL`) — CI injects these into `wrangler.toml` `[vars]` before deploy.
+
+The Cloudflare Images binding (`[images] binding = "IMAGES"`) is declared in `wrangler.toml` and does not require a GitHub secret.

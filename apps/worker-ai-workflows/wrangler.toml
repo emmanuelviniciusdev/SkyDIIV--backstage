@@ -31,6 +31,23 @@ LLM_PROVIDER = "gemini_flash"
 #   wrangler secret put UPSTASH_REDIS_REST_TOKEN
 #   # or:
 #   wrangler secret put REDIS_URL
+#
+# ── R2 / image storage secrets ────────────────────────────────────────────────
+# Used by step 4 (generate-images) to upload composite outfit thumbnails.
+# Must match the same R2 bucket used by the skydiiv web app.
+#
+#   wrangler secret put R2_ACCOUNT_ID
+#   wrangler secret put R2_BUCKET
+#   wrangler secret put R2_ACCESS_KEY_ID
+#   wrangler secret put R2_SECRET_ACCESS_KEY
+#   wrangler secret put R2_PUBLIC_URL
+
+# ── Cloudflare Images binding ─────────────────────────────────────────────────
+# Provides the IMAGES binding used by step 4 (generate-images) to composite
+# outfit thumbnails without any in-Worker CPU usage (Cloudflare's backend does
+# the pixel work).
+[images]
+binding = "IMAGES"
 
 [observability.logs]
 enabled = true
@@ -39,6 +56,9 @@ invocation_logs = true
 # ── Staging / preview environment ─────────────────────────────────────────────
 [env.staging]
 name = "worker-ai-workflows-staging"
+
+[env.staging.images]
+binding = "IMAGES"
 
 [env.staging.vars]
 LLM_PROVIDER = "gemini_flash"

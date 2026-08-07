@@ -2,6 +2,11 @@ import { randomUUID } from "crypto"
 import type postgres from "postgres"
 import { createLogger } from "../logger"
 import type { DayWeatherInfo } from "../i18n/weather/formatters"
+import {
+  buildDefaultBoardLayout,
+  type BoardLayoutItem,
+} from "../outfits/board-layout"
+import { deleteImageFromR2 } from "../storage/r2-client"
 
 export interface OutfitSuggestion {
   weekday: string
@@ -23,10 +28,13 @@ export interface SavedOutfitRef {
   outfitId: string
   weekday: string
   clothingPieceIds: string[]
+  /** Creative-board layout written to outfit_items (1600×1600 canvas). */
+  layout: BoardLayoutItem[]
 }
 
 export interface WeeklyOutfitsRepository {
   saveWeeklyOutfits(input: SaveWeeklyOutfitsInput): Promise<SavedOutfitRef[]>
+  updateOutfitImageUrl(outfitId: string, imageUrl: string): Promise<void>
 }
 
 const WEEKDAY_TO_DAY_OF_WEEK: Record<string, number> = {
@@ -52,8 +60,12 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
    * suggestions. All deletes and inserts run inside a single postgres.js
    * transaction (sql.begin), making the operation atomic and idempotent.
    *
-   * Returns refs for every outfit that was successfully inserted.
-   * `outfits.image_url` is left NULL — thumbnail generation is not performed.
+   * Each outfit_item is written with creative-board layout columns
+   * (pos_x/y, width, height, z_index, rotation) from buildDefaultBoardLayout.
+   * `outfits.image_url` is left NULL here — thumbnails are generated in a
+   * later workflow step.
+   *
+   * Returns refs for every outfit that was successfully inserted (including layout).
    */
   async saveWeeklyOutfits(input: SaveWeeklyOutfitsInput): Promise<SavedOutfitRef[]> {
     const { userId, weeklyOutfitPreferencesId, weekStartDate, suggestions, dayWeatherByWeekday } = input
@@ -68,6 +80,27 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
     const existingOutfitIds = existing.map((r) => r.outfit_id)
     log.info("Existing outfits found", { count: existingOutfitIds.length, weekStartDate })
 
+    // Best-effort R2 cleanup for prior thumbnails (PNG current + JPEG legacy).
+    // Done before the DB transaction so orphaned objects are still removed even
+    // if a previous run generated no thumbnail (image_url was null).
+    if (existingOutfitIds.length > 0) {
+      const deletions = existingOutfitIds.flatMap((outfitId) =>
+        [`outfits/${outfitId}.png`, `outfits/${outfitId}.jpg`].map(async (key) => {
+          try {
+            await deleteImageFromR2(key)
+            log.debug("Deleted old thumbnail from R2", { key })
+          } catch (err) {
+            log.warn("Failed to delete old thumbnail from R2 — continuing", {
+              key,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          }
+        }),
+      )
+      await Promise.all(deletions)
+      log.info("R2 thumbnail cleanup complete", { count: existingOutfitIds.length })
+    }
+
     const savedRefs = await this.writeDb.begin(async (tx) => {
       log.debug("Transaction started")
 
@@ -78,7 +111,6 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
         `
         log.info("Deleted existing outfits", { count: existingOutfitIds.length })
       }
-
 
       const now = new Date()
       const refs: SavedOutfitRef[] = []
@@ -99,6 +131,7 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
         const title = `Weekly AI Outfit — ${capitalise(suggestion.weekday)}`
         const dayWeather = dayWeatherByWeekday[suggestion.weekday.toLowerCase()] ?? null
         const weatherSummary = dayWeather?.weatherSummary ?? null
+        const layout = buildDefaultBoardLayout(suggestion.clothingPieceIds)
 
         log.debug("Inserting outfit", {
           weekday: suggestion.weekday,
@@ -116,13 +149,15 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
           )
         `
 
-        for (const clothingItemId of suggestion.clothingPieceIds) {
+        for (const item of layout) {
           await tx`
             INSERT INTO outfit_items (
               id, outfit_id, clothing_item_id,
+              pos_x, pos_y, width, height, z_index, rotation,
               created_by, updated_by, created_at, updated_at
             ) VALUES (
-              ${randomUUID()}, ${outfitId}, ${clothingItemId},
+              ${randomUUID()}, ${outfitId}, ${item.clothingItemId},
+              ${item.posX}, ${item.posY}, ${item.width}, ${item.height}, ${item.zIndex}, ${item.rotation},
               ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
             )
           `
@@ -143,7 +178,12 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
           )
         `
 
-        refs.push({ outfitId, weekday: suggestion.weekday, clothingPieceIds: suggestion.clothingPieceIds })
+        refs.push({
+          outfitId,
+          weekday: suggestion.weekday,
+          clothingPieceIds: suggestion.clothingPieceIds,
+          layout,
+        })
       }
 
       log.info("Transaction completed", { insertedCount: refs.length })
@@ -151,6 +191,15 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
     })
 
     return savedRefs ?? []
+  }
+
+  async updateOutfitImageUrl(outfitId: string, imageUrl: string): Promise<void> {
+    const now = new Date()
+    await this.writeDb`
+      UPDATE outfits
+      SET image_url = ${imageUrl}, updated_at = ${now}, updated_by = ${CREATED_BY}
+      WHERE id = ${outfitId}
+    `
   }
 }
 

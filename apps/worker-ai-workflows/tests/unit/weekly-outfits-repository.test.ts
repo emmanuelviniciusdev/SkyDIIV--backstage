@@ -1,7 +1,18 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
+
+const mocks = vi.hoisted(() => ({
+  deleteImageFromR2: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock("../../src/lib/storage/r2-client", () => ({
+  deleteImageFromR2: mocks.deleteImageFromR2,
+  uploadImageToR2: vi.fn(),
+}))
+
 import { SqlWeeklyOutfitsRepository } from "../../src/lib/db/weekly-outfits.repository"
 import type postgres from "postgres"
 import type { SavedOutfitRef } from "../../src/lib/db/weekly-outfits.repository"
+import { buildDefaultBoardLayout } from "../../src/lib/outfits/board-layout"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -74,6 +85,10 @@ const BASE_INPUT = {
 // ---------------------------------------------------------------------------
 
 describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
+  beforeEach(() => {
+    mocks.deleteImageFromR2.mockClear()
+  })
+
   it("does not issue a DELETE when no existing records are found", async () => {
     const readDb = makeReadDb([])
     const { db: writeDb, tx } = makeWriteDb()
@@ -98,6 +113,38 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
       (v) => Array.isArray(v) && v.includes("old-outfit-1") && v.includes("old-outfit-2"),
     )
     expect(hasIds).toBe(true)
+  })
+
+  it("best-effort deletes prior R2 thumbnails (png + jpg) before replacing outfits", async () => {
+    const readDb = makeReadDb(["old-outfit-1"])
+    const { db: writeDb } = makeWriteDb()
+    const repo = new SqlWeeklyOutfitsRepository(readDb, writeDb)
+
+    await repo.saveWeeklyOutfits(BASE_INPUT)
+
+    expect(mocks.deleteImageFromR2).toHaveBeenCalledWith("outfits/old-outfit-1.png")
+    expect(mocks.deleteImageFromR2).toHaveBeenCalledWith("outfits/old-outfit-1.jpg")
+  })
+
+  it("inserts outfit_items with creative-board layout columns", async () => {
+    const readDb = makeReadDb([])
+    const { db: writeDb, tx } = makeWriteDb()
+    const repo = new SqlWeeklyOutfitsRepository(readDb, writeDb)
+
+    await repo.saveWeeklyOutfits(BASE_INPUT)
+
+    const sql = getSqlStrings(tx).join(" ")
+    expect(sql).toMatch(/pos_x/i)
+    expect(sql).toMatch(/pos_y/i)
+    expect(sql).toMatch(/z_index/i)
+    expect(sql).toMatch(/rotation/i)
+
+    const expected = buildDefaultBoardLayout(["item-1", "item-2"])
+    const values = getInterpolatedValues(tx)
+    expect(values).toContain(expected[0].posX)
+    expect(values).toContain(expected[0].posY)
+    expect(values).toContain(expected[0].width)
+    expect(values).toContain(expected[0].zIndex)
   })
 
   it("runs everything inside a transaction", async () => {
@@ -187,7 +234,7 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     }
   })
 
-  it("returns SavedOutfitRef array with correct outfitId, weekday, and clothingPieceIds", async () => {
+  it("returns SavedOutfitRef array with correct outfitId, weekday, clothingPieceIds, and layout", async () => {
     const readDb = makeReadDb([])
     const { db: writeDb } = makeWriteDb()
     const repo = new SqlWeeklyOutfitsRepository(readDb, writeDb)
@@ -204,9 +251,11 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     expect(sunday?.clothingPieceIds).toEqual(["item-1", "item-2"])
     expect(typeof sunday?.outfitId).toBe("string")
     expect(sunday?.outfitId.length).toBeGreaterThan(0)
+    expect(sunday?.layout).toEqual(buildDefaultBoardLayout(["item-1", "item-2"]))
 
     expect(monday).toBeDefined()
     expect(monday?.clothingPieceIds).toEqual(["item-3"])
+    expect(monday?.layout).toEqual(buildDefaultBoardLayout(["item-3"]))
   })
 
   it("returns an empty array when all suggestions are skipped", async () => {
@@ -220,5 +269,20 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     })
 
     expect(result).toEqual([])
+  })
+})
+
+describe("SqlWeeklyOutfitsRepository.updateOutfitImageUrl()", () => {
+  it("updates outfits.image_url for the given outfit id", async () => {
+    const readDb = makeReadDb([])
+    const { db: writeDb } = makeWriteDb()
+    const writeMock = writeDb as unknown as ReturnType<typeof vi.fn>
+    const repo = new SqlWeeklyOutfitsRepository(readDb, writeDb)
+
+    await repo.updateOutfitImageUrl("outfit-1", "https://r2.example.com/outfits/outfit-1.png")
+
+    expect(getSqlStrings(writeMock).some((s) => /update outfits/i.test(s))).toBe(true)
+    expect(getInterpolatedValues(writeMock)).toContain("https://r2.example.com/outfits/outfit-1.png")
+    expect(getInterpolatedValues(writeMock)).toContain("outfit-1")
   })
 })

@@ -130,6 +130,26 @@ vi.mock("../../src/lib/llm/index", () => ({
   registerLlmProvider: vi.fn(),
 }))
 
+vi.mock("../../src/lib/storage/r2-client", () => ({
+  deleteImageFromR2: vi.fn().mockResolvedValue(undefined),
+  uploadImageToR2: vi.fn().mockResolvedValue("https://r2.example.com/outfits/outfit.png"),
+}))
+
+vi.mock("../../src/lib/cf-images", () => {
+  const pipeline = {
+    transform: vi.fn().mockReturnThis(),
+    draw: vi.fn().mockReturnThis(),
+    output: vi.fn().mockResolvedValue({
+      response: () => new Response(new Uint8Array([0x89, 0x50]).buffer),
+    }),
+  }
+  return {
+    getImages: () => ({
+      input: vi.fn().mockReturnValue(pipeline),
+    }),
+  }
+})
+
 // ---------------------------------------------------------------------------
 // Import steps AFTER mocks are registered
 // ---------------------------------------------------------------------------
@@ -137,6 +157,8 @@ vi.mock("../../src/lib/llm/index", () => ({
 import { buildPromptStep } from "../../src/workflows/generate-weekly-outfits/steps/build-prompt"
 import { executePromptStep } from "../../src/workflows/generate-weekly-outfits/steps/execute-prompt"
 import { saveOutfitsStep } from "../../src/workflows/generate-weekly-outfits/steps/save-outfits"
+import { generateImageStep } from "../../src/workflows/generate-weekly-outfits/steps/generate-images"
+import { buildDefaultBoardLayout } from "../../src/lib/outfits/board-layout"
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -156,6 +178,10 @@ describe("Step 1 — buildPromptStep()", () => {
     expect(result.locale).toBe("pt-BR")
     expect(typeof result.prompt).toBe("string")
     expect(result.prompt.length).toBeGreaterThan(100)
+    expect(result.wardrobeImageMap).toEqual({
+      "item-1": "https://r2.example.com/items/item-1.jpg",
+      "item-2": "https://r2.example.com/items/item-2.jpg",
+    })
   })
 
   it("includes wardrobe item IDs in the prompt", async () => {
@@ -258,7 +284,7 @@ describe("Step 2 — executePromptStep()", () => {
 })
 
 describe("Step 3 — saveOutfitsStep()", () => {
-  it("returns a SavedOutfitRef array for valid input", async () => {
+  it("returns a SavedOutfitRef array with creative-board layout", async () => {
     const suggestions = [
       { weekday: "sunday", clothingPieceIds: ["item-1", "item-2"] },
       { weekday: "monday", clothingPieceIds: ["item-3"] },
@@ -291,16 +317,56 @@ describe("Step 3 — saveOutfitsStep()", () => {
     })
 
     expect(Array.isArray(result)).toBe(true)
-    // The mock tx returns [] for all queries, so the returned refs may be empty
-    // in the mock environment — what matters is the step doesn't throw.
+    expect(result).toHaveLength(2)
+    expect(result[0].layout).toEqual(buildDefaultBoardLayout(["item-1", "item-2"]))
+    expect(result[1].layout).toEqual(buildDefaultBoardLayout(["item-3"]))
   })
 })
 
-describe("Full pipeline (Step 1 → 2 → 3)", () => {
-  it("produces saved outfit data without errors", async () => {
+describe("Step 4 — generateImageStep()", () => {
+  it("generates a thumbnail using layout + wardrobeImageMap", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        body: new ReadableStream(),
+      }),
+    )
+
+    const outfit = {
+      outfitId: "outfit-integration-1",
+      weekday: "sunday",
+      clothingPieceIds: ["item-1", "item-2"],
+      layout: buildDefaultBoardLayout(["item-1", "item-2"]),
+    }
+
+    const generated = await generateImageStep({
+      userId: mocks.USER_ID,
+      outfit,
+      wardrobeImageMap: {
+        "item-1": "https://r2.example.com/items/item-1.jpg",
+        "item-2": "https://r2.example.com/items/item-2.jpg",
+      },
+    })
+
+    expect(generated).toBe(true)
+  })
+})
+
+describe("Full pipeline (Step 1 → 2 → 3 → 4)", () => {
+  it("produces saved outfit data with layout and can generate thumbnails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        body: new ReadableStream(),
+      }),
+    )
+
     const promptData = await buildPromptStep(mocks.USER_ID, mocks.WEEK_START)
 
     expect(promptData.validClothingItemIds).toEqual(["item-1", "item-2", "item-3"])
+    expect(promptData.wardrobeImageMap["item-1"]).toBeDefined()
 
     const suggestions = await executePromptStep({
       userId: promptData.userId,
@@ -318,5 +384,17 @@ describe("Full pipeline (Step 1 → 2 → 3)", () => {
     expect(suggestions).toHaveLength(7)
     expect(suggestions.every((s) => s.clothingPieceIds.length > 0)).toBe(true)
     expect(Array.isArray(savedOutfits)).toBe(true)
+    expect(savedOutfits.every((o) => o.layout.length === o.clothingPieceIds.length)).toBe(true)
+
+    const firstWithImages = savedOutfits.find((o) =>
+      o.clothingPieceIds.some((id) => promptData.wardrobeImageMap[id]),
+    )
+    expect(firstWithImages).toBeDefined()
+    const generated = await generateImageStep({
+      userId: promptData.userId,
+      outfit: firstWithImages!,
+      wardrobeImageMap: promptData.wardrobeImageMap,
+    })
+    expect(generated).toBe(true)
   })
 })

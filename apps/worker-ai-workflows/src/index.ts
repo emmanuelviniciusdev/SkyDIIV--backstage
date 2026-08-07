@@ -1,7 +1,10 @@
 import { workflowsFetch } from "./workflows"
 import { createLogger } from "./lib/logger"
+import { setImages, type ImagesBinding } from "./lib/cf-images"
 
-type Env = Record<string, string | undefined>
+type Env = Record<string, string | undefined> & {
+  IMAGES?: ImagesBinding
+}
 
 /**
  * Cloudflare Worker entry point — worker-ai-workflows.
@@ -17,6 +20,7 @@ type Env = Record<string, string | undefined>
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     Object.assign(process.env, env)
+    if (env.IMAGES) setImages(env.IMAGES)
 
     const { method, url } = request
     const { pathname } = new URL(url)

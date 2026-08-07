@@ -9,8 +9,9 @@ This document describes the **generate-weekly-outfits** workflow end to end: how
 The **generate-weekly-outfits** workflow produces a full week of AI-curated outfit suggestions (Sunday through Saturday) for a single user. Given a `userId`, it:
 
 1. Selects clothing items from the user's existing wardrobe using a language model
-2. Persists the outfits to the database (`outfits.image_url` remains NULL)
-3. Invalidates the web app's cache and sets an unread notification
+2. Persists the outfits with creative-board layout positions on `outfit_items`
+3. Generates a board-position PNG thumbnail per outfit (CF Images → R2 → `outfits.image_url`)
+4. Invalidates the web app's cache and sets an unread notification
 
 **Hosted in:** `worker-ai-workflows` (workflow worker)  
 **Endpoint:** `POST /generate-weekly-outfits`  
@@ -46,13 +47,18 @@ graph TD
     S2 --> LLMLOG["Database\n(llm_interactions audit log)"]
 
     S2 --> S3["Step 3: save-outfits"]
-    S3 --> DB2["Database\n(write outfits)"]
+    S3 --> DB2["Database\n(write outfits + board layout)"]
 
-    S3 --> S3B["Step 3b: invalidate-weekly-outfits-cache"]
-    S3B --> CACHE1["Cache\ninvalidate outfit list"]
+    S3 --> S4["Step 4: generate-image\n(per outfit)"]
+    S4 --> CFI["CF Images"]
+    S4 --> R2["R2 object storage"]
+    S4 --> DB3["Database\n(update image_url)"]
 
-    S3B --> S3C["Step 3c: set-weekly-outfits-notification"]
-    S3C --> CACHE2["Cache\nset unread notification"]
+    S4 --> S5["Step 5: invalidate-weekly-outfits-cache"]
+    S5 --> CACHE1["Cache\ninvalidate outfit list"]
+
+    S5 --> S6["Step 6: set-weekly-outfits-notification"]
+    S6 --> CACHE2["Cache\nset unread notification"]
 ```
 
 ### Component roles
@@ -176,6 +182,7 @@ Loads all inputs needed for the language model call:
 | `weeklyOutfitPreferencesId` | FK for `weekly_outfits` inserts |
 | `weekStartDate` | Sunday ISO date (`YYYY-MM-DD`) |
 | `dayWeatherByWeekday` | Map of English weekday → structured weather data for the database (summary + temperature fields) |
+| `wardrobeImageMap` | clothing item ID → public image URL (pieces with images only); used by step 4 |
 | `validClothingItemIds` | All wardrobe IDs; used to filter invalid model output in step 3 |
 
 ---
@@ -223,25 +230,55 @@ Persists outfit suggestions atomically and idempotently.
 
 **Idempotency:** For the same `(weeklyOutfitPreferencesId, weekStartDate)`:
 1. Existing outfit IDs are looked up
-2. Inside a single database transaction:
+2. Prior R2 thumbnails are best-effort deleted (`outfits/{id}.png` and legacy `.jpg`)
+3. Inside a single database transaction:
    - Old `outfits` rows are deleted (cascades to `outfit_items` and `weekly_outfits`)
-   - New `outfits`, `outfit_items`, and `weekly_outfits` rows are inserted (`outfits.image_url` is NULL)
+   - New `outfits`, `outfit_items` (with creative-board layout columns), and `weekly_outfits` rows are inserted (`outfits.image_url` is NULL until step 4)
+
+**Creative-board layout:** Each `outfit_items` row is written with `pos_x`, `pos_y`, `width`, `height`, `z_index`, and `rotation` from `buildDefaultBoardLayout` in `src/lib/outfits/board-layout.ts`. This mirrors the SkyDIIV web app's default layout on the **1600×1600** creative-board canvas (`rotation` is always `0` for weekly defaults).
 
 **Records created per valid suggestion:**
 
 | Table | Key fields |
 |---|---|
 | `outfits` | `type = 'AI_GENERATED'`, title `Weekly AI Outfit — {Weekday}`, `created_by = 'worker-ai-workflows'` |
-| `outfit_items` | One row per selected clothing item |
+| `outfit_items` | One row per selected clothing item + board layout columns |
 | `weekly_outfits` | Links outfit to preferences, week, day (`0`=Sun … `6`=Sat), weather summary, and temperature fields |
 
 Suggestions with unknown weekdays or zero clothing pieces after sanitization are skipped with a warning.
 
-**Output:** Array of `SavedOutfitRef` objects (`outfitId`, `weekday`, `clothingPieceIds`).
+**Output:** Array of `SavedOutfitRef` objects (`outfitId`, `weekday`, `clothingPieceIds`, `layout`) passed to step 4.
 
 ---
 
-### Step 3b — `invalidate-weekly-outfits-cache`
+### Step 4 — `generate-image-{outfitId}` (one step per outfit)
+
+**Source:** `src/workflows/generate-weekly-outfits/steps/generate-images.ts`
+
+Each saved outfit gets its own durable workflow step so every image compositing call runs in a **fresh worker invocation** with a fresh CPU budget. Thumbnails run **before** cache invalidation so the web app does not cache `image_url: null`.
+
+**Per-outfit flow:**
+
+1. Resolve piece image URLs from `wardrobeImageMap` using the saved board layout (z-order)
+2. Fetch images concurrently; individual fetch failures are dropped
+3. Compute a padded export crop from the layout (same padding as the creative board) and scale so the longest side is ≤ **800px**
+4. Build a transparent PNG collage via Cloudflare Images, drawing each piece at its scaled board position (`fit: contain`)
+5. Upload to R2 at `outfits/{outfitId}.png` with metadata `{ userid: userId }`
+6. Update `outfits.image_url` in the database
+
+**Image pipeline batching:** Cloudflare Images caps a single pipeline at 10 operations. Overlays are drawn in batches of 3 (`DRAWS_PER_BATCH`) across multiple pipeline executions.
+
+**Outcomes:**
+
+| Result | Behavior |
+|---|---|
+| No piece images / all fetches fail | Step returns `false`; workflow continues |
+| Composite + upload succeed | Step returns `true`; `outfits.image_url` updated |
+| Unexpected error (storage, image service, database) | Step throws; the workflow engine retries that step |
+
+---
+
+### Step 5 — `invalidate-weekly-outfits-cache`
 
 **Source:** `src/workflows/generate-weekly-outfits/steps/invalidate-weekly-outfits-cache.ts`  
 **Cache module:** `src/lib/cache/weekly-outfits-cache.ts`
@@ -256,7 +293,7 @@ weekly-outfits:{userId}:{weekStartDate}
 
 ---
 
-### Step 3c — `set-weekly-outfits-notification`
+### Step 6 — `set-weekly-outfits-notification`
 
 **Source:** `src/workflows/generate-weekly-outfits/steps/set-weekly-outfits-notification.ts`  
 **Cache module:** `src/lib/cache/notification-cache.ts`
@@ -324,8 +361,8 @@ The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of 
 | `clothing_items` | Read | Wardrobe items with titles, image URLs, and piece type/subtype FKs |
 | `clothing_item_tags` / `tags` | Read (join) | Tags describing each piece |
 | `domains` | Read (join) | Piece type and subtype names (`type = 'piece_type'` / `'piece_subtype'`) |
-| `outfits` | Write | One AI-generated outfit per day; `image_url` is NULL |
-| `outfit_items` | Write | Join table: outfit ↔ clothing item |
+| `outfits` | Write | One AI-generated outfit per day; `image_url` updated in step 4 |
+| `outfit_items` | Write | Join table: outfit ↔ clothing item + creative-board layout columns |
 | `weekly_outfits` | Write | Links outfit to week/day with weather summary |
 | `llm_interactions` | Write | Audit log of every language model call |
 
@@ -337,6 +374,7 @@ The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of 
 | `weekly_outfits.day_of_week` | `0` (Sunday) through `6` (Saturday) |
 | `outfits.type` | `'AI_GENERATED'` |
 | `outfits.created_by` / `updated_by` | `'worker-ai-workflows'` |
+| `outfit_items.pos_x/y`, `width`, `height`, `z_index`, `rotation` | Creative-board layout (1600 canvas; mirrors web `buildDefaultBoardLayout`) |
 | `weekly_outfits.weather_summary` | Localized string in the user's locale, e.g. `"Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%"` (pt-BR) |
 | `weekly_outfits.weather_code` | WMO weather interpretation code from Open-Meteo (e.g. `0` = clear sky) |
 | `weekly_outfits.min_temperature` | Minimum daily temperature from the forecast (°C, raw float from Open-Meteo) |
@@ -366,7 +404,16 @@ erDiagram
 
     outfits {
         string type "AI_GENERATED"
-        string image_url "nullable"
+        string image_url "R2 PNG thumbnail"
+    }
+
+    outfit_items {
+        float pos_x
+        float pos_y
+        float width
+        float height
+        int z_index
+        float rotation
     }
 ```
 
@@ -378,8 +425,8 @@ These cache key formats **must stay in sync** with the SkyDIIV web app.
 
 | Key pattern | Operation | When | Purpose |
 |---|---|---|---|
-| `weekly-outfits:{userId}:{weekStart}` | Delete | Step 3b | Bust cached weekly outfits API response |
-| `notification--new-weekly-outfits--{userId}` | Set | Step 3c | Signal unread weekly outfits to the user |
+| `weekly-outfits:{userId}:{weekStart}` | Delete | Step 5 | Bust cached weekly outfits API response |
+| `notification--new-weekly-outfits--{userId}` | Set | Step 6 | Signal unread weekly outfits to the user |
 
 ---
 
@@ -404,8 +451,20 @@ Set via `wrangler secret put <KEY>` (production) or `.dev.vars` (local):
 | `GEMINI_MODEL` | — | Model name override |
 | `UPSTASH_REDIS_REST_URL` | ✅* | Cache + notifications |
 | `UPSTASH_REDIS_REST_TOKEN` | ✅* | Cache + notifications |
+| `R2_ACCOUNT_ID` | ✅ | Outfit thumbnail uploads |
+| `R2_BUCKET` | ✅ | Outfit thumbnail uploads |
+| `R2_ACCESS_KEY_ID` | ✅ | Outfit thumbnail uploads |
+| `R2_SECRET_ACCESS_KEY` | ✅ | Outfit thumbnail uploads |
+| `R2_PUBLIC_URL` | ✅ | Public URL prefix for uploaded thumbnails |
 
 \*Cache-related steps degrade gracefully when not configured.
+
+Also required in `wrangler.toml`:
+
+```toml
+[images]
+binding = "IMAGES"
+```
 
 ### Scheduler worker secrets (separate deployable)
 
@@ -428,6 +487,8 @@ Set via `wrangler secret put <KEY>` (production) or `.dev.vars` (local):
 | Weather API failure | ❌ Non-fatal | Continues without forecast data |
 | Language model failure / bad JSON | ✅ Fatal | Step 2 throws; prior step not re-run on retry |
 | Database save failure | ✅ Fatal | Transaction rolls back |
+| Thumbnail generation (no piece images) | ❌ Non-fatal | Step returns `false`; continues |
+| Thumbnail generation (CF Images / R2 / DB error) | ✅ Fatal | Step throws; retried by the workflow engine |
 | Cache invalidation failure | ❌ Non-fatal | Warning logged |
 | Notification set failure | ❌ Non-fatal | Warning logged |
 
@@ -465,10 +526,14 @@ apps/worker-ai-workflows/
 │   │           ├── build-prompt.ts                       # Step 1
 │   │           ├── execute-prompt.ts                     # Step 2
 │   │           ├── save-outfits.ts                       # Step 3
-│   │           ├── invalidate-weekly-outfits-cache.ts    # Step 3b
-│   │           └── set-weekly-outfits-notification.ts    # Step 3c
+│   │           ├── generate-images.ts                    # Step 4 (per outfit)
+│   │           ├── invalidate-weekly-outfits-cache.ts    # Step 5
+│   │           └── set-weekly-outfits-notification.ts    # Step 6
 │   └── lib/
 │       ├── db/                                           # Database repositories
+│       ├── outfits/                                      # Creative-board layout helpers
+│       ├── cf-images.ts                                  # Cloudflare Images binding
+│       ├── storage/                                      # R2 upload/delete
 │       ├── i18n/                                         # Locale resolution, prompts, weather labels
 │       ├── prompt/                                       # Weekly-outfits builder + JSON parser
 │       ├── llm/                                          # Language model provider
@@ -489,12 +554,14 @@ Unit and integration tests cover the workflow's critical paths:
 
 | Test file | Coverage |
 |---|---|
-| `tests/integration/workflow-steps.test.ts` | End-to-end data flow through all steps (mocked externals) |
+| `tests/integration/workflow-steps.test.ts` | End-to-end data flow through steps 1–4 (mocked externals) |
 | `tests/unit/prompt-builder.test.ts` | Prompt construction and response parsing |
-| `tests/unit/weekly-outfits-repository.test.ts` | Idempotent save, weekday mapping |
+| `tests/unit/board-layout.test.ts` | Creative-board default layout + export bounds |
+| `tests/unit/weekly-outfits-repository.test.ts` | Idempotent save, layout columns, image_url update |
+| `tests/unit/generate-images-step.test.ts` | Board-position CF Images composite + R2 upload |
 | `tests/unit/weekly-outfits-cache.test.ts` | Cache key deletion |
-| `tests/unit/invalidate-weekly-outfits-cache-step.test.ts` | Step 3b behavior |
-| `tests/unit/set-weekly-outfits-notification-step.test.ts` | Step 3c behavior |
+| `tests/unit/invalidate-weekly-outfits-cache-step.test.ts` | Step 5 behavior |
+| `tests/unit/set-weekly-outfits-notification-step.test.ts` | Step 6 behavior |
 | `tests/unit/workflows-registry.test.ts` | Endpoint registration |
 | `apps/worker-scheduler/tests/unit/weekly-outfits-flow.test.ts` | Scheduler fan-out |
 
@@ -517,6 +584,8 @@ sequenceDiagram
     participant MQ as Message queue
     participant WF as Workflow worker
     participant LLM as Language model
+    participant CFI as CF Images
+    participant R2 as R2
     participant CACHE as Cache
 
     CRON->>SCH: POST /schedule/every-<day>
@@ -533,14 +602,21 @@ sequenceDiagram
     WF->>DB: log llm_interactions
     Note over WF: Step 2 complete
 
-    WF->>DB: transaction: delete old + insert new outfits
+    WF->>DB: transaction: delete old + insert outfits with board layout
     Note over WF: Step 3 complete
 
+    loop each saved outfit
+        WF->>CFI: composite PNG from board positions
+        WF->>R2: put outfits/{outfitId}.png
+        WF->>DB: UPDATE outfits.image_url
+    end
+    Note over WF: Step 4 complete
+
     WF->>CACHE: invalidate weekly-outfits:{userId}:{week}
-    Note over WF: Step 3b complete
+    Note over WF: Step 5 complete
 
     WF->>CACHE: set notification--new-weekly-outfits--{userId}
-    Note over WF: Step 3c complete
+    Note over WF: Step 6 complete
 ```
 
 ---
