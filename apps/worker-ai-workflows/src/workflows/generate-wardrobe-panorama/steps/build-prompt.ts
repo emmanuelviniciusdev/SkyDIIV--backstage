@@ -1,7 +1,7 @@
 import { getReadDb } from "../../../lib/db/client"
 import { SqlWardrobeRepository } from "../../../lib/db/wardrobe.repository"
 import { SqlPreferencesRepository } from "../../../lib/db/preferences.repository"
-import { SqlUsersRepository } from "../../../lib/db/users.repository"
+import { resolveUserDisplayName, SqlUsersRepository } from "../../../lib/db/users.repository"
 import {
   SqlShoppingSuggestionsPreferencesRepository,
   type ShoppingSuggestionsPreferences,
@@ -37,7 +37,7 @@ export async function buildPromptStep(userId: string): Promise<BuildPromptResult
 
   const prompt = buildWardrobePanoramaPrompt({
     locale,
-    userName: user?.firstName ?? "",
+    userName: resolveUserDisplayName(user),
     preferences,
     wardrobe,
   })

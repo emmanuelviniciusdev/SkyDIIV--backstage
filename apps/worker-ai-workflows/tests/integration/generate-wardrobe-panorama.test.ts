@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
   ]
 
   const fakeUserRow = {
+    preferred_name: "Aninha",
     first_name: "Ana",
     last_name: "Costa",
   }
@@ -108,7 +109,7 @@ describe("generate-wardrobe-panorama workflow steps", () => {
     expect(result.locale).toBe("pt-BR")
     expect(typeof result.prompt).toBe("string")
     expect(result.prompt).toContain("DADOS DO USUÁRIO:")
-    expect(result.prompt).toContain("Nome: Ana")
+    expect(result.prompt).toContain("Nome: Aninha")
     expect(result.prompt).toContain("PREFERÊNCIAS DO USUÁRIO:")
     expect(result.prompt).toContain("DADOS DO GUARDA-ROUPA:")
     expect(result.prompt).toContain("RESUMO POR TIPO:")

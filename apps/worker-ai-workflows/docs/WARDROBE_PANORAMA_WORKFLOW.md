@@ -194,7 +194,7 @@ Loads data and assembles the language model prompt via `buildWardrobePanoramaPro
 | Input | Source | Notes |
 |---|---|---|
 | User locale | `app_preferences` + `domains` | Resolved via `resolveUserLocale()`; used for output-language directive and pt-BR fallback strings |
-| User name | `users` | `first_name`; pt-BR fallback when missing |
+| User name | `users` | `preferred_name`, falling back to `first_name` + `last_name`; pt-BR fallback when missing |
 | Preferences | `weekly_outfit_preferences` | Optional — location and routine description |
 | Shopping preferences | `shopping_suggestions_preferences` | Optional — gender / top / bottom / foot sizes for scrape enrichment |
 | Wardrobe items | `clothing_items` + `tags` + `domains` | ID, title, tags, piece type and subtype per item (type/subtype always in en-US; title/tags in user's language) |
@@ -351,7 +351,7 @@ The prompt intro includes: `"Responda sempre em {languageName}."`, where `langua
 
 ### Input sections in the prompt
 
-1. **DADOS DO USUÁRIO** — first name
+1. **DADOS DO USUÁRIO** — preferred name (falls back to first + last name)
 2. **PREFERÊNCIAS DO USUÁRIO** — location and routine description (or `"não definidas"`)
 3. **DADOS DO GUARDA-ROUPA**:
    - **Format note** — explains type/subtype are always in English (en-US); titles and tags may be in the user's language
@@ -383,7 +383,7 @@ The prompt intro includes: `"Responda sempre em {languageName}."`, where `langua
 
 | Table | Operation | Purpose |
 |---|---|---|
-| `users` | Read | User's first name for personalized prompt |
+| `users` | Read | User's preferred name (fallback: first + last) for personalized prompt |
 | `weekly_outfit_preferences` | Read | Optional location and routine description |
 | `shopping_suggestions_preferences` | Read | Optional gender / size filters for scrape payload |
 | `clothing_items` | Read | Wardrobe items with titles, image URLs, and piece type/subtype FKs |
@@ -550,7 +550,7 @@ apps/worker-ai-workflows/
 │   │           └── set-wardrobe-panorama-notification.ts     # Step 6
 │   └── lib/
 │       ├── db/
-│       │   ├── users.repository.ts                           # User profile (first name)
+│       │   ├── users.repository.ts                           # User profile (preferred / first+last name)
 │       │   ├── preferences.repository.ts
 │       │   ├── wardrobe.repository.ts
 │       │   ├── wardrobe-panorama.repository.ts
