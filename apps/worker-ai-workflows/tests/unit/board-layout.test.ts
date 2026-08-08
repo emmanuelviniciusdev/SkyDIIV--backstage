@@ -101,6 +101,20 @@ describe("buildOutfitCollageLayout()", () => {
     expect(buildOutfitCollageLayout(input)).toEqual(buildOutfitCollageLayout(input))
   })
 
+  it("always sets rotation to 0 (CF Images does not apply rotation)", () => {
+    const items = buildOutfitCollageLayout([
+      { id: "ow", pieceType: "Outerwear" },
+      { id: "top", pieceType: "Top" },
+      { id: "bottom", pieceType: "Bottom" },
+      { id: "shoes", pieceType: "Footwear" },
+      { id: "bag", pieceType: "Accessory" },
+    ])
+    expect(items.length).toBeGreaterThan(0)
+    for (const item of items) {
+      expect(item.rotation).toBe(0)
+    }
+  })
+
   it("does not place untyped pieces in a uniform grid", () => {
     const items = buildDefaultBoardLayout(["a", "b", "c", "d"])
     // A 2×2 grid would share Y across each row; collage uses a vertical stack.

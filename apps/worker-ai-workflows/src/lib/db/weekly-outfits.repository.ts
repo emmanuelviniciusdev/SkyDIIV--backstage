@@ -63,7 +63,9 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
    * transaction (sql.begin), making the operation atomic and idempotent.
    *
    * Each outfit_item is written with creative-board layout columns
-   * (pos_x/y, width, height, z_index, rotation) from buildOutfitCollageLayout.
+   * (pos_x/y, width, height, z_index) from buildOutfitCollageLayout.
+   * `rotation` is always persisted as 0 — CF Images does not apply rotation
+   * when compositing thumbnails.
    * `outfits.image_url` is left NULL here — thumbnails are generated in a
    * later workflow step.
    *
@@ -171,7 +173,7 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
               created_by, updated_by, created_at, updated_at
             ) VALUES (
               ${randomUUID()}, ${outfitId}, ${item.clothingItemId},
-              ${item.posX}, ${item.posY}, ${item.width}, ${item.height}, ${item.zIndex}, ${item.rotation},
+              ${item.posX}, ${item.posY}, ${item.width}, ${item.height}, ${item.zIndex}, ${0},
               ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
             )
           `

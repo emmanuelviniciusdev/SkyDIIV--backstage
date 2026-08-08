@@ -195,6 +195,7 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     expect(values).toContain(expected[0].posY)
     expect(values).toContain(expected[0].width)
     expect(values).toContain(expected[0].zIndex)
+    expect(values).toContain(0) // rotation always persisted as 0
   })
 
   it("runs everything inside a transaction", async () => {

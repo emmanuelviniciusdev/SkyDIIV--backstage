@@ -17,7 +17,11 @@ export interface BoardLayoutItem {
   width: number
   height: number
   zIndex: number
-  /** Degrees, clockwise. */
+  /**
+   * Always 0. Weekly outfit thumbnails are composited via CF Images, which
+   * does not apply rotation — storing non-zero values would diverge from the
+   * PNG and from what the creative board would show.
+   */
   rotation: number
 }
 
@@ -42,7 +46,6 @@ type Slot = {
   cy: number
   width: number
   height: number
-  rotation: number
   zIndex: number
 }
 
@@ -87,7 +90,7 @@ function slotToItem(id: string, slot: Slot): BoardLayoutItem {
     width,
     height,
     zIndex: slot.zIndex,
-    rotation: Math.round(slot.rotation * 10) / 10,
+    rotation: 0,
   }
 }
 
@@ -96,8 +99,9 @@ function slotToItem(id: string, slot: Slot): BoardLayoutItem {
  *
  * Pieces are placed by garment role: tops/dresses upper-center, bottoms below
  * with overlap, footwear near the bottom, outerwear behind to the side,
- * accessories overlapping corners. Slight size/rotation variation keeps the
- * result from looking like a grid.
+ * accessories overlapping corners. Slight position/size jitter keeps the
+ * result from looking like a grid. Rotation is always 0 (CF Images does not
+ * apply it when compositing thumbnails).
  */
 export function buildOutfitCollageLayout(pieces: BoardPieceInput[]): BoardLayoutItem[] {
   if (pieces.length === 0) return []
@@ -111,7 +115,6 @@ export function buildOutfitCollageLayout(pieces: BoardPieceInput[]): BoardLayout
         cy: CREATIVE_BOARD_SIZE / 2,
         width: size,
         height: size,
-        rotation: jitter(only.id, 1, 4),
         zIndex: 0,
       }),
     ]
@@ -165,7 +168,6 @@ export function buildOutfitCollageLayout(pieces: BoardPieceInput[]): BoardLayout
       cy: 380 + i * 50 + jitter(piece.id, 3, 25),
       width: 560 - i * 30,
       height: 640 - i * 20,
-      rotation: -8 + jitter(piece.id, 4, 4),
       zIndex: z++,
     })
   })
@@ -177,7 +179,6 @@ export function buildOutfitCollageLayout(pieces: BoardPieceInput[]): BoardLayout
       cy: 720 + i * 40 + jitter(piece.id, 6, 20),
       width: 580 - i * 20,
       height: 980 - i * 30,
-      rotation: jitter(piece.id, 7, 5),
       zIndex: z++,
     })
   })
@@ -190,7 +191,6 @@ export function buildOutfitCollageLayout(pieces: BoardPieceInput[]): BoardLayout
       cy: 420 + Math.floor(i / 2) * 70 + jitter(piece.id, 9, 20),
       width: 520 - i * 25,
       height: 560 - i * 20,
-      rotation: side * (5 + jitter(piece.id, 10, 3)),
       zIndex: z++,
     })
   })
@@ -203,7 +203,6 @@ export function buildOutfitCollageLayout(pieces: BoardPieceInput[]): BoardLayout
       cy: 980 + Math.floor(i / 2) * 60 + jitter(piece.id, 12, 20),
       width: 500 - i * 20,
       height: 560 - i * 15,
-      rotation: side * (-4 + jitter(piece.id, 13, 3)),
       zIndex: z++,
     })
   })
@@ -216,7 +215,6 @@ export function buildOutfitCollageLayout(pieces: BoardPieceInput[]): BoardLayout
       cy: 1280 + Math.floor(i / 2) * 40 + jitter(piece.id, 15, 20),
       width: 360 - i * 15,
       height: 300 - i * 10,
-      rotation: side * (10 + jitter(piece.id, 16, 5)),
       zIndex: z++,
     })
   })
@@ -236,7 +234,6 @@ export function buildOutfitCollageLayout(pieces: BoardPieceInput[]): BoardLayout
       cy: base.cy + jitter(piece.id, 18, 35),
       width: 300 - (i % 3) * 20,
       height: 300 - (i % 3) * 20,
-      rotation: (corner % 2 === 0 ? 1 : -1) * (12 + jitter(piece.id, 19, 6)),
       zIndex: 100 + i,
     })
   })
@@ -259,8 +256,8 @@ export function buildDefaultBoardLayout(pieceIds: string[]): BoardLayoutItem[] {
 
 /**
  * Computes a padded axis-aligned bounding box around all board pieces,
- * clamped to the logical creative board. Rotation is ignored for bounds
- * (export crop stays axis-aligned; weekly rotations are small).
+ * clamped to the logical creative board. Axis-aligned only (rotation is
+ * always 0 for weekly outfits).
  */
 export function computeBoardExportBounds(
   items: Array<Pick<BoardLayoutItem, "posX" | "posY" | "width" | "height">>,

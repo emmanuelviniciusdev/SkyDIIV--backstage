@@ -235,7 +235,7 @@ Persists outfit suggestions atomically and idempotently.
    - Old `outfits` rows are deleted with `WHERE id IN ${sql(ids)}` (postgres.js dynamic value-list helper; cascades to `outfit_items` and `weekly_outfits`)
    - New `outfits`, `outfit_items` (with creative-board layout columns), and `weekly_outfits` rows are inserted (`outfits.image_url` is NULL until step 4)
 
-**Creative-board layout:** Each `outfit_items` row is written with `pos_x`, `pos_y`, `width`, `height`, `z_index`, and `rotation` from `buildOutfitCollageLayout` in `src/lib/outfits/board-layout.ts`. Pieces are arranged as a flat-lay outfit collage by garment type (tops upper-center, bottoms below with overlap, footwear lower, outerwear behind, accessories on top) on the **1600×1600** creative-board canvas.
+**Creative-board layout:** Each `outfit_items` row is written with `pos_x`, `pos_y`, `width`, `height`, and `z_index` from `buildOutfitCollageLayout` in `src/lib/outfits/board-layout.ts` (`rotation` is always `0` — CF Images does not apply rotation when compositing thumbnails). Pieces are arranged as a flat-lay outfit collage by garment type (tops upper-center, bottoms below with overlap, footwear lower, outerwear behind, accessories on top) on the **1600×1600** creative-board canvas.
 
 **Records created per valid suggestion:**
 
@@ -374,7 +374,7 @@ The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of 
 | `weekly_outfits.day_of_week` | `0` (Sunday) through `6` (Saturday) |
 | `outfits.type` | `'AI_GENERATED'` |
 | `outfits.created_by` / `updated_by` | `'worker-ai-workflows'` |
-| `outfit_items.pos_x/y`, `width`, `height`, `z_index`, `rotation` | Creative-board flat-lay collage layout (1600 canvas; by piece type) |
+| `outfit_items.pos_x/y`, `width`, `height`, `z_index` | Creative-board flat-lay collage layout (1600 canvas; by piece type). `rotation` always stored as `0` (CF Images does not apply it). |
 | `weekly_outfits.weather_summary` | Localized string in the user's locale, e.g. `"Parcialmente nublado, máx. 27°C / mín. 21°C, chuva: 30%"` (pt-BR) |
 | `weekly_outfits.weather_code` | WMO weather interpretation code from Open-Meteo (e.g. `0` = clear sky) |
 | `weekly_outfits.min_temperature` | Minimum daily temperature from the forecast (°C, raw float from Open-Meteo) |
@@ -413,7 +413,7 @@ erDiagram
         float width
         float height
         int z_index
-        float rotation
+        float rotation "always 0"
     }
 ```
 
