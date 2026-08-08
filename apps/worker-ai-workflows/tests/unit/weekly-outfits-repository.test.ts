@@ -24,24 +24,31 @@ type SqlMock = ReturnType<typeof vi.fn> & {
 
 /**
  * Write DB mock:
- * - Tagged-template SELECT (existing outfits) resolves to `existingOutfitIds`
  * - `begin(fn)` runs `fn(tx)`
  * - `tx(ids)` helper form (postgres.js dynamic IN list) returns the ids array
- * - `tx\`...\`` tagged-template form resolves to []
+ * - `tx\`...\`` tagged-template form:
+ *     - DELETE … RETURNING → `deletedOutfitIds` rows
+ *     - other statements → []
  */
-function makeWriteDb(existingOutfitIds: string[] = []): {
+function makeWriteDb(deletedOutfitIds: string[] = []): {
   db: postgres.Sql
   tx: ReturnType<typeof vi.fn>
 } {
-  const rows = existingOutfitIds.map((id) => ({ outfit_id: id }))
+  const deletedRows = deletedOutfitIds.map((id) => ({ id }))
   const tx = vi.fn().mockImplementation((first: unknown) => {
-    // Helper form: sql([...]) used for `IN ${tx(ids)}`
+    // Helper form: sql([...]) used for `IN ${tx(ids)}` / `NOT IN ${tx(ids)}`
     if (Array.isArray(first) && !Object.prototype.hasOwnProperty.call(first, "raw")) {
       return first
     }
+    if (Array.isArray(first) && Object.prototype.hasOwnProperty.call(first, "raw")) {
+      const sql = (first as string[]).join(" ")
+      if (/delete from outfits/i.test(sql) && /returning/i.test(sql)) {
+        return Promise.resolve(deletedRows)
+      }
+    }
     return Promise.resolve([])
   })
-  const db = vi.fn().mockResolvedValue(rows) as unknown as SqlMock
+  const db = vi.fn().mockResolvedValue([]) as unknown as SqlMock
   db.begin = vi.fn().mockImplementation(
     async (fn: (t: ReturnType<typeof vi.fn>) => Promise<unknown>) => {
       return await fn(tx)
@@ -120,51 +127,77 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     mocks.deleteImageFromR2.mockClear()
   })
 
-  it("does not issue a DELETE when no existing records are found", async () => {
+  it("always issues a user-scoped AI_GENERATED DELETE independent of week (no pre-SELECT)", async () => {
     const { db: writeDb, tx } = makeWriteDb([])
-    const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
-
-    await repo.saveWeeklyOutfits(BASE_INPUT)
-
-    expect(getSqlStrings(tx).some((s) => /delete/i.test(s))).toBe(false)
-  })
-
-  it("deletes existing outfits with IN ${sql(ids)} so UUID rows actually match", async () => {
-    const { db: writeDb, tx } = makeWriteDb(["old-outfit-1", "old-outfit-2"])
-    const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
-
-    await repo.saveWeeklyOutfits(BASE_INPUT)
-
-    const deleteSql = getSqlStrings(tx).join(" ")
-    expect(deleteSql).toMatch(/delete from outfits/i)
-    expect(deleteSql).toMatch(/in/i)
-    expect(deleteSql).not.toMatch(/any\(/i)
-
-    // Helper form tx(ids) must be used so postgres.js expands the value list
-    expect(tx).toHaveBeenCalledWith(["old-outfit-1", "old-outfit-2"])
-
-    const values = getInterpolatedValues(tx)
-    const hasIds = values.some(
-      (v) => Array.isArray(v) && v.includes("old-outfit-1") && v.includes("old-outfit-2"),
-    )
-    expect(hasIds).toBe(true)
-  })
-
-  it("looks up existing outfits on the write connection (not the read pool)", async () => {
-    const { db: writeDb } = makeWriteDb(["old-outfit-1"])
     const readDb = makeUnusedReadDb()
     const repo = new SqlWeeklyOutfitsRepository(readDb, writeDb)
 
     await repo.saveWeeklyOutfits(BASE_INPUT)
 
-    expect(writeDb).toHaveBeenCalled()
-    expect(getSqlStrings(writeDb as unknown as ReturnType<typeof vi.fn>).join(" ")).toMatch(
-      /select outfit_id/i,
+    const deleteCall = tx.mock.calls.find((call) => {
+      const first = call[0]
+      return (
+        Array.isArray(first) &&
+        Object.prototype.hasOwnProperty.call(first, "raw") &&
+        (first as string[]).some((s) => typeof s === "string" && /delete from outfits/i.test(s))
+      )
+    })
+    expect(deleteCall).toBeDefined()
+    const deleteSql = (deleteCall![0] as string[]).join(" ")
+    expect(deleteSql).toMatch(/user_id/i)
+    expect(deleteSql).toMatch(/ai_generated/i)
+    expect(deleteSql).not.toMatch(/week_start_date/i)
+    expect(deleteSql).not.toMatch(/weekly_outfit_preferences_id/i)
+    expect(deleteSql).toMatch(/not in/i)
+    expect(deleteSql).toMatch(/returning/i)
+
+    const deleteValues = deleteCall!.slice(1)
+    expect(deleteValues).toContain(BASE_INPUT.userId)
+
+    // No SELECT on write or read — replacement is keyed off pre-allocated new IDs
+    expect(getSqlStrings(writeDb as unknown as ReturnType<typeof vi.fn>).join(" ")).not.toMatch(
+      /select/i,
     )
     expect(readDb).not.toHaveBeenCalled()
   })
 
-  it("best-effort deletes prior R2 thumbnails (png + jpg) before replacing outfits", async () => {
+  it("deletes prior AI outfits with NOT IN ${sql(newIds)} so UUID rows match", async () => {
+    const { db: writeDb, tx } = makeWriteDb(["old-outfit-1", "old-outfit-2"])
+    const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
+
+    const result = await repo.saveWeeklyOutfits(BASE_INPUT)
+
+    const deleteSql = getSqlStrings(tx).join(" ")
+    expect(deleteSql).toMatch(/delete from outfits/i)
+    expect(deleteSql).toMatch(/not in/i)
+    expect(deleteSql).not.toMatch(/any\(/i)
+
+    // Helper form tx(newIds) must be used so postgres.js expands the value list
+    const helperCalls = tx.mock.calls.filter(
+      (call) => Array.isArray(call[0]) && !Object.prototype.hasOwnProperty.call(call[0], "raw"),
+    )
+    expect(helperCalls.length).toBeGreaterThanOrEqual(1)
+    const passedIds = helperCalls[0][0] as string[]
+    expect(passedIds).toHaveLength(result.length)
+    expect(passedIds).toEqual(result.map((r) => r.outfitId))
+  })
+
+  it("deletes all AI_GENERATED outfits for the user when every suggestion is skipped", async () => {
+    const { db: writeDb, tx } = makeWriteDb(["old-outfit-1"])
+    const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
+
+    await repo.saveWeeklyOutfits({
+      ...BASE_INPUT,
+      suggestions: [{ weekday: "funday", clothingPieceIds: ["item-1"] }],
+    })
+
+    const deleteSql = getSqlStrings(tx).join(" ")
+    expect(deleteSql).toMatch(/delete from outfits/i)
+    expect(deleteSql).not.toMatch(/not in/i)
+    expect(deleteSql).toMatch(/returning/i)
+  })
+
+  it("best-effort deletes prior R2 thumbnails (png + jpg) after commit using RETURNING ids", async () => {
     const { db: writeDb } = makeWriteDb(["old-outfit-1"])
     const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
 
@@ -172,6 +205,15 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
 
     expect(mocks.deleteImageFromR2).toHaveBeenCalledWith("outfits/old-outfit-1.png")
     expect(mocks.deleteImageFromR2).toHaveBeenCalledWith("outfits/old-outfit-1.jpg")
+  })
+
+  it("skips R2 cleanup when DELETE returns no rows", async () => {
+    const { db: writeDb } = makeWriteDb([])
+    const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
+
+    await repo.saveWeeklyOutfits(BASE_INPUT)
+
+    expect(mocks.deleteImageFromR2).not.toHaveBeenCalled()
   })
 
   it("inserts outfit_items with creative-board layout columns", async () => {

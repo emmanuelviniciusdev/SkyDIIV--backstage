@@ -51,6 +51,17 @@ const WEEKDAY_TO_DAY_OF_WEEK: Record<string, number> = {
 
 const CREATED_BY = "worker-ai-workflows"
 
+interface PreparedOutfit {
+  outfitId: string
+  weekday: string
+  dayOfWeek: number
+  clothingPieceIds: string[]
+  layout: BoardLayoutItem[]
+  title: string
+  dayWeather: DayWeatherInfo | null
+  weatherSummary: string | null
+}
+
 export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
   constructor(
     private readonly readDb: postgres.Sql,
@@ -61,6 +72,11 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
    * Replaces the weekly outfits for a given user/week with the newly generated
    * suggestions. All deletes and inserts run inside a single postgres.js
    * transaction (sql.begin), making the operation atomic and idempotent.
+   *
+   * Old rows are removed without a pre-SELECT: new outfit IDs are allocated
+   * first, then this user's `AI_GENERATED` outfits whose IDs are not in that
+   * set are deleted (any week — so late runs still replace stale data),
+   * RETURNING ids for R2 cleanup, then the new rows are inserted.
    *
    * Each outfit_item is written with creative-board layout columns
    * (pos_x/y, width, height, z_index) from buildOutfitCollageLayout.
@@ -77,82 +93,47 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
     const log = createLogger("weekly-outfits-repo", userId)
     const typeById = pieceTypeById ?? {}
 
-    // Look up on the write (direct) connection so we never miss rows due to
-    // read-replica lag on the pooled DATABASE_URL endpoint.
-    const existing = await this.writeDb<{ outfit_id: string }[]>`
-      SELECT outfit_id
-      FROM weekly_outfits
-      WHERE weekly_outfit_preferences_id = ${weeklyOutfitPreferencesId}
-        AND week_start_date = ${weekStartDate}::date
-    `
-    const existingOutfitIds = existing.map((r) => r.outfit_id)
-    log.info("Existing outfits found", { count: existingOutfitIds.length, weekStartDate })
+    const prepared = prepareOutfits(suggestions, dayWeatherByWeekday, typeById, log)
+    const newOutfitIds = prepared.map((p) => p.outfitId)
 
-    // Best-effort R2 cleanup for prior thumbnails (PNG current + JPEG legacy).
-    // Done before the DB transaction so orphaned objects are still removed even
-    // if a previous run generated no thumbnail (image_url was null).
-    if (existingOutfitIds.length > 0) {
-      const deletions = existingOutfitIds.flatMap((outfitId) =>
-        [`outfits/${outfitId}.png`, `outfits/${outfitId}.jpg`].map(async (key) => {
-          try {
-            await deleteImageFromR2(key)
-            log.debug("Deleted old thumbnail from R2", { key })
-          } catch (err) {
-            log.warn("Failed to delete old thumbnail from R2 — continuing", {
-              key,
-              error: err instanceof Error ? err.message : String(err),
-            })
-          }
-        }),
-      )
-      await Promise.all(deletions)
-      log.info("R2 thumbnail cleanup complete", { count: existingOutfitIds.length })
-    }
-
-    const savedRefs = await this.writeDb.begin(async (tx) => {
+    const { savedRefs, deletedOutfitIds } = await this.writeDb.begin(async (tx) => {
       log.debug("Transaction started")
 
-      if (existingOutfitIds.length > 0) {
-        // postgres.js requires `IN ${sql(ids)}` for dynamic value lists.
-        // `ANY(${jsArray})` binds as a single opaque parameter and does not
-        // match UUID rows, so old outfits / outfit_items were left behind.
-        await tx`
-          DELETE FROM outfits
-          WHERE id IN ${tx(existingOutfitIds)}
-        `
-        log.info("Deleted existing outfits", { count: existingOutfitIds.length })
+      // Delete this user's prior AI-generated outfits that are not the ones we
+      // are about to insert. Scoped by user_id (not week), so a late / out-of-date
+      // run still replaces stale weeks. type = AI_GENERATED keeps user-created
+      // outfits intact. Fresh UUIDs mean every previous AI week is removed
+      // without a SELECT. postgres.js requires `NOT IN ${sql(ids)}` for dynamic
+      // UUID lists — `ANY(${jsArray})` does not match.
+      const deletedRows =
+        newOutfitIds.length > 0
+          ? await tx<{ id: string }[]>`
+              DELETE FROM outfits
+              WHERE user_id = ${userId}
+                AND type = 'AI_GENERATED'
+                AND id NOT IN ${tx(newOutfitIds)}
+              RETURNING id
+            `
+          : await tx<{ id: string }[]>`
+              DELETE FROM outfits
+              WHERE user_id = ${userId}
+                AND type = 'AI_GENERATED'
+              RETURNING id
+            `
+
+      const deletedIds = deletedRows.map((r) => r.id)
+      if (deletedIds.length > 0) {
+        log.info("Deleted existing outfits", { count: deletedIds.length })
       }
 
       const now = new Date()
       const refs: SavedOutfitRef[] = []
 
-      for (const suggestion of suggestions) {
-        const dayOfWeek = WEEKDAY_TO_DAY_OF_WEEK[suggestion.weekday.toLowerCase()]
-
-        if (dayOfWeek === undefined) {
-          log.warn("Unknown weekday — skipping", { weekday: suggestion.weekday })
-          continue
-        }
-        if (suggestion.clothingPieceIds.length === 0) {
-          log.warn("No clothing pieces for weekday — skipping", { weekday: suggestion.weekday })
-          continue
-        }
-
-        const outfitId = randomUUID()
-        const title = `Weekly AI Outfit — ${capitalise(suggestion.weekday)}`
-        const dayWeather = dayWeatherByWeekday[suggestion.weekday.toLowerCase()] ?? null
-        const weatherSummary = dayWeather?.weatherSummary ?? null
-        const layout = buildOutfitCollageLayout(
-          suggestion.clothingPieceIds.map((id) => ({
-            id,
-            pieceType: typeById[id] ?? null,
-          })),
-        )
-
+      for (const outfit of prepared) {
         log.debug("Inserting outfit", {
-          weekday: suggestion.weekday,
-          clothingPieceCount: suggestion.clothingPieceIds.length,
-          hasWeatherSummary: weatherSummary !== null,
+          weekday: outfit.weekday,
+          clothingPieceCount: outfit.clothingPieceIds.length,
+          hasWeatherSummary: outfit.weatherSummary !== null,
         })
 
         await tx`
@@ -160,19 +141,19 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
             id, user_id, type, title,
             created_by, updated_by, created_at, updated_at
           ) VALUES (
-            ${outfitId}, ${userId}, 'AI_GENERATED', ${title},
+            ${outfit.outfitId}, ${userId}, 'AI_GENERATED', ${outfit.title},
             ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
           )
         `
 
-        for (const item of layout) {
+        for (const item of outfit.layout) {
           await tx`
             INSERT INTO outfit_items (
               id, outfit_id, clothing_item_id,
               pos_x, pos_y, width, height, z_index, rotation,
               created_by, updated_by, created_at, updated_at
             ) VALUES (
-              ${randomUUID()}, ${outfitId}, ${item.clothingItemId},
+              ${randomUUID()}, ${outfit.outfitId}, ${item.clothingItemId},
               ${item.posX}, ${item.posY}, ${item.width}, ${item.height}, ${item.zIndex}, ${0},
               ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
             )
@@ -186,25 +167,32 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
             min_temperature, max_temperature, unity_temperature, description_temperature,
             created_by, updated_by, created_at, updated_at
           ) VALUES (
-            ${randomUUID()}, ${weeklyOutfitPreferencesId}, ${outfitId},
-            ${weekStartDate}::date, ${dayOfWeek}, ${weatherSummary}, ${dayWeather?.weatherCode ?? null},
-            ${dayWeather?.minTemperature ?? null}, ${dayWeather?.maxTemperature ?? null},
-            ${dayWeather?.unityTemperature ?? null}, ${dayWeather?.descriptionTemperature ?? null},
+            ${randomUUID()}, ${weeklyOutfitPreferencesId}, ${outfit.outfitId},
+            ${weekStartDate}::date, ${outfit.dayOfWeek}, ${outfit.weatherSummary}, ${outfit.dayWeather?.weatherCode ?? null},
+            ${outfit.dayWeather?.minTemperature ?? null}, ${outfit.dayWeather?.maxTemperature ?? null},
+            ${outfit.dayWeather?.unityTemperature ?? null}, ${outfit.dayWeather?.descriptionTemperature ?? null},
             ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
           )
         `
 
         refs.push({
-          outfitId,
-          weekday: suggestion.weekday,
-          clothingPieceIds: suggestion.clothingPieceIds,
-          layout,
+          outfitId: outfit.outfitId,
+          weekday: outfit.weekday,
+          clothingPieceIds: outfit.clothingPieceIds,
+          layout: outfit.layout,
         })
       }
 
-      log.info("Transaction completed", { insertedCount: refs.length })
-      return refs
+      log.info("Transaction completed", { insertedCount: refs.length, deletedCount: deletedIds.length })
+      return { savedRefs: refs, deletedOutfitIds: deletedIds }
     })
+
+    // Best-effort R2 cleanup after commit — uses IDs returned by DELETE so we
+    // never need a pre-SELECT. Orphaned objects from a prior failed run are
+    // acceptable; image_url may have been null.
+    if (deletedOutfitIds.length > 0) {
+      await deletePriorThumbnails(deletedOutfitIds, log)
+    }
 
     return savedRefs ?? []
   }
@@ -217,6 +205,68 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
       WHERE id = ${outfitId}
     `
   }
+}
+
+function prepareOutfits(
+  suggestions: OutfitSuggestion[],
+  dayWeatherByWeekday: Record<string, DayWeatherInfo>,
+  typeById: Record<string, string | null>,
+  log: ReturnType<typeof createLogger>,
+): PreparedOutfit[] {
+  const prepared: PreparedOutfit[] = []
+
+  for (const suggestion of suggestions) {
+    const dayOfWeek = WEEKDAY_TO_DAY_OF_WEEK[suggestion.weekday.toLowerCase()]
+
+    if (dayOfWeek === undefined) {
+      log.warn("Unknown weekday — skipping", { weekday: suggestion.weekday })
+      continue
+    }
+    if (suggestion.clothingPieceIds.length === 0) {
+      log.warn("No clothing pieces for weekday — skipping", { weekday: suggestion.weekday })
+      continue
+    }
+
+    const dayWeather = dayWeatherByWeekday[suggestion.weekday.toLowerCase()] ?? null
+    prepared.push({
+      outfitId: randomUUID(),
+      weekday: suggestion.weekday,
+      dayOfWeek,
+      clothingPieceIds: suggestion.clothingPieceIds,
+      layout: buildOutfitCollageLayout(
+        suggestion.clothingPieceIds.map((id) => ({
+          id,
+          pieceType: typeById[id] ?? null,
+        })),
+      ),
+      title: `Weekly AI Outfit — ${capitalise(suggestion.weekday)}`,
+      dayWeather,
+      weatherSummary: dayWeather?.weatherSummary ?? null,
+    })
+  }
+
+  return prepared
+}
+
+async function deletePriorThumbnails(
+  outfitIds: string[],
+  log: ReturnType<typeof createLogger>,
+): Promise<void> {
+  const deletions = outfitIds.flatMap((outfitId) =>
+    [`outfits/${outfitId}.png`, `outfits/${outfitId}.jpg`].map(async (key) => {
+      try {
+        await deleteImageFromR2(key)
+        log.debug("Deleted old thumbnail from R2", { key })
+      } catch (err) {
+        log.warn("Failed to delete old thumbnail from R2 — continuing", {
+          key,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }),
+  )
+  await Promise.all(deletions)
+  log.info("R2 thumbnail cleanup complete", { count: outfitIds.length })
 }
 
 function capitalise(s: string): string {

@@ -228,12 +228,12 @@ Persists outfit suggestions atomically and idempotently.
 
 **Pre-save sanitization:** Any clothing item ID returned by the model that is not in `validClothingItemIds` is dropped with a warning. This prevents foreign-key violations from invalid IDs.
 
-**Idempotency:** For the same `(weeklyOutfitPreferencesId, weekStartDate)`:
-1. Existing outfit IDs are looked up on the **write** (direct) connection — avoids missing rows due to read-replica lag on the pooled endpoint
-2. Prior R2 thumbnails are best-effort deleted (`outfits/{id}.png` and legacy `.jpg`)
-3. Inside a single database transaction:
-   - Old `outfits` rows are deleted with `WHERE id IN ${sql(ids)}` (postgres.js dynamic value-list helper; cascades to `outfit_items` and `weekly_outfits`)
+**Idempotency:** For a given `userId` (week-independent replacement of AI outfits):
+1. New outfit UUIDs are allocated up front for valid suggestions
+2. Inside a single database transaction:
+   - This user's prior `outfits` with `type = 'AI_GENERATED'` whose IDs are **not** in the new set are deleted (`user_id` + `NOT IN ${sql(newIds)}` — not filtered by week, so a late / out-of-date run still clears stale data; no pre-SELECT on the write connection; cascades to `outfit_items` and `weekly_outfits`). `RETURNING id` captures deleted IDs. Non-AI outfits are left untouched.
    - New `outfits`, `outfit_items` (with creative-board layout columns), and `weekly_outfits` rows are inserted (`outfits.image_url` is NULL until step 4)
+3. Prior R2 thumbnails for deleted IDs are best-effort removed after commit (`outfits/{id}.png` and legacy `.jpg`)
 
 **Creative-board layout:** Each `outfit_items` row is written with `pos_x`, `pos_y`, `width`, `height`, and `z_index` from `buildOutfitCollageLayout` in `src/lib/outfits/board-layout.ts` (`rotation` is always `0` — CF Images does not apply rotation when compositing thumbnails). Pieces are arranged as a flat-lay outfit collage by garment type (tops upper-center, bottoms below with overlap, footwear lower, outerwear behind, accessories on top) on the **1600×1600** creative-board canvas.
 
