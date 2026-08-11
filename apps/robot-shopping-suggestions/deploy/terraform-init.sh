@@ -20,6 +20,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="${ROOT}/deploy/terraform"
 cd "${TF_DIR}"
 
+# shellcheck disable=SC1091
+source "${ROOT}/deploy/oci-s3-backend-env.sh"
+
 write_backend_hcl_from_env() {
   umask 077
   if [[ -n "${TF_BACKEND_HCL_B64:-}" ]]; then
@@ -165,9 +168,84 @@ EOF
   fi
 }
 
+# OCI Object Storage rejects AWS aws-chunked PutObject (501 NotImplemented).
+# Ensure the S3 backend flags that disable those calls are present even when a
+# hand-edited secret / local backend.hcl omitted them. Also migrate the
+# deprecated top-level `endpoint` to `endpoints.s3` (Terraform ≥ 1.6 warning).
+ensure_oci_object_storage_compat() {
+  local file="$1"
+  python3 - "$file" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text()
+required = {
+    "skip_region_validation": "true",
+    "skip_credentials_validation": "true",
+    "skip_metadata_api_check": "true",
+    "skip_requesting_account_id": "true",
+    "skip_s3_checksum": "true",
+    "use_path_style": "true",
+}
+lines = text.splitlines()
+present = set()
+key_re = re.compile(r"^\s*([A-Za-z0-9_]+)\s*=")
+endpoint_value = None
+kept = []
+for line in lines:
+    match = key_re.match(line)
+    if not match:
+        kept.append(line)
+        continue
+    key = match.group(1)
+    if key == "endpoint":
+        # endpoint = "https://..."
+        raw = line.split("=", 1)[1].strip()
+        endpoint_value = raw
+        continue
+    present.add(key)
+    kept.append(line)
+
+added = []
+for key, value in required.items():
+    if key not in present:
+        kept.append(f"{key} = {value}")
+        added.append(key)
+
+# Migrate deprecated `endpoint` → endpoints.s3 when not already configured.
+has_endpoints_block = "endpoints" in present or any(
+    re.match(r"^\s*endpoints\s*=", line) or re.match(r"^\s*s3\s*=", line)
+    for line in kept
+)
+if endpoint_value and not has_endpoints_block:
+    kept.append("endpoints = {")
+    kept.append(f"  s3 = {endpoint_value}")
+    kept.append("}")
+    added.append("endpoints.s3 (from deprecated endpoint)")
+
+if added or endpoint_value:
+    path.write_text("\n".join(kept) + "\n")
+    if added:
+        print(
+            "Updated OCI Object Storage backend.hcl: " + ", ".join(added),
+            file=sys.stderr,
+        )
+    if endpoint_value and has_endpoints_block:
+        print(
+            "Removed deprecated backend.hcl `endpoint` (endpoints.s3 already set)",
+            file=sys.stderr,
+        )
+        # endpoint line was dropped from kept already when has_endpoints_block
+        path.write_text("\n".join(kept) + "\n")
+PY
+}
+
 if backend_config="$(write_backend_hcl_from_env)"; then
   repair_backend_hcl_quotes "${backend_config}"
   validate_backend_hcl "${backend_config}"
+  ensure_oci_object_storage_compat "${backend_config}"
   if [[ "${TF_BACKEND_MIGRATE:-}" == "1" || "${TF_BACKEND_MIGRATE:-}" == "true" ]]; then
     terraform init -input=false -reconfigure -migrate-state -backend-config="${backend_config}"
   else

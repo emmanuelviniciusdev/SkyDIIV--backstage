@@ -8,6 +8,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="${ROOT}/deploy/terraform"
 
+# shellcheck disable=SC1091
+source "${ROOT}/deploy/oci-s3-backend-env.sh"
+
 if [[ -f "${ROOT}/deploy/local.env" ]]; then
   while IFS= read -r line || [[ -n "${line}" ]]; do
     line="${line#"${line%%[![:space:]]*}"}"

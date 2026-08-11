@@ -69,6 +69,9 @@ jobs:
       COST_LIMIT_USD: ${{ vars.COST_LIMIT_USD }}
       COST_ALERT_EMAIL: ${{ secrets.COST_ALERT_EMAIL }}
       OCI_PRIVATE_KEY_PEM: ${{ secrets.OCI_API_PRIVATE_KEY || secrets.OCI_CLI_KEY_CONTENT }}
+      # OCI Object Storage rejects AWS SDK v2 default aws-chunked PutObject.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -319,6 +322,9 @@ jobs:
       name: production
     env:
       OCI_PRIVATE_KEY_PEM: ${{ secrets.OCI_API_PRIVATE_KEY || secrets.OCI_CLI_KEY_CONTENT }}
+      # OCI Object Storage rejects AWS SDK v2 default aws-chunked PutObject.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -359,6 +365,11 @@ jobs:
             echo "No Terraform state — nothing to destroy"
           fi
 
+      # Soft destroy API-clears FAILED CIs via the OCI SDK on retry; also needed
+      # for the OCIR purge step below.
+      - name: Install OCI SDK
+        run: pip install --quiet oci
+
       # Soft destroy: Container Instance (+ NAT if private). Keeps free IAM /
       # budget / VCN so the next create reuses them and skips the OCIR IAM race.
       - name: Terraform Soft Destroy
@@ -375,12 +386,15 @@ jobs:
           # Required by schema even when destroying; image may already be gone
           TF_VAR_container_image_url: "placeholder.invalid/robot:destroy"
           TF_VAR_robot_env: "{}"
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
         run: |
           ./deploy/tf-destroy.sh soft
           echo "Soft destroy complete — billable resources removed (absolute authority)"
-
-      - name: Install OCI SDK (image purge)
-        run: pip install --quiet oci
 
       # OCIR bills stored layers even with no instance running, and every create
       # pushes a fresh version, so nothing needs to survive the destroy.
@@ -417,6 +431,9 @@ jobs:
       name: production
     env:
       OCI_PRIVATE_KEY_PEM: ${{ secrets.OCI_API_PRIVATE_KEY || secrets.OCI_CLI_KEY_CONTENT }}
+      # OCI Object Storage rejects AWS SDK v2 default aws-chunked PutObject.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -457,6 +474,12 @@ jobs:
             echo "No Terraform state — nothing to destroy"
           fi
 
+      # Hard destroy clears CI via OCI API and waits for subnet VNIC release
+      # before deleting networking (avoids DeleteSubnet 409 Conflict). Also
+      # required for the OCIR purge step below.
+      - name: Install OCI SDK
+        run: pip install --quiet oci
+
       - name: Terraform Hard Destroy
         if: steps.tf.outputs.has_state == 'true'
         working-directory: apps/robot-shopping-suggestions
@@ -470,12 +493,15 @@ jobs:
           TF_VAR_environment: production
           TF_VAR_container_image_url: "placeholder.invalid/robot:destroy"
           TF_VAR_robot_env: "{}"
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
         run: |
           ./deploy/tf-destroy.sh hard
           echo "Hard destroy complete — full stack removed (IAM, budget, VCN, compute)"
-
-      - name: Install OCI SDK (image purge)
-        run: pip install --quiet oci
 
       - name: Purge OCIR image versions
         working-directory: apps/robot-shopping-suggestions

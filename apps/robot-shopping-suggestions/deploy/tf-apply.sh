@@ -29,6 +29,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="${TF_DIR:-${ROOT}/deploy/terraform}"
 CI_ADDRESS="oci_container_instances_container_instance.robot"
 
+# shellcheck disable=SC1091
+source "${ROOT}/deploy/oci-s3-backend-env.sh"
+
 # States only reachable after the container has been pulled, started and exited.
 FINISHED_STATE_PATTERN='expected the resource to reach state\(s\): ACTIVE, but the service reported unexpected state: (DELETED|DELETING|INACTIVE|UPDATING)'
 

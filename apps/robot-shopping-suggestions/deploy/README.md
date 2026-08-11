@@ -88,11 +88,14 @@ destroy / cost-guard desync.
    base64 < deploy/terraform/backend.hcl | tr -d '\n' | \
      gh secret set TF_BACKEND_HCL_B64 --env production
    ```
-   Keep the `skip_*` flags from `backend.hcl.example`: the S3 driver otherwise
-   makes AWS-only calls (`skip_requesting_account_id`) and uploads with
-   `aws-chunked` encoding, which OCI rejects with `501 NotImplemented`
-   (`skip_s3_checksum`). `terraform-init.sh` also re-quotes string keys if Actions
-   strips `"`. Do not embed secrets inside a `run:` script body.
+  Keep the `skip_*` flags from `backend.hcl.example`: the S3 driver otherwise
+  makes AWS-only calls (`skip_requesting_account_id`) and uploads with
+  `aws-chunked` encoding, which OCI rejects with `501 NotImplemented`
+  (`skip_s3_checksum`). Recent Terraform / AWS SDK v2 still chunk PutObject
+  unless `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` is set — deploy
+  scripts source `oci-s3-backend-env.sh` for that. `terraform-init.sh` also
+  re-quotes string keys if Actions strips `"`, and migrates deprecated
+  `endpoint` → `endpoints.s3`. Do not embed secrets inside a `run:` script body.
 3. If you already have a leftover local `terraform.tfstate`, migrate once:
    ```bash
    TF_BACKEND_MIGRATE=1 ./deploy/terraform-init.sh
@@ -203,6 +206,12 @@ network configuration”). If free resources are missing on the next create,
 Terraform still creates them (and imports orphans by name). Local and CI both
 require `deploy/terraform/backend.hcl` (or `TF_BACKEND_HCL` / `TF_BACKEND_HCL_B64`)
 so they share the same OCI Object Storage state.
+
+Hard destroy is **two-phase**: it tears down (or API-deletes) the Container
+Instance and waits until the subnet has no private IPs before destroying the
+VCN. That avoids the OCI `409 Conflict` on `DeleteSubnet` when a CI VNIC still
+references the subnet. Retries never `terraform state rm` the CI without an
+API delete — that orphans the VNIC and blocks the rest of the stack.
 
 ### Debugging image-pull failures
 
