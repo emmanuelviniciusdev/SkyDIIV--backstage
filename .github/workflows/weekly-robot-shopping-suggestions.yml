@@ -1,9 +1,9 @@
 name: Weekly — Robot Shopping Suggestions (ephemeral)
 
-# PAYG Container Instance: create Sunday 07:00 BRT, soft-destroy Sunday 09:00 BRT.
+# PAYG Container Instance: create Thursday 19:00 BRT, soft-destroy Thursday 21:00 BRT.
 # America/Sao_Paulo = UTC-3 year-round:
-#   Create       Sun 07:00 BRT → 0 10 * * 0 UTC
-#   Soft destroy Sun 09:00 BRT → 0 12 * * 0 UTC
+#   Create       Thu 19:00 BRT → 0 22 * * 4 UTC
+#   Soft destroy Thu 21:00 BRT → 0 0 * * 5 UTC (Friday 00:00 UTC)
 #
 # Soft destroy removes billable resources only (CI + NAT); free IAM/budget/VCN
 # stay for the next create. Hard destroy (workflow_dispatch) tears down everything.
@@ -11,8 +11,8 @@ name: Weekly — Robot Shopping Suggestions (ephemeral)
 
 on:
   schedule:
-    - cron: "0 10 * * 0" # create
-    - cron: "0 12 * * 0" # destroy
+    - cron: "0 22 * * 4" # create
+    - cron: "0 0 * * 5" # destroy
   workflow_dispatch:
     inputs:
       action:
@@ -45,7 +45,7 @@ jobs:
             exit 0
           fi
           case "${{ github.event.schedule }}" in
-            "0 12 * * 0") echo "action=destroy" >> "$GITHUB_OUTPUT" ;;
+            "0 0 * * 5") echo "action=destroy" >> "$GITHUB_OUTPUT" ;;
             *)            echo "action=create" >> "$GITHUB_OUTPUT" ;;
           esac
 
@@ -300,7 +300,7 @@ jobs:
       - name: Summary
         run: |
           echo "### Weekly create complete" >> "$GITHUB_STEP_SUMMARY"
-          echo "Container Instance left **ACTIVE** until self-delete or destroy cron (Sun 09:00 BRT)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Container Instance left **ACTIVE** until self-delete or destroy cron (Thu 21:00 BRT)." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "OCID: \`${{ steps.tf.outputs.container_instance_ocid }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "Image: \`${{ steps.infra.outputs.container_image_url }}\`" >> "$GITHUB_STEP_SUMMARY"

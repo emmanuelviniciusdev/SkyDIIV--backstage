@@ -29,7 +29,7 @@ runs exactly once per instance.
 
 | Trigger | How | Result |
 |---|---|---|
-| **Weekly (normal)** | GHA `Weekly — Robot Shopping Suggestions`, cron `0 10 * * 0` (Sun 07:00 BRT) | lint/test/build → push OCIR image → cost gate → `terraform apply` |
+| **Weekly (normal)** | GHA `Weekly — Robot Shopping Suggestions`, cron `0 22 * * 4` (Thu 19:00 BRT) | lint/test/build → push OCIR image → cost gate → `terraform apply` |
 | **Manual** | Same workflow, `workflow_dispatch` with `action=create` | Same as weekly |
 | **From your machine** | `./deploy/deploy-from-local.sh apply` | Same stack, local Terraform state |
 | **Local process only** | `docker compose up --build` or `npm run dev` | No cloud infra; drains the same queue |
@@ -42,7 +42,7 @@ readiness gate or idle state.
 | Path | Trigger | Scope |
 |---|---|---|
 | **Self-delete** (normal) | A pull returns empty → drain complete | Deletes the Container Instance; compute billing stops. Free VCN/IAM stay. |
-| **Weekly destroy** (soft) | GHA cron `0 12 * * 0` (Sun 09:00 BRT), or `workflow_dispatch action=destroy` | Soft destroy — CI + NAT only; keeps free IAM/budget/VCN, **even if messages remain** |
+| **Weekly destroy** (soft) | GHA cron `0 0 * * 5` (Thu 21:00 BRT), or `workflow_dispatch action=destroy` | Soft destroy — CI + NAT only; keeps free IAM/budget/VCN, **even if messages remain** |
 | **Hard destroy** | `workflow_dispatch action=hard-destroy` only | Full stack teardown including free IAM/budget/VCN |
 | **From your machine** | `./deploy/deploy-from-local.sh destroy` · `--hard` for full | Soft by default; `--hard` matches hard-destroy |
 | **Cost guard** (safety net) | Daily 12:00 UTC, MTD spend ≥ `$5` | Hard destroy full stack, and refuses the next apply |
@@ -54,7 +54,7 @@ for `ACTIVE` and lingers `SELF_DELETE_ACTIVE_GRACE_MS` (default 120s) so the
 in-flight `terraform apply` sees `ACTIVE` too — details in
 [deploy/README.md](deploy/README.md#self-delete-vs-destroy).
 
-If self-delete fails, the 09:00 destroy still tears everything down; if that
+If self-delete fails, the 21:00 destroy still tears everything down; if that
 also fails, the cost guard does. No single failure leaves compute billing
 forever.
 
@@ -71,12 +71,12 @@ src/
 
 ```mermaid
 flowchart LR
-  GHA[GHA Sun 07:00] -->|terraform apply| CI[OCI Container Instance]
+  GHA[GHA Thu 19:00] -->|terraform apply| CI[OCI Container Instance]
   CI -->|pull 2 at a time| CFQ[Cloudflare Queues]
   CI --> Router[EventRouter]
   Router --> UC[Use cases / scrapers]
   CI -->|queue empty| SelfDel[Self-delete CI]
-  GHA2[GHA Sun 09:00] -->|soft destroy billable| Stack[CI + NAT]
+  GHA2[GHA Thu 21:00] -->|soft destroy billable| Stack[CI + NAT]
 ```
 
 ## Tech stack
@@ -90,7 +90,7 @@ flowchart LR
 | Validation | Zod (per event) |
 | Tests | Vitest |
 | Infra | Terraform (ephemeral OCI Container Instance + VCN) + OCIR |
-| Deploy | Weekly GHA create (Sun 07:00 BRT) / soft destroy (Sun 09:00 BRT) |
+| Deploy | Weekly GHA create (Thu 19:00 BRT) / soft destroy (Thu 21:00 BRT) |
 
 ## Getting started (local)
 

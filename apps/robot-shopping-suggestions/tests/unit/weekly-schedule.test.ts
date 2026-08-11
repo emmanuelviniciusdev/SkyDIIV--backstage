@@ -16,46 +16,50 @@ type ScheduleDefaults = {
 describe("weekly ephemeral schedule defaults", () => {
   const defaults = JSON.parse(readFileSync(defaultsPath, "utf8")) as ScheduleDefaults
 
-  it("documents Sunday create 07:00 / destroy 09:00 America/Sao_Paulo", () => {
+  it("documents Thursday create 19:00 / destroy 21:00 America/Sao_Paulo", () => {
     expect(defaults.timezone).toBe("America/Sao_Paulo")
     expect(defaults.windowLocal).toEqual({
-      day: "Sunday",
-      create: "07:00",
-      destroy: "09:00",
+      day: "Thursday",
+      create: "19:00",
+      destroy: "21:00",
     })
   })
 
   it("maps create/destroy to UTC CRONs (BRT = UTC-3, no DST)", () => {
-    // Create Sun 07:00 BRT → 10:00 UTC; destroy Sun 09:00 BRT → 12:00 UTC
-    expect(defaults.githubActionsCronUtc.createAndDeploy).toBe("0 10 * * 0")
-    expect(defaults.githubActionsCronUtc.destroy).toBe("0 12 * * 0")
+    // Create Thu 19:00 BRT → 22:00 UTC; destroy Thu 21:00 BRT → Fri 00:00 UTC
+    expect(defaults.githubActionsCronUtc.createAndDeploy).toBe("0 22 * * 4")
+    expect(defaults.githubActionsCronUtc.destroy).toBe("0 0 * * 5")
   })
 
-  it("uses standard 5-field cron with Sunday = 0", () => {
-    for (const expr of [
-      defaults.githubActionsCronUtc.createAndDeploy,
-      defaults.githubActionsCronUtc.destroy,
-    ]) {
-      const parts = expr.split(/\s+/)
+  it("uses standard 5-field cron (Thursday create = 4, Friday destroy = 5)", () => {
+    const createParts = defaults.githubActionsCronUtc.createAndDeploy.split(/\s+/)
+    const destroyParts = defaults.githubActionsCronUtc.destroy.split(/\s+/)
+
+    for (const parts of [createParts, destroyParts]) {
       expect(parts).toHaveLength(5)
-      expect(parts[4]).toBe("0")
       expect(Number(parts[0])).toBeGreaterThanOrEqual(0)
       expect(Number(parts[1])).toBeGreaterThanOrEqual(0)
       expect(Number(parts[1])).toBeLessThan(24)
     }
+
+    expect(createParts[4]).toBe("4")
+    expect(destroyParts[4]).toBe("5")
   })
 
-  it("creates before destroy on Sunday morning", () => {
-    expect(defaults.githubActionsLocal.createAndDeploy).toBe("Sunday 07:00")
-    expect(defaults.githubActionsLocal.destroy).toBe("Sunday 09:00")
+  it("creates before destroy on Thursday evening (2h window)", () => {
+    expect(defaults.githubActionsLocal.createAndDeploy).toBe("Thursday 19:00")
+    expect(defaults.githubActionsLocal.destroy).toBe("Thursday 21:00")
 
     const createHourUtc = Number(
       defaults.githubActionsCronUtc.createAndDeploy.split(/\s+/)[1],
     )
     const destroyHourUtc = Number(defaults.githubActionsCronUtc.destroy.split(/\s+/)[1])
+    const createDow = Number(defaults.githubActionsCronUtc.createAndDeploy.split(/\s+/)[4])
+    const destroyDow = Number(defaults.githubActionsCronUtc.destroy.split(/\s+/)[4])
 
-    expect(createHourUtc).toBe(10)
-    expect(destroyHourUtc).toBe(12)
-    expect(destroyHourUtc).toBeGreaterThan(createHourUtc)
+    expect(createHourUtc).toBe(22)
+    expect(destroyHourUtc).toBe(0)
+    // Destroy is Friday 00:00 UTC — next calendar day after Thursday 22:00 UTC
+    expect(destroyDow).toBe((createDow + 1) % 7)
   })
 })

@@ -1,25 +1,25 @@
 {
   "timezone": "America/Sao_Paulo",
   "windowLocal": {
-    "day": "Sunday",
-    "create": "07:00",
-    "destroy": "09:00"
+    "day": "Thursday",
+    "create": "19:00",
+    "destroy": "21:00"
   },
   "githubActionsCronUtc": {
-    "createAndDeploy": "0 10 * * 0",
-    "destroy": "0 12 * * 0"
+    "createAndDeploy": "0 22 * * 4",
+    "destroy": "0 0 * * 5"
   },
   "githubActionsLocal": {
-    "createAndDeploy": "Sunday 07:00",
-    "destroy": "Sunday 09:00"
+    "createAndDeploy": "Thursday 19:00",
+    "destroy": "Thursday 21:00"
   },
   "workflow": ".github/workflows/weekly-robot-shopping-suggestions.yml",
   "notes": [
     "America/Sao_Paulo is UTC-3 year-round (no DST).",
-    "Sunday 07:00 BRT = 10:00 UTC; Sunday 09:00 BRT = 12:00 UTC.",
+    "Thursday 19:00 BRT = 22:00 UTC; Thursday 21:00 BRT = Friday 00:00 UTC.",
     "Stack is an OCI Container Instance (OCIR image) — no boot volume.",
     "Robot drains Cloudflare Queues 2-at-a-time until empty, then self-deletes.",
-    "Sunday 09:00 BRT soft-destroys billable resources (CI + NAT) even if messages remain.",
+    "Thursday 21:00 BRT soft-destroys billable resources (CI + NAT) even if messages remain.",
     "Free IAM / budget / VCN survive soft destroy; hard-destroy tears everything down.",
     "Local and GHA must share OCI Object Storage Terraform state (TF_BACKEND_HCL_B64)."
   ]

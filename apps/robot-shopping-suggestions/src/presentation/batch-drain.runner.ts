@@ -20,7 +20,7 @@ export interface BatchDrainRunnerConfig {
  * always ACKs, and repeats until a pull returns empty. Then calls
  * {@link SelfDeletePort.deleteSelf} so PAYG compute stops billing.
  *
- * Terraform destroy (Sunday 09:00) has absolute authority regardless of
+ * Terraform destroy (Thursday 21:00 BRT) has absolute authority regardless of
  * remaining queue depth — this runner does not resist external teardown.
  */
 export class BatchDrainRunner {

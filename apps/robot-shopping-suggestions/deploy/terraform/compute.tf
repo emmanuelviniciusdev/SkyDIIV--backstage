@@ -1,8 +1,8 @@
 /**
- * OCI Container Instance — ephemeral Sunday CRON robot.
+ * OCI Container Instance — ephemeral Thursday CRON robot.
  *
  * Pulls the robot image from OCIR, drains Cloudflare Queues (batch/concurrency
- * = 2) until empty, then self-deletes. Sunday 09:00 BRT `terraform destroy`
+ * = 2) until empty, then self-deletes. Thursday 21:00 BRT `terraform destroy`
  * has absolute authority.
  */
 

@@ -3,7 +3,7 @@
 Producers **push** messages over the Cloudflare Queues HTTP API; the robot
 **pulls** them during its window. Publishing works at any time and is
 independent of whether the robot is currently running — messages simply wait in
-the queue until the next drain (weekly Sunday window, a manual create, or a
+the queue until the next drain (weekly Thursday window, a manual create, or a
 local run).
 
 ## Envelope (all events)
@@ -108,7 +108,7 @@ sequenceDiagram
   participant Router as EventRouter
 
   Prod->>Q: POST /messages ({event, payload})
-  Note over R: Sunday window or local run — drain until empty
+  Note over R: Thursday window or local run — drain until empty
   R->>Q: POST /messages/pull (batch_size=2)
   Q-->>R: messages + lease_id
   R->>Router: route(event, payload)
@@ -133,6 +133,6 @@ are recorded in logs and (for scrapes) as `ERROR` rows.
 | HTTP 403 | Invalid token or missing **Queues Edit** |
 | HTTP 404 | Wrong `CF_ACCOUNT_ID` / `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` |
 | `success: false` | Invalid body |
-| Published, nothing processed | Outside the Sunday window — the stack does not exist yet |
+| Published, nothing processed | Outside the Thursday window — the stack does not exist yet |
 | `No handler registered` | Typo in `event`, or handler not wired in `main.ts` |
 | ACKed with no products | `userId` has no `wardrobe_panorama` |

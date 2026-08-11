@@ -8,8 +8,8 @@ creating the stack starts the robot, deleting it stops the robot.
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `weekly-…` (create) | cron `0 10 * * 0` (Sun 07:00 BRT) · `workflow_dispatch action=create` | lint/test/build → build & push OCIR image → cost gate → `terraform apply` |
-| `weekly-…` (destroy) | cron `0 12 * * 0` (Sun 09:00 BRT) · `workflow_dispatch action=destroy` | **soft** destroy — billable only (CI + NAT) → purge OCIR; keeps free IAM/budget/VCN |
+| `weekly-…` (create) | cron `0 22 * * 4` (Thu 19:00 BRT) · `workflow_dispatch action=create` | lint/test/build → build & push OCIR image → cost gate → `terraform apply` |
+| `weekly-…` (destroy) | cron `0 0 * * 5` (Thu 21:00 BRT) · `workflow_dispatch action=destroy` | **soft** destroy — billable only (CI + NAT) → purge OCIR; keeps free IAM/budget/VCN |
 | `weekly-…` (hard-destroy) | `workflow_dispatch action=hard-destroy` only | **hard** destroy — full stack including free IAM/budget/VCN → purge OCIR |
 | `cost-guard-…` | daily `0 12 * * *` · `workflow_dispatch` (`dry_run`) | **hard** destroy when MTD spend ≥ limit |
 | `deploy-…` | PR / push to `main`, `staging` · `workflow_dispatch` | CI (lint, test, build); optionally pushes an OCIR image without creating infra |
@@ -20,9 +20,9 @@ Schedule constants: [schedule-defaults.json](./schedule-defaults.json). America/
 is UTC-3 year-round, so the CRONs never drift.
 
 ```
-Sun 07:00 BRT  cost gate → build+push OCIR → terraform apply → Container Instance ACTIVE
+Thu 19:00 BRT  cost gate → build+push OCIR → terraform apply → Container Instance ACTIVE
                robot drains CF Queues (2 at a time) → self-deletes the instance
-Sun 09:00 BRT  soft destroy (CI + NAT), absolute authority over compute
+Thu 21:00 BRT  soft destroy (CI + NAT), absolute authority over compute
                → keeps free IAM / budget / VCN for next create
                → purge OCIR image versions (no registry storage between runs)
 Daily 12:00 UTC  cost guard → hard destroy if MTD ≥ cost_limit_usd
@@ -111,7 +111,7 @@ push may create it). The Docker build downloads Camoufox from GitHub; if
 
 | Mode | Billing |
 |---|---|
-| Sunday window | Stack exists ~07:00–09:00 BRT; the robot self-deletes after the drain |
+| Thursday window | Stack exists ~19:00–21:00 BRT; the robot self-deletes after the drain |
 | Outside the window | No Container Instance, no VCN → **$0** |
 | Monthly ceiling | **$5.00** USD ([cost-limit-defaults.json](./cost-limit-defaults.json)) |
 
@@ -198,7 +198,7 @@ compartment, and budgets are free.
 | **hard** (`action=hard-destroy` / `--hard` / cost guard) | Everything managed | — | Clean slate / cost ceiling / abandon stack |
 
 `deploy/tf-destroy.sh` implements both. Soft destroy avoids recreating OCIR IAM
-every Sunday (the eventual-consistency race that OCI reports as “inadequate
+every Thursday (the eventual-consistency race that OCI reports as “inadequate
 network configuration”). If free resources are missing on the next create,
 Terraform still creates them (and imports orphans by name). Local and CI both
 require `deploy/terraform/backend.hcl` (or `TF_BACKEND_HCL` / `TF_BACKEND_HCL_B64`)
@@ -254,7 +254,7 @@ It uses the same OCI credentials as the cost guard and needs `pip install oci`.
 
 1. Drain finishes → the robot `DELETE`s its own Container Instance (compute
    billing stops; free VCN / IAM stay in state).
-2. Sunday 09:00 BRT **soft** destroy removes any remaining billable resources
+2. Thursday 21:00 BRT **soft** destroy removes any remaining billable resources
    (CI + NAT), regardless of queue depth. Free IAM / budget / VCN are kept.
 3. Manual **hard** destroy (`action=hard-destroy` / `--hard`) removes the full
    stack when a clean slate is needed.
