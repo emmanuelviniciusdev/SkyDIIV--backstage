@@ -17,11 +17,9 @@ The everyday endpoint is a **daily schedule slot** in `worker-scheduler`. A sing
 
 ## Registered Flows
 
-| Flow | Source | Doc |
-|---|---|---|
-| `neon-database-snapshot` | `src/flows/neon-database-snapshot.flow.ts` | [NEON_DATABASE_SNAPSHOT.md](NEON_DATABASE_SNAPSHOT.md) |
+Currently no flows are registered on this endpoint.
 
-To add another daily job, implement a `ScheduleFlow` and append it to `everydayFlowRegistry` in `src/flows/everyday-registry.ts`. No routing changes are required.
+To add a daily job, implement a `ScheduleFlow` and append it to `everydayFlowRegistry` in `src/flows/everyday-registry.ts`. No routing changes are required.
 
 ---
 
@@ -108,7 +106,6 @@ export const myDailyFlow: ScheduleFlow = {
 
 ```ts
 export const everydayFlowRegistry: ScheduleFlow[] = [
-  neonDatabaseSnapshotFlow,
   myDailyFlow,
 ]
 ```
@@ -122,9 +119,7 @@ export const everydayFlowRegistry: ScheduleFlow[] = [
 ```
 src/
 ├── handlers/everyday.schedule.ts
-├── flows/
-│   ├── everyday-registry.ts
-│   └── neon-database-snapshot.flow.ts
+└── flows/everyday-registry.ts
 tests/unit/
 ├── everyday-schedule.test.ts
 └── everyday-registry.test.ts

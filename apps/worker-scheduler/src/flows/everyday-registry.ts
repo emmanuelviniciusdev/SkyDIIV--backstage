@@ -1,5 +1,4 @@
 import type { ScheduleFlow } from "./types"
-import { neonDatabaseSnapshotFlow } from "./neon-database-snapshot.flow"
 
 /**
  * Flows registered for POST /schedule/everyday.
@@ -8,7 +7,7 @@ import { neonDatabaseSnapshotFlow } from "./neon-database-snapshot.flow"
  * failing never stops the others. Register new daily jobs here; no routing
  * changes are needed.
  */
-export const everydayFlowRegistry: ScheduleFlow[] = [neonDatabaseSnapshotFlow]
+export const everydayFlowRegistry: ScheduleFlow[] = []
 
 export function getEverydayFlows(): ScheduleFlow[] {
   return everydayFlowRegistry

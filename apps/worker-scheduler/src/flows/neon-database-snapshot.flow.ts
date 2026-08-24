@@ -5,8 +5,8 @@ import type { FlowResult, ScheduleFlow } from "./types"
 /**
  * Rotates the Neon manual database snapshot (delete existing → create new).
  *
- * Intended for daily execution via POST /schedule/everyday. On the Neon Free
- * plan only one manual snapshot is allowed, so rotation is required.
+ * Intended for weekly execution via POST /schedule/every-wednesday. On the Neon
+ * Free plan only one manual snapshot is allowed, so rotation is required.
  */
 export const neonDatabaseSnapshotFlow: ScheduleFlow = {
   name: "neon-database-snapshot",

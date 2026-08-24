@@ -62,13 +62,8 @@ describe("handleEverydaySchedule", () => {
 
   it("returns 200 and the flow result when one flow succeeds", async () => {
     mockVerify.mockResolvedValueOnce(true)
-    mockRunA.mockResolvedValueOnce({
-      flow: "neon-database-snapshot",
-      deletedSnapshotIds: ["snap-old"],
-      createdSnapshotId: "snap-new",
-      createdSnapshotName: "skydiiv-daily-2026-07-13",
-    })
-    mockGetEverydayFlows.mockReturnValueOnce([{ name: "neon-database-snapshot", run: mockRunA }])
+    mockRunA.mockResolvedValueOnce({ flow: "flow-a", processed: 2 })
+    mockGetEverydayFlows.mockReturnValueOnce([{ name: "flow-a", run: mockRunA }])
 
     const res = await handleEverydaySchedule(makeRequest("valid-sig"))
 
@@ -76,26 +71,26 @@ describe("handleEverydaySchedule", () => {
     const body = await res.json()
     expect(body.flows).toHaveLength(1)
     expect(body.flows[0]).toMatchObject({
-      flow: "neon-database-snapshot",
+      flow: "flow-a",
       status: "ok",
-      createdSnapshotId: "snap-new",
+      processed: 2,
     })
   })
 
   it("returns 500 when the only registered flow fails", async () => {
     mockVerify.mockResolvedValueOnce(true)
-    mockRunA.mockRejectedValueOnce(new Error("Neon API unavailable"))
-    mockGetEverydayFlows.mockReturnValueOnce([{ name: "neon-database-snapshot", run: mockRunA }])
+    mockRunA.mockRejectedValueOnce(new Error("boom"))
+    mockGetEverydayFlows.mockReturnValueOnce([{ name: "flow-a", run: mockRunA }])
 
     const res = await handleEverydaySchedule(makeRequest("valid-sig"))
 
     expect(res.status).toBe(500)
     const body = await res.json()
     expect(body.flows[0]).toMatchObject({
-      flow: "neon-database-snapshot",
+      flow: "flow-a",
       status: "error",
     })
-    expect(body.flows[0].error).toContain("Neon API unavailable")
+    expect(body.flows[0].error).toContain("boom")
   })
 
   it("returns 207 and runs both flows when one succeeds and one fails", async () => {

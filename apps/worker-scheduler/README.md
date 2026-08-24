@@ -19,13 +19,13 @@ Stale outbox events are re-enqueued via [`worker-outbox-events`](../worker-outbo
 |---|---|---|
 | `POST /schedule/every-monday` | Monday | _(none)_ |
 | `POST /schedule/every-tuesday` | Tuesday | _(none)_ |
-| `POST /schedule/every-wednesday` | Wednesday | _(none)_ |
+| `POST /schedule/every-wednesday` | Wednesday | `neon-database-snapshot` |
 | `POST /schedule/every-thursday` | Thursday | `generate-wardrobe-panorama` |
 | `POST /schedule/every-friday` | Friday | _(none)_ |
 | `POST /schedule/every-saturday` | Saturday | _(none)_ |
 | `POST /schedule/every-sunday` | Sunday | `weekly-outfits` |
 | `POST /schedule/catch-up-outbox-events` | — | `catch-up-outbox-events` |
-| `POST /schedule/everyday` | — | Registered everyday flows (see registry) |
+| `POST /schedule/everyday` | — | _(none)_ |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
 Flow assignments come from `src/flows/registry.ts` and may change independently of this table.
@@ -83,6 +83,18 @@ Returns `{ flow: "generate-wardrobe-panorama", dispatched: <count> }`.
 
 > The downstream workflow still re-checks the cache marker at step 1 as a safety gate. Ad-hoc triggers that bypass the scheduler are also gated there.
 
+### `neon-database-snapshot`
+
+**Registry:** `wednesday` (at time of writing)  
+**Source:** `src/flows/neon-database-snapshot.flow.ts`  
+**Workflow doc:** [NEON_DATABASE_SNAPSHOT.md](docs/NEON_DATABASE_SNAPSHOT.md)
+
+1. Lists existing manual snapshots via the Neon Management API
+2. Deletes each snapshot (required on the Free plan, which allows only one manual snapshot)
+3. Creates a new snapshot named `skydiiv-daily-YYYY-MM-DD` on the configured root branch
+
+Returns `{ flow, deletedSnapshotIds, createdSnapshotId, createdSnapshotName }`.
+
 ### `catch-up-outbox-events`
 
 **Endpoint:** `POST /schedule/catch-up-outbox-events`  
@@ -105,23 +117,9 @@ Returns `{ status: "ok", flow: "catch-up-outbox-events", dispatched: <count> }`.
 **Registry:** `src/flows/everyday-registry.ts`  
 **Workflow doc:** [EVERYDAY_SCHEDULE.md](docs/EVERYDAY_SCHEDULE.md)
 
-Runs all flows registered in `everyday-registry.ts` **in parallel**. One flow failing does not stop the others. Currently registered:
-
-| Flow | Doc |
-|---|---|
-| `neon-database-snapshot` | [NEON_DATABASE_SNAPSHOT.md](docs/NEON_DATABASE_SNAPSHOT.md) |
+Runs all flows registered in `everyday-registry.ts` **in parallel**. One flow failing does not stop the others. Currently no flows are registered.
 
 > Create a QStash schedule pointing at `/schedule/everyday` with a daily CRON (for example `0 6 * * *` UTC).
-
-#### `neon-database-snapshot`
-
-**Source:** `src/flows/neon-database-snapshot.flow.ts`
-
-1. Lists existing manual snapshots via the Neon Management API
-2. Deletes each snapshot (required on the Free plan, which allows only one manual snapshot)
-3. Creates a new snapshot named `skydiiv-daily-YYYY-MM-DD` on the configured root branch
-
-Returns `{ flow, deletedSnapshotIds, createdSnapshotId, createdSnapshotName }` inside the everyday response `flows` array.
 
 ---
 
@@ -134,7 +132,7 @@ Returns `{ flow, deletedSnapshotIds, createdSnapshotId, createdSnapshotName }` i
 | Scheduling trigger | [Upstash QStash](https://upstash.com/docs/qstash) (external CRON) | Fires weekday endpoints on a configured schedule |
 | Message publishing | [Upstash QStash](https://upstash.com/docs/qstash) (`@upstash/qstash`) | Dispatches per-user messages to `worker-ai-workflows`; re-enqueues stale outbox events to `worker-outbox-events` |
 | Database | [Neon](https://neon.tech) PostgreSQL via [postgres.js](https://github.com/porsager/postgres) | Read-only queries for eligible users and stale outbox events |
-| Backups | [Neon Management API](https://neon.com/docs/reference/api-reference) | `neon-database-snapshot` flow (registered on `/schedule/everyday`) |
+| Backups | [Neon Management API](https://neon.com/docs/reference/api-reference) | `neon-database-snapshot` flow (registered on `/schedule/every-wednesday`) |
 | Cache | [Upstash Redis](https://upstash.com/docs/redis) (REST API) | Wardrobe panorama flow — filter users by update marker |
 | Dev / deploy | Wrangler 4 | Local dev and Cloudflare deployment |
 | Testing | Vitest 4 | Unit tests |
@@ -344,6 +342,6 @@ npm run deploy -- --env staging # staging
 | `OUTBOX_CATCHUP_MIN_AGE_MINUTES` | Minimum age in minutes before a PENDING outbox event is re-enqueued (optional; default `10`) |
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (wardrobe panorama cache filter) |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
-| `NEON_API_KEY` | Neon Management API key (daily snapshot flow) |
+| `NEON_API_KEY` | Neon Management API key (weekly snapshot flow) |
 | `NEON_PROJECT_ID` | Neon project ID |
 | `NEON_BRANCH_ID` | Neon root branch ID to snapshot |

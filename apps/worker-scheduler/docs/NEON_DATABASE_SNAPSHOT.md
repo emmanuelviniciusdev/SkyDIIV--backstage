@@ -10,14 +10,12 @@ The **neon-database-snapshot** flow rotates the project's single manual Neon sna
 
 **Hosted in:** `worker-scheduler`  
 **Flow name:** `neon-database-snapshot`  
-**Registry:** `src/flows/everyday-registry.ts` (runs on `POST /schedule/everyday`)  
+**Registry:** `src/flows/registry.ts` (`wednesday` — runs on `POST /schedule/every-wednesday`)  
 **External API:** [Neon Management API](https://neon.com/docs/reference/api-reference)
 
 On the Neon Free plan only **one manual snapshot** is allowed at a time. Rotation (delete → create) is required when creating snapshots on a schedule.
 
 > This flow keeps a **single recent checkpoint inside Neon**. It does not replace off-platform backups (`pg_dump` → R2/S3) for long-term retention or disaster recovery.
-
-See [EVERYDAY_SCHEDULE.md](EVERYDAY_SCHEDULE.md) for how this flow fits into the everyday endpoint alongside other daily jobs.
 
 ---
 
@@ -83,7 +81,7 @@ On success, the flow returns:
 }
 ```
 
-The everyday handler wraps this in `{ "flows": [{ "status": "ok", ... }] }`.
+The weekday handler wraps this in `{ "day": "wednesday", "flows": [{ "status": "ok", ... }] }`.
 
 ---
 
@@ -126,7 +124,9 @@ Test restores periodically in a separate Neon project before relying on this in 
 
 ```
 src/
-├── flows/neon-database-snapshot.flow.ts
+├── flows/
+│   ├── registry.ts                         # Maps weekday → flows (wednesday)
+│   └── neon-database-snapshot.flow.ts
 └── lib/neon/
     ├── config.ts
     └── snapshots.ts
