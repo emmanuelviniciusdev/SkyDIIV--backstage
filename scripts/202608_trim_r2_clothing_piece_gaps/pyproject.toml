@@ -1,0 +1,17 @@
+[project]
+name = "trim-r2-clothing-piece-gaps"
+version = "0.1.0"
+description = "Backup clothing-pieces in R2, crop transparent padding (SkyDIIV 1.17.11), purge CDN"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.35",
+    "numpy>=2",
+    "pillow>=11",
+    "pytest>=8",
+    "python-dotenv>=1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [".", ".."]
+testpaths = ["tests"]
+addopts = "-q"
