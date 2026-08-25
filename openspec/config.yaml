@@ -1,0 +1,81 @@
+schema: spec-driven
+
+context: |
+  SkyDIIV is a wardrobe management app (https://www.skydiiv.space/). This repo
+  (skydiiv--backstage) is the async backend: Cloudflare Workers, a scheduler,
+  an outbox consumer, and an OCI batch scraping robot.
+
+  Companion repo: skydiiv/web — Next.js UI, REST API, Clerk auth, Prisma, and
+  QStash publisher. The browser never calls backstage HTTP. Integration is
+  QStash-signed messages, shared Neon PostgreSQL, Upstash Redis, and R2.
+
+  Apps (independent Node 22 projects under apps/, not a pnpm workspace):
+  - worker-ai-workflows: generate-weekly-outfits (Sunday), generate-wardrobe-panorama (Thursday)
+  - worker-scheduler: QStash CRON dispatch, outbox catch-up, Neon DB snapshots
+  - worker-outbox-events: transactional outbox consumer
+  - worker-notification: welcome email via Resend
+  - worker-sync: translates AI-generated content when the user locale changes
+  - robot-shopping-suggestions: ephemeral OCI batch scraper (Enjoei), not a CF Worker
+
+  Stack: TypeScript 5 strict, Wrangler 4, Vitest 4, Zod, ESLint type-checked.
+  Workers: Cloudflare Workers + nodejs_compat, Upstash QStash + Workflow
+  (not Temporal). DB: Neon via postgres.js — pooled URL for reads, unpooled for
+  writes. Cache: Upstash Redis. Media: R2 + Cloudflare Images. LLM: Gemini
+  (gemini-2.5-flash default). One-off scripts: Python ≥ 3.12 via uv.
+
+  Auth: no Clerk on workers. POST endpoints require a QStash signature
+  (upstash-signature); unsigned → 401. GET / is the unsigned health check.
+
+  Ownership: Prisma schema and outbox catalog (EVENTS / BROKER_NAMES in
+  skydiiv/web app/lib/outbox.ts) live in the web repo. New outbox events must
+  be seeded there and added to worker-outbox-events OUTBOX_ROUTES. Redis
+  cache/notification keys must match web (app/lib/cache-invalidation.ts).
+
+  Conventions: code, comments, and errors in en-US; kebab-case files;
+  conventional commits (feat|fix|chore with app scope); main = production,
+  staging = staging. Local worker secrets go in .dev.vars (not .env).
+  Worker URLs are origin-only; callers append the path.
+
+  Locales: pt-BR (default), es-PE, en-US via app_preferences → domains.
+  Generated content follows the user locale. Piece type/subtype values in
+  prompts stay en-US.
+
+  Hard no's: no Temporal, no Prisma in workers, no schema migrations from this
+  repo, no skipping QStash verification, no committing secrets.
+
+  Per-app READMEs and docs/ under each app are the detailed references.
+
+rules:
+  proposal:
+    - Write artifacts in English.
+    - "Name the affected app(s) under apps/ and whether skydiiv/web also needs a follow-up (Prisma schema, outbox catalog, Redis keys, env URLs)."
+    - Always include a Non-goals section.
+    - Call out schedule, QStash, and outbox impact when the change touches those paths.
+  specs:
+    - Write artifacts in English.
+    - Specs describe worker-observable behavior (HTTP, QStash payloads, DB writes, Redis keys, outbox routes), not web UI.
+    - Use Given/When/Then scenarios.
+    - Cover unsigned request → 401 and idempotency/locks when the change touches workflows or outbox.
+    - "Capability paths follow apps/<app-name>/<capability> (e.g. apps/worker-ai-workflows/weekly-outfits)."
+  design:
+    - Write artifacts in English.
+    - "Cite existing patterns: serveMany (last path segment; workflow keys cannot contain /), createWorkflow + context.run steps, repository modules in lib/db, Zod for payloads and LLM output."
+    - Diagram QStash, Workflow, outbox, and Redis when the flow is multi-step.
+    - "State env vars, GitHub Environment secrets vs wrangler.toml [vars], and that worker URLs are origin-only."
+  tasks:
+    - Write artifacts in English.
+    - Group tasks by app. Each task is one implementable chunk with a checkbox.
+    - Include lint and Vitest in the affected app. Do not add Playwright or E2E tests.
+    - If the change needs a web-repo Prisma migration or outbox catalog update, add an explicit follow-up task and do not implement it in this repo.
+
+operations:
+  apply:
+    guidance:
+      - Change only the named app(s). Copy existing worker/robot structure; do not introduce a new orchestration stack.
+      - Verify QStash signing on new POST endpoints. Invalidate the same Redis keys the web app uses.
+      - Run npm run lint and npm run test in the touched app. Keep test summaries concise.
+      - Stop if a Prisma/schema or web outbox-catalog change is required; report it as a skydiiv/web follow-up.
+  archive:
+    guidance:
+      - Summarize which apps shipped and whether a web-repo follow-up remains.
+      - Preserve capability paths when promoting delta specs to main specs.
