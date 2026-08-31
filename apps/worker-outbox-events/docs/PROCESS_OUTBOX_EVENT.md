@@ -192,13 +192,15 @@ Routing logic lives in `src/lib/dispatcher.ts`. The `dispatch()` function switch
 |---|---|---|---|---|
 | `language-changed` | `QStash` | `worker-sync` `POST /sync/language` | QStash `publishJSON` | `WORKER_SYNC_URL` |
 | `user-account-created` | `QStash` | `worker-notification` `POST /email--welcome` | QStash `publishJSON` | `WORKER_NOTIFICATION_URL` |
-| `scrape-shopping-suggestions` | `CF Queues` | Queue `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` (e.g. `robot-shopping-suggestions`) | CF Queues HTTP **batch** publish (`POST .../messages/batch`, `{ event, payload }`) | `CF_ACCOUNT_ID`, `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID`, `CF_QUEUES_API_TOKEN` |
+| `generate-search-terms-products-scraping` | `QStash` | `worker-ai-workflows` `POST /generate-search-terms-products-scraping` | QStash `publishJSON` | `WORKER_AI_WORKFLOWS_URL` (origin only) |
+| `analyze-scraped-products-results` | `QStash` | `worker-ai-workflows` `POST /analyze-scraped-products-results` | QStash `publishJSON` | `WORKER_AI_WORKFLOWS_URL` (origin only) |
+| `scrape-shopping-suggestions` | `CF Queues` | Queue `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` (e.g. leftover `scrape-shopping-suggestions` rows) | CF Queues HTTP **batch** publish (`POST .../messages/batch`, `{ event, payload }`) | `CF_ACCOUNT_ID`, `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID`, `CF_QUEUES_API_TOKEN` |
 
 Each CF Queues event publishes to its **own** queue ID env var (declared as `queueIdEnv` on the route in `OUTBOX_ROUTES`).
 
 Catalog IDs, names, and brokers must stay in sync with the SkyDIIV web app (`EVENTS` / `BROKER_NAMES` in `app/lib/outbox.ts`). To add a new route, see [Adding a New Event](../README.md#adding-a-new-event) in the main README.
 
-See also [SCRAPE_SHOPPING_SUGGESTIONS.md](../../robot-shopping-suggestions/docs/SCRAPE_SHOPPING_SUGGESTIONS.md) and [PUBLISH_EVENTS.md](../../robot-shopping-suggestions/docs/PUBLISH_EVENTS.md).
+See also [SCRAPE_SHOPPING_SUGGESTIONS.md](../../robot-scrape-products/docs/SCRAPE_SHOPPING_SUGGESTIONS.md) and [PUBLISH_EVENTS.md](../../robot-scrape-products/docs/PUBLISH_EVENTS.md).
 
 ---
 
@@ -418,4 +420,4 @@ sequenceDiagram
 - [`README.md`](../README.md) — worker setup, deployment, adding new events
 - [`apps/worker-sync/README.md`](../../worker-sync/README.md) — language sync workflow reference
 - [`apps/worker-notification/docs/EMAIL_WELCOME_WORKFLOW.md`](../../worker-notification/docs/EMAIL_WELCOME_WORKFLOW.md) — welcome email workflow reference
-- [`apps/robot-shopping-suggestions/docs/SCRAPE_SHOPPING_SUGGESTIONS.md`](../../robot-shopping-suggestions/docs/SCRAPE_SHOPPING_SUGGESTIONS.md) — scrape shopping suggestions consumer
+- [`apps/robot-scrape-products/docs/SCRAPE_SHOPPING_SUGGESTIONS.md`](../../robot-scrape-products/docs/SCRAPE_SHOPPING_SUGGESTIONS.md) — scrape shopping suggestions consumer

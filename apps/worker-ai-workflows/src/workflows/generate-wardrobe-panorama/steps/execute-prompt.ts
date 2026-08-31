@@ -1,10 +1,7 @@
 import { getWriteDb } from "../../../lib/db/client"
 import { SqlLlmInteractionsRepository } from "../../../lib/db/llm-interactions.repository"
 import { getLlmProvider } from "../../../lib/llm"
-import {
-  parseWardrobePanoramaResponse,
-  type ParsedShoppingSuggestion,
-} from "../../../lib/prompt/panorama-response"
+import { parseWardrobePanoramaResponse } from "../../../lib/prompt/panorama-response"
 import { createLogger } from "../../../lib/logger"
 
 export interface ExecutePromptInput {
@@ -14,9 +11,8 @@ export interface ExecutePromptInput {
 
 export interface ExecutePromptResult {
   llmInteractionId: string
-  /** Markdown panorama without the trailing shopping-suggestions JSON. */
+  /** Markdown panorama without a trailing shopping-suggestions JSON fence. */
   content: string
-  suggestions: ParsedShoppingSuggestion[]
 }
 
 export async function executePromptStep(
@@ -60,7 +56,6 @@ export async function executePromptStep(
     parsed = parseWardrobePanoramaResponse(rawResponse)
     log.info("Response parsed", {
       contentLength: parsed.content.length,
-      suggestionCount: parsed.suggestions.length,
     })
   } catch (err) {
     log.error("Failed to parse LLM response", {
@@ -91,7 +86,6 @@ export async function executePromptStep(
   return {
     llmInteractionId,
     content: parsed.content,
-    suggestions: parsed.suggestions,
   }
 }
 

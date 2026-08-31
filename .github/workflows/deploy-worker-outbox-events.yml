@@ -104,10 +104,11 @@ jobs:
           WORKER_OUTBOX_EVENTS_URL: ${{ vars.WORKER_OUTBOX_EVENTS_URL }}
           WORKER_SYNC_URL: ${{ vars.WORKER_SYNC_URL }}
           WORKER_NOTIFICATION_URL: ${{ vars.WORKER_NOTIFICATION_URL }}
+          WORKER_AI_WORKFLOWS_URL: ${{ vars.WORKER_AI_WORKFLOWS_URL }}
         run: |
           node -e '
             const fs = require("fs");
-            const keys = ["QSTASH_URL", "WORKER_OUTBOX_EVENTS_URL", "WORKER_SYNC_URL", "WORKER_NOTIFICATION_URL"];
+            const keys = ["QSTASH_URL", "WORKER_OUTBOX_EVENTS_URL", "WORKER_SYNC_URL", "WORKER_NOTIFICATION_URL", "WORKER_AI_WORKFLOWS_URL"];
             const entries = keys
               .map((k) => [k, process.env[k]])
               .filter(([, v]) => typeof v === "string" && v.length > 0);
@@ -188,10 +189,11 @@ jobs:
           WORKER_OUTBOX_EVENTS_URL: ${{ vars.WORKER_OUTBOX_EVENTS_URL }}
           WORKER_SYNC_URL: ${{ vars.WORKER_SYNC_URL }}
           WORKER_NOTIFICATION_URL: ${{ vars.WORKER_NOTIFICATION_URL }}
+          WORKER_AI_WORKFLOWS_URL: ${{ vars.WORKER_AI_WORKFLOWS_URL }}
         run: |
           node -e '
             const fs = require("fs");
-            const keys = ["QSTASH_URL", "WORKER_OUTBOX_EVENTS_URL", "WORKER_SYNC_URL", "WORKER_NOTIFICATION_URL"];
+            const keys = ["QSTASH_URL", "WORKER_OUTBOX_EVENTS_URL", "WORKER_SYNC_URL", "WORKER_NOTIFICATION_URL", "WORKER_AI_WORKFLOWS_URL"];
             const entries = keys
               .map((k) => [k, process.env[k]])
               .filter(([, v]) => typeof v === "string" && v.length > 0);

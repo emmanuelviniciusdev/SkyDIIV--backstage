@@ -5,7 +5,6 @@ import { executePromptStep } from "./steps/execute-prompt"
 import { savePanoramaStep } from "./steps/save-panorama"
 import { invalidateWardrobePanoramaCacheStep } from "./steps/invalidate-wardrobe-panorama-cache"
 import { setWardrobePanoramaNotificationStep } from "./steps/set-wardrobe-panorama-notification"
-import { enqueueShoppingSuggestionsStep } from "./steps/enqueue-shopping-suggestions"
 import { resetDbClients } from "../../lib/db/client"
 import { createLogger } from "../../lib/logger"
 
@@ -57,7 +56,7 @@ export const generateWardrobePanoramaWorkflow = createWorkflow<GenerateWardrobeP
     })
     log.info("Step completed: execute-prompt", {
       llmInteractionId: result.llmInteractionId,
-      suggestionCount: result.suggestions.length,
+      contentLength: result.content.length,
     })
 
     // ── Step 4: Save panorama ───────────────────────────────────────────────
@@ -84,17 +83,6 @@ export const generateWardrobePanoramaWorkflow = createWorkflow<GenerateWardrobeP
       return setWardrobePanoramaNotificationStep(promptData.userId)
     })
     log.info("Step completed: set-wardrobe-panorama-notification")
-
-    // ── Step 7: Enqueue shopping suggestions via outbox ─────────────────────
-    log.info("Starting step: enqueue-shopping-suggestions")
-    const enqueueResult = await context.run("enqueue-shopping-suggestions", async () => {
-      return enqueueShoppingSuggestionsStep({
-        userId: promptData.userId,
-        suggestions: result.suggestions,
-        shoppingPreferences: promptData.shoppingPreferences,
-      })
-    })
-    log.info("Step completed: enqueue-shopping-suggestions", enqueueResult)
 
     log.info("Workflow completed")
   },

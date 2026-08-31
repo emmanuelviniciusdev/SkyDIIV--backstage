@@ -2,6 +2,7 @@ import type { ScheduleFlow, Weekday } from "./types"
 import { weeklyOutfitsFlow } from "./weekly-outfits.flow"
 import { generateWardrobePanoramaFlow } from "./generate-wardrobe-panorama.flow"
 import { neonDatabaseSnapshotFlow } from "./neon-database-snapshot.flow"
+import { generateSearchTermsProductsScrapingFlow } from "./generate-search-terms-products-scraping.flow"
 
 /**
  * Maps each weekday to the list of flows it triggers.
@@ -19,6 +20,7 @@ import { neonDatabaseSnapshotFlow } from "./neon-database-snapshot.flow"
 export const flowRegistry: Partial<Record<Weekday, ScheduleFlow[]>> = {
   sunday: [weeklyOutfitsFlow],
   wednesday: [neonDatabaseSnapshotFlow],
+  friday: [generateSearchTermsProductsScrapingFlow],
   thursday: [generateWardrobePanoramaFlow],
 }
 

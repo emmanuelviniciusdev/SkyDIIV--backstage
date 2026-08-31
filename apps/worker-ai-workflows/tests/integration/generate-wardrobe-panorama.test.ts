@@ -28,18 +28,10 @@ const mocks = vi.hoisted(() => {
     name: "Português (BR)",
   }
 
-  const fakeShoppingPrefsRow = {
-    gender: "Female",
-    top_size: "M",
-    bottom_size: "40",
-    foot_size: "38",
-  }
-
   const readDb = vi.fn().mockImplementation((strings: TemplateStringsArray | string[]) => {
     const query = Array.isArray(strings) ? strings.join("") : String(strings)
     if (query.includes("app_preferences")) return Promise.resolve([fakeLanguageRow])
     if (query.includes("weekly_outfit_preferences")) return Promise.resolve([fakePreferencesRow])
-    if (query.includes("shopping_suggestions_preferences")) return Promise.resolve([fakeShoppingPrefsRow])
     if (query.includes("clothing_items")) return Promise.resolve(fakeWardrobeRows)
     if (query.includes("users")) return Promise.resolve([fakeUserRow])
     return Promise.resolve([])
@@ -54,14 +46,7 @@ O seu guarda-roupa tem muitas camisas brancas e poucas peças de sobreposição,
 O conteúdo das peças indica um viés clássico com toques casuais.
 
 ## o que vale buscar
-Sugiro investir em um blazer casual e algumas camisetas básicas neutras.
-
-\`\`\`json
-[
-  { "searchTerm": "blazer casual bege", "brand": null, "sizeCategory": "top" },
-  { "searchTerm": "camiseta básica neutra", "brand": null, "sizeCategory": "top" }
-]
-\`\`\``
+Sugiro investir em um blazer casual e algumas camisetas básicas neutras.`
   const llmGenerate = vi.fn().mockResolvedValue(fakePanorama)
 
   return {
@@ -118,29 +103,24 @@ describe("generate-wardrobe-panorama workflow steps", () => {
     expect(result.prompt).toContain("Total: 2 peças")
     expect(result.prompt).toContain("ID: item-1 Título: Camisa branca; Tipo: Top; Subtipo: Shirt; Tags: formal, white")
     expect(result.prompt).toContain("ID: item-2 Título: Calça jeans; Tipo: Bottom; Subtipo: Jeans; Tags: casual, denim")
-    expect(result.prompt).toContain("sizeCategory")
-    expect(result.shoppingPreferences).toEqual({
-      gender: "Female",
-      topSize: "M",
-      bottomSize: "40",
-      footSize: "38",
-    })
+    expect(result.prompt).toContain("## o que vale buscar")
+    expect(result.prompt).not.toContain("sizeCategory")
+    expect(result.prompt).not.toContain("```json")
+    expect(result).not.toHaveProperty("shoppingPreferences")
   })
 
-  it("calls the LLM and returns markdown content plus parsed suggestions", async () => {
+  it("calls the LLM and returns markdown content without requiring a JSON fence", async () => {
     const promptData = await buildPromptStep(mocks.USER_ID)
     const exec = await executePromptStep({ userId: promptData.userId, prompt: promptData.prompt })
 
     expect(exec.llmInteractionId).toBeTruthy()
     expect(exec.content).toContain("## equilíbrio do guarda-roupa")
+    expect(exec.content).toContain("## o que vale buscar")
     expect(exec.content).not.toContain("```json")
-    expect(exec.suggestions).toEqual([
-      { searchTerm: "blazer casual bege", brand: null, sizeCategory: "top" },
-      { searchTerm: "camiseta básica neutra", brand: null, sizeCategory: "top" },
-    ])
+    expect(exec).not.toHaveProperty("suggestions")
   })
 
-  it("persists only the markdown panorama (no JSON fence)", async () => {
+  it("persists only the markdown panorama (no JSON fence) and does not insert scrape outbox rows", async () => {
     const promptData = await buildPromptStep(mocks.USER_ID)
     const exec = await executePromptStep({ userId: promptData.userId, prompt: promptData.prompt })
 
@@ -155,5 +135,12 @@ describe("generate-wardrobe-panorama workflow steps", () => {
 
     expect(mocks.writeDb).toHaveBeenCalled()
     expect(exec.content).not.toContain("searchTerm")
-  })
-})
+    const sql = mocks.writeDb.mock.calls
+      .flatMap((call) => {
+        const first = call[0]
+        if (Array.isArray(first)) return first.filter((s): s is string => typeof s === "string")
+        return []
+      })
+      .join(" ")
+    expect(sql).not.toMatch(/outbox_events/i)
+    expect(sql).not.toMatch(/scrape-shopping-suggestions/i)

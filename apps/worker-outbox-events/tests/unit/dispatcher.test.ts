@@ -51,6 +51,7 @@ describe("dispatch", () => {
     vi.clearAllMocks()
     process.env.WORKER_SYNC_URL = "https://worker-sync.example.workers.dev"
     process.env.WORKER_NOTIFICATION_URL = "https://worker-notification.example.workers.dev"
+    process.env.WORKER_AI_WORKFLOWS_URL = "https://worker-ai-workflows.example.workers.dev"
     mockResolveCfQueueId.mockReturnValue("queue-scrape-1")
   })
 
@@ -124,6 +125,61 @@ describe("dispatch", () => {
       "WORKER_NOTIFICATION_URL environment variable is not set",
     )
     expect(mockPublishJSON).not.toHaveBeenCalled()
+  })
+
+  // ── generate-search-terms-products-scraping + QStash ───────────────────────
+
+  it("publishes generate-search-terms payload to worker-ai-workflows and does not call CF Queues", async () => {
+    mockPublishJSON.mockResolvedValueOnce({})
+    const payload = { wardrobePanoramaId: "p1" }
+    const event = makeEvent({
+      event_name: OUTBOX_ROUTES.GENERATE_SEARCH_TERMS_PRODUCTS_SCRAPING_QSTASH.eventName,
+      broker_name: BROKER_NAMES.QSTASH,
+      payload,
+    })
+
+    await dispatch(event)
+
+    expect(mockPublishJSON).toHaveBeenCalledOnce()
+    expect(mockPublishJSON).toHaveBeenCalledWith({
+      url: "https://worker-ai-workflows.example.workers.dev/generate-search-terms-products-scraping",
+      body: payload,
+    })
+    expect(mockPublishBatchToCloudflareQueue).not.toHaveBeenCalled()
+  })
+
+  it("publishes analyze-scraped-products-results payload to worker-ai-workflows and does not call CF Queues", async () => {
+    mockPublishJSON.mockResolvedValueOnce({})
+    const payload = { wardrobePanoramaId: "p1" }
+    const event = makeEvent({
+      event_name: OUTBOX_ROUTES.ANALYZE_SCRAPED_PRODUCTS_RESULTS_QSTASH.eventName,
+      broker_name: BROKER_NAMES.QSTASH,
+      payload,
+    })
+
+    await dispatch(event)
+
+    expect(mockPublishJSON).toHaveBeenCalledOnce()
+    expect(mockPublishJSON).toHaveBeenCalledWith({
+      url: "https://worker-ai-workflows.example.workers.dev/analyze-scraped-products-results",
+      body: payload,
+    })
+    expect(mockPublishBatchToCloudflareQueue).not.toHaveBeenCalled()
+  })
+
+  it("throws when WORKER_AI_WORKFLOWS_URL is not set for generate-search-terms", async () => {
+    delete process.env.WORKER_AI_WORKFLOWS_URL
+    const event = makeEvent({
+      event_name: OUTBOX_ROUTES.GENERATE_SEARCH_TERMS_PRODUCTS_SCRAPING_QSTASH.eventName,
+      broker_name: BROKER_NAMES.QSTASH,
+      payload: { wardrobePanoramaId: "p1" },
+    })
+
+    await expect(dispatch(event)).rejects.toThrow(
+      "WORKER_AI_WORKFLOWS_URL environment variable is not set",
+    )
+    expect(mockPublishJSON).not.toHaveBeenCalled()
+    expect(mockPublishBatchToCloudflareQueue).not.toHaveBeenCalled()
   })
 
   // ── scrape-shopping-suggestions + CF Queues ────────────────────────────────

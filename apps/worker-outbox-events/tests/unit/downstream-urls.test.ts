@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest"
 import {
   resolveWorkerSyncUrl,
   resolveWorkerNotificationUrl,
+  resolveWorkerAiWorkflowsUrl,
 } from "../../src/lib/downstream-urls"
 
 /**
@@ -61,6 +62,25 @@ describe("resolveWorkerNotificationUrl", () => {
     delete process.env.WORKER_NOTIFICATION_URL
     expect(() => resolveWorkerNotificationUrl("/email--welcome")).toThrow(
       "WORKER_NOTIFICATION_URL environment variable is not set",
+    )
+  })
+})
+
+describe("resolveWorkerAiWorkflowsUrl", () => {
+  beforeEach(() => {
+    process.env.WORKER_AI_WORKFLOWS_URL = "https://worker-ai-workflows.example.workers.dev"
+  })
+
+  it("returns the full URL by joining the origin and workflow path", () => {
+    expect(resolveWorkerAiWorkflowsUrl("/generate-search-terms-products-scraping")).toBe(
+      "https://worker-ai-workflows.example.workers.dev/generate-search-terms-products-scraping",
+    )
+  })
+
+  it("throws when WORKER_AI_WORKFLOWS_URL is not set", () => {
+    delete process.env.WORKER_AI_WORKFLOWS_URL
+    expect(() => resolveWorkerAiWorkflowsUrl("/analyze-scraped-products-results")).toThrow(
+      "WORKER_AI_WORKFLOWS_URL environment variable is not set",
     )
   })
 })

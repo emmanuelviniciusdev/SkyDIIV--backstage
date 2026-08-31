@@ -33,13 +33,6 @@ Com base nos títulos, tipos, subtipos e tags das peças, descreva o estilo pred
   sectionShopping: `## o que vale buscar
 Com base nos padrões identificados, sugira de 2 a 4 tipos de peça que complementariam o guarda-roupa. Se as preferências estiverem disponíveis, leve em conta a rotina e a localização do usuário. Seja específico: mencione o tipo de peça e o contexto de uso. Nunca sugira compras sem antes justificar a lacuna que preencheriam.`,
 
-  shoppingSuggestionsJson: `Após o panorama em Markdown, emita EXATAMENTE um bloco JSON cercado por \`\`\`json e \`\`\` (e nada depois dele). O JSON deve ser um array com no mínimo 2 e no máximo 5 objetos, alinhados às lacunas descritas em "## o que vale buscar". Cada objeto deve ter:
-- "searchTerm" (string): termo de busca avançado, específico e pronto para busca em marketplace de roupas de segunda mão (ex.: "blazer casual bege oversized", "tênis branco minimalista"). Escreva o termo no mesmo idioma da resposta.
-- "brand" (string ou null): marca sugerida quando fizer sentido; caso contrário null.
-- "sizeCategory" (string): uma de "top" | "bottom" | "foot" | "none" — indica qual filtro de tamanho se aplica à peça (top = parte de cima, bottom = parte de baixo, foot = calçados, none = sem tamanho específico, ex. acessórios).
-
-Não inclua gender, tamanhos numéricos/letras, marketplace, URLs ou campos extras. O Markdown do panorama deve vir ANTES do bloco JSON e NÃO deve conter o JSON dentro das seções.`,
-
   important:
     "Importante: use apenas os dados fornecidos. Os títulos e tags dos itens podem estar no idioma do usuário — não os traduza. Utilize os campos Tipo e Subtipo para categorizar as peças — esses valores estão sempre em inglês (en-US), independentemente do idioma do usuário. Se as preferências do usuário não estiverem definidas, faça a análise exclusivamente com base nos dados do guarda-roupa, sem especular sobre rotina ou estilo de vida.",
 
@@ -87,8 +80,6 @@ export function buildWardrobePanoramaPrompt(input: BuildWardrobePanoramaPromptIn
     ${PROMPT_PARTS.sectionStyle}
     
     ${PROMPT_PARTS.sectionShopping}
-    
-    ${PROMPT_PARTS.shoppingSuggestionsJson}
     
     ${PROMPT_PARTS.important}
     

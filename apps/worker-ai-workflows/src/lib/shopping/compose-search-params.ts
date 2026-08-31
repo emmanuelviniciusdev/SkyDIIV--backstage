@@ -1,34 +1,35 @@
+import { z } from "zod"
 import type { ShoppingSuggestionsPreferences } from "../db/shopping-suggestions-preferences.repository"
-import type { ParsedShoppingSuggestion } from "../prompt/panorama-response"
+import type { ParsedSearchTermSuggestion } from "./suggestions"
 
-/** Wire shape matching robot-shopping-suggestions scrape payload searchParams. */
-export interface ScrapeSearchParams {
-  searchTerm: string
-  gender: string | null
-  topSize: string | null
-  bottomSize: string | null
-  footSize: string | null
-  brand: string | null
-}
+/** json_search persisted on search_terms_scraped_products. */
+export const JsonSearchSchema = z.object({
+  term: z.string().min(1),
+  gender: z.string().nullable(),
+  topSize: z.string().nullable(),
+  bottomSize: z.string().nullable(),
+  footSize: z.string().nullable(),
+})
+
+export type JsonSearch = z.infer<typeof JsonSearchSchema>
 
 /**
- * Merges LLM shopping suggestions with the user's size/gender preferences.
- * Missing preferences → gender and all sizes null (searchTerm + brand still published).
+ * Merges LLM search-term suggestions with the user's size/gender preferences.
+ * Missing preferences → gender and all sizes null (term still published).
  */
 export function composeSearchParams(
-  suggestions: ParsedShoppingSuggestion[],
+  suggestions: ParsedSearchTermSuggestion[],
   prefs: ShoppingSuggestionsPreferences | null,
-): ScrapeSearchParams[] {
+): JsonSearch[] {
   const gender = prefs?.gender ?? null
 
   return suggestions.map((s) => {
-    const base: ScrapeSearchParams = {
-      searchTerm: s.searchTerm,
+    const base: JsonSearch = {
+      term: s.term,
       gender,
       topSize: null,
       bottomSize: null,
       footSize: null,
-      brand: s.brand,
     }
 
     switch (s.sizeCategory) {

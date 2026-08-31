@@ -12,6 +12,8 @@ export { resolveUserLocale } from "./resolve-user-locale"
 export { getLocaleMessages } from "./locales"
 export { buildWeeklyOutfitsPrompt, getWeeklyOutfitsPromptTemplate } from "./prompts/weekly-outfits"
 export { buildWardrobePanoramaPrompt } from "./prompts/wardrobe-panorama"
+export { buildGenerateSearchTermsPrompt } from "./prompts/generate-search-terms"
+export { buildAnalyzeScrapedResultsPrompt } from "./prompts/analyze-scraped-results"
 export {
   buildDayWeatherInfo,
   formatDayWeatherSummary,

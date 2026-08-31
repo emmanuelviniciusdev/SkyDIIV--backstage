@@ -2,6 +2,8 @@ import { serveMany } from "@upstash/workflow/cloudflare"
 import { resolveWorkflowBaseUrl } from "../lib/workflow-base-url"
 import { generateWeeklyOutfitsWorkflow } from "./generate-weekly-outfits/workflow"
 import { generateWardrobePanoramaWorkflow } from "./generate-wardrobe-panorama/workflow"
+import { generateSearchTermsProductsScrapingWorkflow } from "./generate-search-terms-products-scraping/workflow"
+import { analyzeScrapedProductsResultsWorkflow } from "./analyze-scraped-products-results/workflow"
 
 /**
  * Workflow registry for the worker-ai-workflows worker.
@@ -19,6 +21,8 @@ import { generateWardrobePanoramaWorkflow } from "./generate-wardrobe-panorama/w
 export const workflowRegistry = {
   "generate-weekly-outfits": generateWeeklyOutfitsWorkflow,
   "generate-wardrobe-panorama": generateWardrobePanoramaWorkflow,
+  "generate-search-terms-products-scraping": generateSearchTermsProductsScrapingWorkflow,
+  "analyze-scraped-products-results": analyzeScrapedProductsResultsWorkflow,
 } as const
 
 let cachedBaseUrl: string | undefined

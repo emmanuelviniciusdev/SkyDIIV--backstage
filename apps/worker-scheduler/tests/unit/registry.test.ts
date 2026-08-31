@@ -4,6 +4,7 @@ import { WEEKDAYS } from "../../src/flows/types"
 import { weeklyOutfitsFlow } from "../../src/flows/weekly-outfits.flow"
 import { generateWardrobePanoramaFlow } from "../../src/flows/generate-wardrobe-panorama.flow"
 import { neonDatabaseSnapshotFlow } from "../../src/flows/neon-database-snapshot.flow"
+import { generateSearchTermsProductsScrapingFlow } from "../../src/flows/generate-search-terms-products-scraping.flow"
 
 describe("flow registry", () => {
   it("registers the weekly-outfits flow on sunday", () => {
@@ -20,10 +21,18 @@ describe("flow registry", () => {
     const flows = getFlowsForDay("thursday")
     expect(flows).toEqual([generateWardrobePanoramaFlow])
   })
+  it("registers the generate-search-terms-products-scraping flow on friday", () => {
+    const flows = getFlowsForDay("friday")
+    expect(flows).toEqual([generateSearchTermsProductsScrapingFlow])
+  })
 
   it("returns an empty array for days without registered flows", () => {
     const otherDays = WEEKDAYS.filter(
-      (day) => day !== "sunday" && day !== "wednesday" && day !== "thursday",
+      (day) =>
+        day !== "sunday" &&
+        day !== "wednesday" &&
+        day !== "thursday" &&
+        day !== "friday",
     )
     for (const day of otherDays) {
       expect(getFlowsForDay(day)).toEqual([])

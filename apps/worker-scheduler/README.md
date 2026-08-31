@@ -21,12 +21,14 @@ Stale outbox events are re-enqueued via [`worker-outbox-events`](../worker-outbo
 | `POST /schedule/every-tuesday` | Tuesday | _(none)_ |
 | `POST /schedule/every-wednesday` | Wednesday | `neon-database-snapshot` |
 | `POST /schedule/every-thursday` | Thursday | `generate-wardrobe-panorama` |
-| `POST /schedule/every-friday` | Friday | _(none)_ |
+| `POST /schedule/every-friday` | Friday | `generate-search-terms-products-scraping` (automatic thrifting) |
 | `POST /schedule/every-saturday` | Saturday | _(none)_ |
 | `POST /schedule/every-sunday` | Sunday | `weekly-outfits` |
 | `POST /schedule/catch-up-outbox-events` | — | `catch-up-outbox-events` |
 | `POST /schedule/everyday` | — | _(none)_ |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
+
+Friday `generate-search-terms-products-scraping` runs after Thursday panorama and before the Friday 19:00 BRT `robot-scrape-products` window. It inserts one `generate-search-terms-products-scraping` outbox row per existing `wardrobe_panorama` and publishes `{ outboxEventId }` to `{WORKER_OUTBOX_EVENTS_URL}/process-outbox-event` (batches of 100). It does not publish directly to `worker-ai-workflows`.
 
 Flow assignments come from `src/flows/registry.ts` and may change independently of this table.
 

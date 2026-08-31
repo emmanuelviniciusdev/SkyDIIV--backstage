@@ -79,7 +79,7 @@ graph TD
 | `worker-scheduler` | `apps/worker-scheduler/` | Optional upstream dispatcher; queries users with large enough wardrobes, filters by update marker, and publishes messages to the queue |
 | `worker-ai-workflows` | `apps/worker-ai-workflows/` | Hosts the durable workflow and all step implementations |
 | `worker-outbox-events` | `apps/worker-outbox-events/` | Processes `scrape-shopping-suggestions` outbox rows and batch-publishes to CF Queues |
-| `robot-shopping-suggestions` | `apps/robot-shopping-suggestions/` | Pulls CF Queues messages and scrapes marketplaces |
+| `robot-scrape-products` | `apps/robot-scrape-products/` | Pulls CF Queues messages and scrapes marketplaces |
 
 ---
 

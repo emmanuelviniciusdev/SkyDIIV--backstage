@@ -42,6 +42,38 @@ describe("worker fetch routing", () => {
     expect(mockWorkflowsFetch).toHaveBeenCalledWith(request, env)
   })
 
+  it("delegates POST /generate-search-terms-products-scraping to the workflow router", async () => {
+    const request = makeRequest("POST", "/generate-search-terms-products-scraping")
+    await worker.fetch(request, {})
+    expect(mockWorkflowsFetch).toHaveBeenCalledOnce()
+    expect(mockWorkflowsFetch).toHaveBeenCalledWith(request, {})
+  })
+
+  it("delegates POST /analyze-scraped-products-results to the workflow router", async () => {
+    const request = makeRequest("POST", "/analyze-scraped-products-results")
+    await worker.fetch(request, {})
+    expect(mockWorkflowsFetch).toHaveBeenCalledOnce()
+    expect(mockWorkflowsFetch).toHaveBeenCalledWith(request, {})
+  })
+
+  it("returns 401 when the workflow router rejects an unsigned request", async () => {
+    mockWorkflowsFetch.mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }))
+    const res = await worker.fetch(
+      makeRequest("POST", "/generate-search-terms-products-scraping"),
+      {},
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it("returns 401 for an unsigned analyze request", async () => {
+    mockWorkflowsFetch.mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }))
+    const res = await worker.fetch(
+      makeRequest("POST", "/analyze-scraped-products-results"),
+      {},
+    )
+    expect(res.status).toBe(401)
+  })
+
   it("delegates unknown non-GET paths to the workflow router", async () => {
     await worker.fetch(makeRequest("POST", "/unknown"), {})
     expect(mockWorkflowsFetch).toHaveBeenCalledOnce()

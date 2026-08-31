@@ -10,8 +10,33 @@ export interface SavePanoramaInput {
   content: string
 }
 
+export interface WardrobePanoramaRecord {
+  id: string
+  userId: string
+  content: string
+}
+
+interface WardrobePanoramaRow {
+  id: string
+  user_id: string
+  content: string
+}
+
 export class SqlWardrobePanoramaRepository {
   constructor(private readonly writeDb: postgres.Sql, private readonly readDb?: postgres.Sql) {}
+
+  async findById(id: string): Promise<WardrobePanoramaRecord | null> {
+    const reader = this.readDb ?? this.writeDb
+    const rows = await reader<WardrobePanoramaRow[]>`
+      SELECT id, user_id, content
+      FROM wardrobe_panorama
+      WHERE id = ${id}
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    const row = rows[0]
+    return { id: row.id, userId: row.user_id, content: row.content }
+  }
 
   async saveOrUpdate(input: SavePanoramaInput): Promise<void> {
     const log = createLogger("wardrobe-panorama-repo", input.userId)

@@ -1,0 +1,26 @@
+{
+  "timezone": "America/Sao_Paulo",
+  "windowLocal": {
+    "day": "Friday",
+    "create": "19:00",
+    "destroy": "21:00"
+  },
+  "githubActionsCronUtc": {
+    "createAndDeploy": "0 22 * * 5",
+    "destroy": "0 0 * * 6"
+  },
+  "githubActionsLocal": {
+    "createAndDeploy": "Friday 19:00",
+    "destroy": "Friday 21:00"
+  },
+  "workflow": ".github/workflows/weekly-robot-scrape-products.yml",
+  "notes": [
+    "America/Sao_Paulo is UTC-3 year-round (no DST).",
+    "Friday 19:00 BRT = 22:00 UTC; Friday 21:00 BRT = Saturday 00:00 UTC.",
+    "Stack is an OCI Container Instance (OCIR image) — no boot volume.",
+    "Robot scrapes unprocessed search terms from Postgres, then self-deletes.",
+    "Friday 21:00 BRT soft-destroys billable resources (CI + NAT) even if terms remain.",
+    "Free IAM / budget / VCN survive soft destroy; hard-destroy tears everything down.",
+    "Local and GHA must share OCI Object Storage Terraform state (TF_BACKEND_HCL_B64)."
+  ]
+}

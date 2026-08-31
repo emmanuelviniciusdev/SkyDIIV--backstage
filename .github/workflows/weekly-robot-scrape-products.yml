@@ -1,0 +1,527 @@
+name: Weekly — Robot Scrape Products (ephemeral)
+
+# PAYG Container Instance: create Friday 19:00 BRT, soft-destroy Friday 21:00 BRT.
+# America/Sao_Paulo = UTC-3 year-round:
+#   Create       Fri 19:00 BRT → 0 22 * * 5 UTC
+#   Soft destroy Fri 21:00 BRT → 0 0 * * 6 UTC (Saturday 00:00 UTC)
+#
+# Soft destroy removes billable resources only (CI + NAT); free IAM/budget/VCN
+# stay for the next create. Hard destroy (workflow_dispatch) tears down everything.
+# Soft destroy has absolute authority over compute even if scrape work remains.
+
+on:
+  schedule:
+    - cron: "0 22 * * 5" # create
+    - cron: "0 0 * * 6" # destroy
+  workflow_dispatch:
+    inputs:
+      action:
+        description: >-
+          create = apply; destroy = soft (billable only); hard-destroy = full
+          stack including free IAM/budget/VCN
+        type: choice
+        options:
+          - create
+          - destroy
+          - hard-destroy
+        default: create
+
+concurrency:
+  group: robot-scrape-products-weekly
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve action
+    runs-on: ubuntu-latest
+    outputs:
+      action: ${{ steps.pick.outputs.action }}
+    steps:
+      - name: Pick create vs destroy vs hard-destroy
+        id: pick
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "action=${{ inputs.action }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "${{ github.event.schedule }}" in
+            "0 0 * * 6") echo "action=destroy" >> "$GITHUB_OUTPUT" ;;
+            *)            echo "action=create" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  create:
+    name: Build image + terraform apply
+    needs: resolve
+    if: needs.resolve.outputs.action == 'create'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/robot-scrape-products
+    environment:
+      name: production
+    env:
+      OCI_REGION: ${{ secrets.OCI_REGION }}
+      OCIR_NAMESPACE: ${{ secrets.OCIR_NAMESPACE }}
+      CONTAINER_OCPUS: ${{ vars.CONTAINER_OCPUS }}
+      CONTAINER_MEMORY_GB: ${{ vars.CONTAINER_MEMORY_GB }}
+      AVAILABILITY_DOMAIN_INDEX: ${{ vars.AVAILABILITY_DOMAIN_INDEX }}
+      ENABLE_COST_LIMIT: ${{ vars.ENABLE_COST_LIMIT }}
+      COST_LIMIT_USD: ${{ vars.COST_LIMIT_USD }}
+      COST_ALERT_EMAIL: ${{ secrets.COST_ALERT_EMAIL }}
+      OCI_PRIVATE_KEY_PEM: ${{ secrets.OCI_API_PRIVATE_KEY || secrets.OCI_CLI_KEY_CONTENT }}
+      # OCI Object Storage rejects AWS SDK v2 default aws-chunked PutObject.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/robot-scrape-products/package-lock.json
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Install, lint, test & build
+        run: |
+          npm ci --ignore-scripts
+          npm run lint
+          npm run test
+          npm run build
+
+      # The region-id host is what the local deploy and the Container Instance
+      # pull use; oracle-actions/login-ocir only authenticates the region-key
+      # host (iad.ocir.io) and docker credentials are stored per host.
+      - name: Log in to OCIR
+        env:
+          OCIR_AUTH_TOKEN: ${{ secrets.OCIR_AUTH_TOKEN }}
+          OCIR_USERNAME: ${{ secrets.OCIR_USERNAME }}
+        run: |
+          echo "$OCIR_AUTH_TOKEN" | docker login "${OCI_REGION}.ocir.io" \
+            -u "$OCIR_USERNAME" \
+            --password-stdin
+
+      - name: Resolve infra defaults
+        id: infra
+        run: |
+          echo "container_ocpus=${CONTAINER_OCPUS:-2}" >> "$GITHUB_OUTPUT"
+          echo "container_memory_gb=${CONTAINER_MEMORY_GB:-4}" >> "$GITHUB_OUTPUT"
+          echo "ad_index=${AVAILABILITY_DOMAIN_INDEX:-0}" >> "$GITHUB_OUTPUT"
+
+          NS="${OCIR_NAMESPACE}"
+          if [ -z "$OCI_REGION" ] || [ -z "$NS" ]; then
+            echo "OCI_REGION and OCIR_NAMESPACE secrets are required" >&2
+            exit 1
+          fi
+          REGISTRY="${OCI_REGION}.ocir.io"
+          IMAGE="${REGISTRY}/${NS}/robot-scrape-products:${{ github.sha }}"
+          echo "container_image_url=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "image_latest=${REGISTRY}/${NS}/robot-scrape-products:latest" >> "$GITHUB_OUTPUT"
+
+          LIMIT="${COST_LIMIT_USD:-5}"
+          EMAIL="${COST_ALERT_EMAIL:-emmanuel.bergmann@icloud.com}"
+          COST_ENABLE="${ENABLE_COST_LIMIT:-}"
+          if [ -z "$COST_ENABLE" ]; then
+            if [ -n "$EMAIL" ]; then COST_ENABLE="true"; else COST_ENABLE="false"; fi
+          fi
+          echo "enable_cost_limit=${COST_ENABLE}" >> "$GITHUB_OUTPUT"
+          echo "cost_limit_usd=${LIMIT}" >> "$GITHUB_OUTPUT"
+          echo "cost_alert_email=${EMAIL}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push Docker image
+        # Container Instances cannot pull manifest lists with attestations —
+        # match deploy-from-local.sh (single-arch image via --output type=image).
+        working-directory: apps/robot-scrape-products
+        env:
+          IMAGE: ${{ steps.infra.outputs.container_image_url }}
+          LATEST: ${{ steps.infra.outputs.image_latest }}
+          OCIR_AUTH_TOKEN: ${{ secrets.OCIR_AUTH_TOKEN }}
+          OCIR_USERNAME: ${{ secrets.OCIR_USERNAME }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+        run: |
+          # One name per --output (CSV); repeated name= keeps only the last tag.
+          # Push the sha tag as a single-arch image, then alias :latest to it.
+          docker buildx build \
+            --platform linux/arm64 \
+            --provenance=false \
+            --sbom=false \
+            --build-arg GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
+            --output "type=image,name=${IMAGE},push=true" \
+            .
+
+          docker buildx imagetools create --tag "${LATEST}" "${IMAGE}"
+
+          media_type="$(docker buildx imagetools inspect --raw "$IMAGE" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("mediaType",""))')"
+          echo "Remote manifest mediaType: ${media_type}"
+          case "${media_type}" in
+            *manifest.list*|*image.index*)
+              echo "::error::Pushed a manifest list (${media_type}) — Container Instances need a single image manifest"
+              exit 1
+              ;;
+          esac
+
+          # Prove the registry accepts a pull with the same credentials CI just used.
+          echo "$OCIR_AUTH_TOKEN" | docker login "${OCI_REGION}.ocir.io" \
+            -u "$OCIR_USERNAME" --password-stdin
+          docker pull --platform linux/arm64 "$IMAGE"
+          docker image inspect "$IMAGE" --format 'pulled {{.Os}}/{{.Architecture}} {{.Id}}'
+
+      - name: Write OCI API key
+        working-directory: apps/robot-scrape-products/deploy/terraform
+        run: |
+          umask 077
+          if [ -z "$OCI_PRIVATE_KEY_PEM" ]; then
+            echo "::error::Set OCI_API_PRIVATE_KEY or OCI_CLI_KEY_CONTENT in the production environment" >&2
+            exit 1
+          fi
+          printf '%s\n' "$OCI_PRIVATE_KEY_PEM" > oci_api_key.pem
+
+      - name: Install OCI SDK (cost gate)
+        run: pip install --quiet oci
+
+      - name: Cost ceiling gate (refuse apply if MTD ≥ limit)
+        working-directory: apps/robot-scrape-products
+        env:
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          COST_LIMIT_USD: ${{ steps.infra.outputs.cost_limit_usd }}
+        run: |
+          # Exit 10 = over limit → skip apply (do not create infra that would burn more budget)
+          set +e
+          python3 deploy/oci_cost_guard.py --check-only --limit "${COST_LIMIT_USD:-5}"
+          CODE=$?
+          set -e
+          if [ "$CODE" -eq 10 ]; then
+            echo "::error::Monthly cost ceiling already reached — refusing terraform apply"
+            echo "### Create skipped (cost ceiling)" >> "$GITHUB_STEP_SUMMARY"
+            echo "MTD spend is at or above \`${COST_LIMIT_USD:-5}\` USD. No Container Instance was created." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "$CODE" -ne 0 ]; then
+            echo "::error::Cost ceiling check failed (exit ${CODE})"
+            exit "$CODE"
+          fi
+
+      - name: Build robot_env JSON from secret
+        id: env
+        working-directory: apps/robot-scrape-products
+        env:
+          ROBOT_ENV_FILE: ${{ secrets.ROBOT_SCRAPE_PRODUCTS_ENV }}
+          OCI_API_PRIVATE_KEY: ${{ secrets.OCI_API_PRIVATE_KEY || secrets.OCI_CLI_KEY_CONTENT }}
+        run: |
+          python3 <<'PY'
+          import json, os, pathlib
+          raw = os.environ.get("ROBOT_ENV_FILE") or ""
+          env = {}
+          for line in raw.splitlines():
+              line = line.strip()
+              if not line or line.startswith("#") or "=" not in line:
+                  continue
+              k, _, v = line.partition("=")
+              env[k.strip()] = v.strip().strip('"').strip("'")
+          # Compute provider + OCI signing material for self-delete
+          env.setdefault("COMPUTE_PROVIDER", "oci")
+          if os.environ.get("OCI_API_PRIVATE_KEY"):
+              env["OCI_API_PRIVATE_KEY"] = os.environ["OCI_API_PRIVATE_KEY"]
+          pathlib.Path("/tmp/robot_env.json").write_text(json.dumps(env))
+          print(f"robot_env keys: {sorted(env.keys())}")
+          PY
+          echo "path=/tmp/robot_env.json" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform Init
+        working-directory: apps/robot-scrape-products
+        env:
+          TF_BACKEND_HCL: ${{ secrets.TF_BACKEND_HCL }}
+          TF_BACKEND_HCL_B64: ${{ secrets.TF_BACKEND_HCL_B64 }}
+        run: ./deploy/terraform-init.sh
+
+      - name: Terraform Apply (Container Instance)
+        id: tf
+        working-directory: apps/robot-scrape-products/deploy/terraform
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_container_image_url: ${{ steps.infra.outputs.container_image_url }}
+          TF_VAR_ocir_username: ${{ secrets.OCIR_USERNAME }}
+          TF_VAR_ocir_auth_token: ${{ secrets.OCIR_AUTH_TOKEN }}
+          TF_VAR_container_ocpus: ${{ steps.infra.outputs.container_ocpus }}
+          TF_VAR_container_memory_in_gbs: ${{ steps.infra.outputs.container_memory_gb }}
+          TF_VAR_availability_domain_index: ${{ steps.infra.outputs.ad_index }}
+          TF_VAR_enable_cost_limit: ${{ steps.infra.outputs.enable_cost_limit }}
+          TF_VAR_cost_limit_usd: ${{ steps.infra.outputs.cost_limit_usd }}
+          TF_VAR_cost_alert_email: ${{ steps.infra.outputs.cost_alert_email }}
+          TF_VAR_environment: production
+          TF_VAR_robot_batch_size: "2"
+          TF_VAR_robot_concurrency: "2"
+        run: |
+          export TF_VAR_robot_env="$(cat /tmp/robot_env.json)"
+          ../tf-apply.sh
+          # Empty when the robot drained and self-deleted during the apply.
+          # Prefer -json so empty state never leaks "│ Warning…" into GITHUB_OUTPUT.
+          ocid="$(
+            terraform output -json 2>/dev/null | python3 -c '
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+          except Exception:
+              raise SystemExit(0)
+          value = (data.get("container_instance_ocid") or {}).get("value")
+          if isinstance(value, str) and value.startswith("ocid1."):
+              print(value, end="")
+          ' || true
+          )"
+          case "$ocid" in
+            ocid1.*) ;;
+            *) ocid="" ;;
+          esac
+          echo "container_instance_ocid=${ocid}" >> "$GITHUB_OUTPUT"
+          if [[ -n "${ocid}" ]]; then
+            echo "Container Instance ${ocid} created — robot draining queue"
+          else
+            echo "Robot completed its drain and self-deleted during apply"
+          fi
+
+      - name: Summary
+        run: |
+          echo "### Weekly create complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "Container Instance left **ACTIVE** until self-delete or destroy cron (Thu 21:00 BRT)." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "OCID: \`${{ steps.tf.outputs.container_instance_ocid }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image: \`${{ steps.infra.outputs.container_image_url }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup OCI key
+        if: always()
+        working-directory: apps/robot-scrape-products/deploy/terraform
+        run: rm -f oci_api_key.pem backend.hcl
+
+  destroy:
+    name: Soft destroy (billable only)
+    needs: resolve
+    if: needs.resolve.outputs.action == 'destroy'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    env:
+      OCI_PRIVATE_KEY_PEM: ${{ secrets.OCI_API_PRIVATE_KEY || secrets.OCI_CLI_KEY_CONTENT }}
+      # OCI Object Storage rejects AWS SDK v2 default aws-chunked PutObject.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Write OCI API key
+        working-directory: apps/robot-scrape-products/deploy/terraform
+        run: |
+          umask 077
+          if [ -z "$OCI_PRIVATE_KEY_PEM" ]; then
+            echo "::error::Set OCI_API_PRIVATE_KEY or OCI_CLI_KEY_CONTENT in the production environment" >&2
+            exit 1
+          fi
+          printf '%s\n' "$OCI_PRIVATE_KEY_PEM" > oci_api_key.pem
+
+      - name: Terraform Init
+        working-directory: apps/robot-scrape-products
+        env:
+          TF_BACKEND_HCL: ${{ secrets.TF_BACKEND_HCL }}
+          TF_BACKEND_HCL_B64: ${{ secrets.TF_BACKEND_HCL_B64 }}
+        run: ./deploy/terraform-init.sh
+
+      - name: Check Terraform state
+        id: tf
+        working-directory: apps/robot-scrape-products/deploy/terraform
+        run: |
+          HAS_STATE="false"
+          if terraform state list 2>/dev/null | grep -q .; then
+            HAS_STATE="true"
+          fi
+          echo "has_state=${HAS_STATE}" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_STATE" != "true" ]; then
+            echo "No Terraform state — nothing to destroy"
+          fi
+
+      # Soft destroy API-clears FAILED CIs via the OCI SDK on retry; also needed
+      # for the OCIR purge step below.
+      - name: Install OCI SDK
+        run: pip install --quiet oci
+
+      # Soft destroy: Container Instance (+ NAT if private). Keeps free IAM /
+      # budget / VCN so the next create reuses them and skips the OCIR IAM race.
+      - name: Terraform Soft Destroy
+        if: steps.tf.outputs.has_state == 'true'
+        working-directory: apps/robot-scrape-products
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_environment: production
+          # Required by schema even when destroying; image may already be gone
+          TF_VAR_container_image_url: "placeholder.invalid/robot:destroy"
+          TF_VAR_robot_env: "{}"
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+        run: |
+          ./deploy/tf-destroy.sh soft
+          echo "Soft destroy complete — billable resources removed (absolute authority)"
+
+      # OCIR bills stored layers even with no instance running, and every create
+      # pushes a fresh version, so nothing needs to survive the destroy.
+      - name: Purge OCIR image versions
+        working-directory: apps/robot-scrape-products
+        env:
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+        run: python3 deploy/ocir_purge.py --keep 0
+
+      - name: Summary
+        run: |
+          echo "### Weekly soft destroy complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "Cost-generating resources removed (Container Instance / NAT)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Free resources kept (IAM, budget, VCN) for the next create." >> "$GITHUB_STEP_SUMMARY"
+          echo "OCIR image versions purged — no registry storage billed until the next create." >> "$GITHUB_STEP_SUMMARY"
+          echo "Soft destroy ran with absolute authority regardless of queue depth." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup OCI key
+        if: always()
+        working-directory: apps/robot-scrape-products/deploy/terraform
+        run: rm -f oci_api_key.pem backend.hcl
+
+  hard-destroy:
+    name: Hard destroy (full stack)
+    needs: resolve
+    if: needs.resolve.outputs.action == 'hard-destroy'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    env:
+      OCI_PRIVATE_KEY_PEM: ${{ secrets.OCI_API_PRIVATE_KEY || secrets.OCI_CLI_KEY_CONTENT }}
+      # OCI Object Storage rejects AWS SDK v2 default aws-chunked PutObject.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Write OCI API key
+        working-directory: apps/robot-scrape-products/deploy/terraform
+        run: |
+          umask 077
+          if [ -z "$OCI_PRIVATE_KEY_PEM" ]; then
+            echo "::error::Set OCI_API_PRIVATE_KEY or OCI_CLI_KEY_CONTENT in the production environment" >&2
+            exit 1
+          fi
+          printf '%s\n' "$OCI_PRIVATE_KEY_PEM" > oci_api_key.pem
+
+      - name: Terraform Init
+        working-directory: apps/robot-scrape-products
+        env:
+          TF_BACKEND_HCL: ${{ secrets.TF_BACKEND_HCL }}
+          TF_BACKEND_HCL_B64: ${{ secrets.TF_BACKEND_HCL_B64 }}
+        run: ./deploy/terraform-init.sh
+
+      - name: Check Terraform state
+        id: tf
+        working-directory: apps/robot-scrape-products/deploy/terraform
+        run: |
+          HAS_STATE="false"
+          if terraform state list 2>/dev/null | grep -q .; then
+            HAS_STATE="true"
+          fi
+          echo "has_state=${HAS_STATE}" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_STATE" != "true" ]; then
+            echo "No Terraform state — nothing to destroy"
+          fi
+
+      # Hard destroy clears CI via OCI API and waits for subnet VNIC release
+      # before deleting networking (avoids DeleteSubnet 409 Conflict). Also
+      # required for the OCIR purge step below.
+      - name: Install OCI SDK
+        run: pip install --quiet oci
+
+      - name: Terraform Hard Destroy
+        if: steps.tf.outputs.has_state == 'true'
+        working-directory: apps/robot-scrape-products
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_environment: production
+          TF_VAR_container_image_url: "placeholder.invalid/robot:destroy"
+          TF_VAR_robot_env: "{}"
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+        run: |
+          ./deploy/tf-destroy.sh hard
+          echo "Hard destroy complete — full stack removed (IAM, budget, VCN, compute)"
+
+      - name: Purge OCIR image versions
+        working-directory: apps/robot-scrape-products
+        env:
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_PRIVATE_KEY_PATH: deploy/terraform/oci_api_key.pem
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+        run: python3 deploy/ocir_purge.py --keep 0
+
+      - name: Summary
+        run: |
+          echo "### Hard destroy complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "Every managed resource was removed (IAM, budget, VCN, Container Instance)." >> "$GITHUB_STEP_SUMMARY"
+          echo "OCIR image versions purged." >> "$GITHUB_STEP_SUMMARY"
+          echo "Next create will reprovision free resources from scratch." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup OCI key
+        if: always()
+        working-directory: apps/robot-scrape-products/deploy/terraform
+        run: rm -f oci_api_key.pem backend.hcl

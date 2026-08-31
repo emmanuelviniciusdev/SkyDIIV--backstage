@@ -1,6 +1,10 @@
 import { getQStashClient } from "./qstash"
 import { publishBatchToCloudflareQueue, resolveCfQueueId } from "./cloudflare-queues"
-import { resolveWorkerSyncUrl, resolveWorkerNotificationUrl } from "./downstream-urls"
+import {
+  resolveWorkerSyncUrl,
+  resolveWorkerNotificationUrl,
+  resolveWorkerAiWorkflowsUrl,
+} from "./downstream-urls"
 import type { OutboxEventRow } from "./db/outbox-events.repository"
 
 /**
@@ -34,6 +38,14 @@ export const OUTBOX_ROUTES = {
     brokerName: BROKER_NAMES.CF_QUEUES,
     /** Per-event Cloudflare Queue ID env var. */
     queueIdEnv: "CF_SCRAPE_SHOPP_SUGG_QUEUE_ID",
+  },
+  GENERATE_SEARCH_TERMS_PRODUCTS_SCRAPING_QSTASH: {
+    eventName: "generate-search-terms-products-scraping",
+    brokerName: BROKER_NAMES.QSTASH,
+  },
+  ANALYZE_SCRAPED_PRODUCTS_RESULTS_QSTASH: {
+    eventName: "analyze-scraped-products-results",
+    brokerName: BROKER_NAMES.QSTASH,
   },
 } as const
 
@@ -76,6 +88,24 @@ export async function dispatch(event: OutboxEventRow): Promise<void> {
     ): {
       const client = getQStashClient()
       const url = resolveWorkerNotificationUrl("/email--welcome")
+      await client.publishJSON({ url, body: event.payload })
+      break
+    }
+    case outboxRouteKey(
+      OUTBOX_ROUTES.GENERATE_SEARCH_TERMS_PRODUCTS_SCRAPING_QSTASH.eventName,
+      OUTBOX_ROUTES.GENERATE_SEARCH_TERMS_PRODUCTS_SCRAPING_QSTASH.brokerName,
+    ): {
+      const client = getQStashClient()
+      const url = resolveWorkerAiWorkflowsUrl("/generate-search-terms-products-scraping")
+      await client.publishJSON({ url, body: event.payload })
+      break
+    }
+    case outboxRouteKey(
+      OUTBOX_ROUTES.ANALYZE_SCRAPED_PRODUCTS_RESULTS_QSTASH.eventName,
+      OUTBOX_ROUTES.ANALYZE_SCRAPED_PRODUCTS_RESULTS_QSTASH.brokerName,
+    ): {
+      const client = getQStashClient()
+      const url = resolveWorkerAiWorkflowsUrl("/analyze-scraped-products-results")
       await client.publishJSON({ url, body: event.payload })
       break
     }

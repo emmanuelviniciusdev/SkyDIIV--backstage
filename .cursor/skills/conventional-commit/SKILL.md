@@ -55,7 +55,7 @@ Derive from the top-level path of the change:
 | `apps/worker-outbox-events/` | `worker-outbox-events` |
 | `apps/worker-notification/` | `worker-notification` |
 | `apps/worker-sync/` | `worker-sync` |
-| `apps/robot-shopping-suggestions/` | `robot-shopping-suggestions` |
+| `apps/robot-scrape-products/` | `robot-scrape-products` |
 | `scripts/` | `scripts` |
 | `.github/workflows/` | `ci` |
 | deploy/Terraform under an app | that app's name, or `deploy` if the change is deploy-only across apps |
@@ -72,7 +72,7 @@ If the user asked to **commit**, follow the repo git safety rules: stage the rel
 
 ```
 feat(worker-ai-workflows): use preferred_name in wardrobe panorama prompts
-fix(robot-shopping-suggestions): make hard destroy reliable with OCI state
+fix(robot-scrape-products): make hard destroy reliable with OCI state
 chore(worker-scheduler): move neon-database-snapshot to every wednesday schedule
 chore: OpenSpec init
 ```

@@ -1,0 +1,32 @@
+# OCI Object Storage (S3-compatible API) remote state — required for local + CI.
+# Copy to backend.hcl (gitignored), fill in, then:
+#
+#   Local: keep backend.hcl here (auto-detected by terraform-init.sh), or set
+#     TF_BACKEND_HCL=deploy/terraform/backend.hcl in deploy/local.env
+#
+#   GitHub Actions (preserves quotes/newlines exactly):
+#     base64 < backend.hcl | tr -d '\n' | gh secret set TF_BACKEND_HCL_B64 --env production
+#
+# Local deploy and GHA must use the same bucket/key so they share one state.
+#
+# Terraform ≥ 1.11 / AWS SDK v2 still sends aws-chunked PutObject unless the
+# deploy scripts export AWS_REQUEST_CHECKSUM_CALCULATION=when_required (see
+# deploy/oci-s3-backend-env.sh). skip_s3_checksum alone is not enough.
+bucket   = "YOUR_BUCKET_NAME"
+key      = "robot-scrape-products/production.tfstate"
+region   = "us-ashburn-1"
+endpoints = {
+  s3 = "https://YOUR_NAMESPACE.compat.objectstorage.us-ashburn-1.oraclecloud.com"
+}
+
+access_key = "YOUR_CUSTOMER_SECRET_ACCESS_KEY"
+secret_key = "YOUR_CUSTOMER_SECRET_SECRET_KEY"
+
+# The S3 driver targets AWS by default; these disable the AWS-only calls and the
+# aws-chunked upload encoding that OCI Object Storage answers with 501.
+skip_region_validation      = true
+skip_credentials_validation = true
+skip_metadata_api_check     = true
+skip_requesting_account_id  = true
+skip_s3_checksum            = true
+use_path_style              = true

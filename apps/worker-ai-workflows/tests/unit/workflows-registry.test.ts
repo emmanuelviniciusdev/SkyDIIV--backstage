@@ -31,6 +31,11 @@ describe("workflows registry", () => {
     expect(Object.keys(workflowRegistry)).toContain("generate-weekly-outfits")
   })
 
+  it("exposes automatic-thrifting workflow keys", () => {
+    expect(Object.keys(workflowRegistry)).toContain("generate-search-terms-products-scraping")
+    expect(Object.keys(workflowRegistry)).toContain("analyze-scraped-products-results")
+  })
+
   it("uses workflow keys without slashes (serveMany routes by last path segment)", () => {
     for (const key of Object.keys(workflowRegistry)) {
       expect(key).not.toContain("/")

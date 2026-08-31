@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest"
 import { composeSearchParams } from "../../src/lib/shopping/compose-search-params"
-import type { ParsedShoppingSuggestion } from "../../src/lib/prompt/panorama-response"
+import type { ParsedSearchTermSuggestion } from "../../src/lib/shopping/suggestions"
 import type { ShoppingSuggestionsPreferences } from "../../src/lib/db/shopping-suggestions-preferences.repository"
 
-const SUGGESTIONS: ParsedShoppingSuggestion[] = [
-  { searchTerm: "blazer casual", brand: "Zara", sizeCategory: "top" },
-  { searchTerm: "calça jeans reta", brand: null, sizeCategory: "bottom" },
-  { searchTerm: "tênis branco", brand: "Nike", sizeCategory: "foot" },
-  { searchTerm: "cinto couro", brand: null, sizeCategory: "none" },
+const SUGGESTIONS: ParsedSearchTermSuggestion[] = [
+  { term: "blazer casual", sizeCategory: "top" },
+  { term: "calça jeans reta", sizeCategory: "bottom" },
+  { term: "tênis branco", sizeCategory: "foot" },
+  { term: "cinto couro", sizeCategory: "none" },
 ]
 
 const PREFS: ShoppingSuggestionsPreferences = {
@@ -21,36 +21,32 @@ describe("composeSearchParams()", () => {
   it("applies gender and only the size matching sizeCategory", () => {
     expect(composeSearchParams(SUGGESTIONS, PREFS)).toEqual([
       {
-        searchTerm: "blazer casual",
+        term: "blazer casual",
         gender: "Female",
         topSize: "M, G",
         bottomSize: null,
         footSize: null,
-        brand: "Zara",
       },
       {
-        searchTerm: "calça jeans reta",
+        term: "calça jeans reta",
         gender: "Female",
         topSize: null,
         bottomSize: "40",
         footSize: null,
-        brand: null,
       },
       {
-        searchTerm: "tênis branco",
+        term: "tênis branco",
         gender: "Female",
         topSize: null,
         bottomSize: null,
         footSize: "38",
-        brand: "Nike",
       },
       {
-        searchTerm: "cinto couro",
+        term: "cinto couro",
         gender: "Female",
         topSize: null,
         bottomSize: null,
         footSize: null,
-        brand: null,
       },
     ])
   })
@@ -58,20 +54,18 @@ describe("composeSearchParams()", () => {
   it("publishes with null gender and sizes when preferences are missing", () => {
     expect(composeSearchParams(SUGGESTIONS.slice(0, 2), null)).toEqual([
       {
-        searchTerm: "blazer casual",
+        term: "blazer casual",
         gender: null,
         topSize: null,
         bottomSize: null,
         footSize: null,
-        brand: "Zara",
       },
       {
-        searchTerm: "calça jeans reta",
+        term: "calça jeans reta",
         gender: null,
         topSize: null,
         bottomSize: null,
         footSize: null,
-        brand: null,
       },
     ])
   })

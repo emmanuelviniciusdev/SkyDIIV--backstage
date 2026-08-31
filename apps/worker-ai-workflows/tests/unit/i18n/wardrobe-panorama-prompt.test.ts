@@ -30,9 +30,10 @@ describe("buildWardrobePanoramaPrompt()", () => {
       expect(prompt).toContain("DADOS DO USUÁRIO:")
       expect(prompt).toContain("Nome: Ana")
       expect(prompt).toContain("## equilíbrio do guarda-roupa")
+      expect(prompt).toContain("## o que vale buscar")
       expect(prompt).toContain("DADOS DO GUARDA-ROUPA:")
-      expect(prompt).toContain("sizeCategory")
-      expect(prompt).toContain("no máximo 5")
+      expect(prompt).not.toContain("sizeCategory")
+      expect(prompt).not.toContain("```json")
     }
   })
 

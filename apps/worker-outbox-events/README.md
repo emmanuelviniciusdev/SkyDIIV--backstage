@@ -222,18 +222,21 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Processing lock (or `REDIS_URL` as alternative) |
 | `WORKER_SYNC_URL` | Dispatch target for event `language-changed` (QStash) |
 | `WORKER_NOTIFICATION_URL` | Dispatch target for event `user-account-created` (QStash) |
+| `WORKER_AI_WORKFLOWS_URL` | Dispatch target for automatic-thrifting workflows (QStash). Origin only — no path. |
 | `CF_ACCOUNT_ID` | Cloudflare account for CF Queues publish |
 | `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` | Queue ID for `scrape-shopping-suggestions` |
 | `CF_QUEUES_API_TOKEN` | Token with Queues Edit (publish) |
 
-`WORKER_SYNC_URL` and `WORKER_NOTIFICATION_URL` are the worker origins only (no path). The dispatcher appends the endpoint path automatically:
+`WORKER_SYNC_URL`, `WORKER_NOTIFICATION_URL`, and `WORKER_AI_WORKFLOWS_URL` are the worker origins only (no path). The dispatcher appends the endpoint path automatically:
 
 ```
 {WORKER_SYNC_URL}/sync/language
 {WORKER_NOTIFICATION_URL}/email--welcome
+{WORKER_AI_WORKFLOWS_URL}/generate-search-terms-products-scraping
+{WORKER_AI_WORKFLOWS_URL}/analyze-scraped-products-results
 ```
 
-`scrape-shopping-suggestions` batch-publishes `{ event, payload }` to `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` via `POST .../messages/batch` (consumed by `robot-shopping-suggestions`).
+`scrape-shopping-suggestions` batch-publishes `{ event, payload }` to `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` via `POST .../messages/batch`. That leftover route is unused by automatic thrifting; `robot-scrape-products` reads search terms from Postgres instead of draining CF Queues.
 
 ---
 
@@ -267,6 +270,7 @@ wrangler deployments list
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
 | `WORKER_SYNC_URL` | `worker-sync` origin (no path) |
 | `WORKER_NOTIFICATION_URL` | `worker-notification` origin (no path) |
+| `WORKER_AI_WORKFLOWS_URL` | `worker-ai-workflows` origin (no path) |
 | `CF_ACCOUNT_ID` | Cloudflare account ID (CF Queues) |
 | `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` | Cloudflare Queue ID for scrape-shopping-suggestions |
 | `CF_QUEUES_API_TOKEN` | Cloudflare API token with Queues Edit |

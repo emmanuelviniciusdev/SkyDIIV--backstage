@@ -15,7 +15,7 @@ context: |
   - worker-outbox-events: transactional outbox consumer
   - worker-notification: welcome email via Resend
   - worker-sync: translates AI-generated content when the user locale changes
-  - robot-shopping-suggestions: ephemeral OCI batch scraper (Enjoei), not a CF Worker
+  - robot-scrape-products: ephemeral OCI batch scraper (Enjoei), not a CF Worker
 
   Stack: TypeScript 5 strict, Wrangler 4, Vitest 4, Zod, ESLint type-checked.
   Workers: Cloudflare Workers + nodejs_compat, Upstash QStash + Workflow
