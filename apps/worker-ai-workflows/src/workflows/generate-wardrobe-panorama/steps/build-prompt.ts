@@ -47,3 +47,5 @@ export async function buildPromptStep(userId: string): Promise<BuildPromptResult
     prompt,
     wardrobeItems: wardrobe.map((i) => ({ id: i.id, title: i.title, tags: i.tags })),
     validClothingItemIds: wardrobe.map((i) => i.id),
+  }
+}

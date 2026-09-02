@@ -144,3 +144,5 @@ describe("generate-wardrobe-panorama workflow steps", () => {
       .join(" ")
     expect(sql).not.toMatch(/outbox_events/i)
     expect(sql).not.toMatch(/scrape-shopping-suggestions/i)
+  })
+})
