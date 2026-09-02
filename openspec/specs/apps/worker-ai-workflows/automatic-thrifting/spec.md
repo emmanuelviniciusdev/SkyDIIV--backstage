@@ -48,15 +48,6 @@ The generate-search-terms workflow MUST NOT delete `scraped_products`, `search_t
 - **THEN** no new search-term rows are inserted
 - **AND** `scraped_products` is unchanged
 
-#### Scenario: Ineligible locale leaves last week’s products
-
-- **GIVEN** locale `en-US` and a catalog that only lists Enjoei with `supported_languages` `["pt-BR"]`
-- **AND** panorama `p1` has existing `scraped_products`
-- **WHEN** generate-search-terms runs for `p1`
-- **THEN** `p1`’s `scraped_products` and related search/result rows are unchanged
-- **AND** no new search-term rows are inserted
-- **AND** the workflow does not fail the outbox dispatch
-
 ### Requirement: Search-term prompt inputs and persistence
 
 The generate-search-terms workflow MUST load the panorama markdown, the owner's routine description (`weekly_outfit_preferences.routine_description` when present), and gender/size preferences (`shopping_suggestions_preferences`). It MUST call the configured LLM and persist a successful call in `llm_interactions`. It MUST insert at most 10 rows into `search_terms_scraped_products` with:
@@ -89,7 +80,7 @@ The workflow MUST NOT set Redis notification keys. Existing `scraped_products` f
 
 ### Requirement: Marketplace catalog and language matching
 
-The workflow MUST read `marketplaces_catalog_scraped_products` and the panorama owner's locale (`app_preferences` / domains; default `pt-BR`). A marketplace is eligible when `supported_languages` includes that locale. Search terms MUST be written in an eligible marketplace language and MUST be distributed across eligible marketplaces (round-robin when more than one). If no marketplace is eligible, the workflow MUST complete without inserting search-term rows and MUST NOT delete existing products or related registers. At first launch the catalog contains only Enjoei with `pt-BR`.
+The workflow MUST read `marketplaces_catalog_scraped_products` and the panorama owner's locale (`app_preferences` / domains; default `pt-BR`). A marketplace is eligible when `supported_languages` is non-empty. Search terms MUST be written in the owner's locale when that locale is listed in `supported_languages`; otherwise they MUST be written in a language from `supported_languages`. Terms MUST be distributed across eligible marketplaces (round-robin when more than one). If no marketplace is eligible, the workflow MUST complete without inserting search-term rows and MUST NOT delete existing products or related registers. At first launch the catalog contains only Enjoei with `pt-BR`.
 
 #### Scenario: pt-BR user receives Enjoei terms
 
@@ -97,6 +88,30 @@ The workflow MUST read `marketplaces_catalog_scraped_products` and the panorama 
 - **WHEN** generate-search-terms succeeds
 - **THEN** every inserted row has `marketplace` equal to `enjoei`
 - **AND** `json_search.term` is in Portuguese
+
+#### Scenario: User locale is used when the marketplace supports it
+
+- **GIVEN** the owner's locale is listed in the marketplace `supported_languages`
+- **WHEN** generate-search-terms succeeds
+- **THEN** `json_search.term` is written in the owner's locale
+
+#### Scenario: Marketplace language is used when the user locale is not supported
+
+- **GIVEN** the owner's locale is not listed in the marketplace `supported_languages`
+- **AND** the marketplace lists another language
+- **WHEN** generate-search-terms succeeds
+- **THEN** `json_search.term` is written in a marketplace-supported language
+- **AND** search-term rows are still inserted
+- **AND** existing `scraped_products` are unchanged
+
+#### Scenario: Empty catalog leaves last week’s products
+
+- **GIVEN** an empty `marketplaces_catalog_scraped_products`
+- **AND** panorama `p1` has existing `scraped_products`
+- **WHEN** generate-search-terms runs for `p1`
+- **THEN** `p1`’s `scraped_products` and related search/result rows are unchanged
+- **AND** no new search-term rows are inserted
+- **AND** the workflow does not fail the outbox dispatch
 
 #### Scenario: Terms are capped at ten across marketplaces
 

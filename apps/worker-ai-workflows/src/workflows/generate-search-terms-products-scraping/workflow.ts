@@ -35,7 +35,7 @@ export const generateSearchTermsProductsScrapingWorkflow = createWorkflow<
   })
 
   if (ctx.eligibleMarketplaces.length === 0) {
-    log.info("No eligible marketplace for locale — exiting without writes", {
+    log.info("No eligible marketplace — exiting without writes", {
       locale: ctx.locale,
       wardrobePanoramaId,
     })

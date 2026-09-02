@@ -124,13 +124,37 @@ describe("generate-search-terms-products-scraping", () => {
     expect(readSql).not.toMatch(/FROM scraped_products/)
   })
 
-  it("ineligible locale yields zero eligible marketplaces", async () => {
+  it("uses the user locale when the marketplace supports it", async () => {
     mocks.readDb.mockImplementation((strings: TemplateStringsArray) => {
       const query = Array.isArray(strings) ? strings.join("") : String(strings)
       if (query.includes("wardrobe_panorama")) {
         return Promise.resolve([{ id: mocks.panoramaId, user_id: mocks.userId, content: "md" }])
       }
-      if (query.includes("app_preferences")) return Promise.resolve([{ name: "English (US)" }])
+      if (query.includes("app_preferences")) return Promise.resolve([{ name: "Español (PE)" }])
+      if (query.includes("weekly_outfit_preferences")) return Promise.resolve([])
+      if (query.includes("shopping_suggestions_preferences")) return Promise.resolve([])
+      if (query.includes("marketplaces_catalog_scraped_products")) {
+        return Promise.resolve([
+          { id: "m1", name: "enjoei", supported_languages: ["pt-BR", "es-PE"] },
+        ])
+      }
+      return Promise.resolve([])
+    })
+
+    const ctx = await loadGenerateSearchTermsContextStep(mocks.panoramaId)
+    expect(ctx.locale).toBe("es-PE")
+    expect(ctx.eligibleMarketplaces).toEqual([
+      { id: "m1", name: "enjoei", supportedLanguages: ["pt-BR", "es-PE"] },
+    ])
+  })
+
+  it("uses a marketplace language when the user locale is not supported", async () => {
+    mocks.readDb.mockImplementation((strings: TemplateStringsArray) => {
+      const query = Array.isArray(strings) ? strings.join("") : String(strings)
+      if (query.includes("wardrobe_panorama")) {
+        return Promise.resolve([{ id: mocks.panoramaId, user_id: mocks.userId, content: "md" }])
+      }
+      if (query.includes("app_preferences")) return Promise.resolve([{ name: "Español (PE)" }])
       if (query.includes("weekly_outfit_preferences")) return Promise.resolve([])
       if (query.includes("shopping_suggestions_preferences")) return Promise.resolve([])
       if (query.includes("marketplaces_catalog_scraped_products")) {
@@ -140,7 +164,29 @@ describe("generate-search-terms-products-scraping", () => {
     })
 
     const ctx = await loadGenerateSearchTermsContextStep(mocks.panoramaId)
-    expect(ctx.locale).toBe("en-US")
+    expect(ctx.locale).toBe("pt-BR")
+    expect(ctx.eligibleMarketplaces).toEqual([
+      { id: "m1", name: "enjoei", supportedLanguages: ["pt-BR"] },
+    ])
+  })
+
+  it("empty catalog yields zero eligible marketplaces", async () => {
+    mocks.readDb.mockImplementation((strings: TemplateStringsArray) => {
+      const query = Array.isArray(strings) ? strings.join("") : String(strings)
+      if (query.includes("wardrobe_panorama")) {
+        return Promise.resolve([{ id: mocks.panoramaId, user_id: mocks.userId, content: "md" }])
+      }
+      if (query.includes("app_preferences")) return Promise.resolve([{ name: "Español (PE)" }])
+      if (query.includes("weekly_outfit_preferences")) return Promise.resolve([])
+      if (query.includes("shopping_suggestions_preferences")) return Promise.resolve([])
+      if (query.includes("marketplaces_catalog_scraped_products")) {
+        return Promise.resolve([])
+      }
+      return Promise.resolve([])
+    })
+
+    const ctx = await loadGenerateSearchTermsContextStep(mocks.panoramaId)
+    expect(ctx.locale).toBe("es-PE")
     expect(ctx.eligibleMarketplaces).toEqual([])
   })
 

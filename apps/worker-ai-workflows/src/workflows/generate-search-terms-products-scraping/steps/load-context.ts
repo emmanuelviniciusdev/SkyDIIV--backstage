@@ -6,12 +6,16 @@ import { SqlMarketplacesCatalogRepository } from "../../../lib/db/marketplaces-c
 import type { MarketplaceCatalogEntry } from "../../../lib/db/marketplaces-catalog.repository"
 import type { ShoppingSuggestionsPreferences } from "../../../lib/db/shopping-suggestions-preferences.repository"
 import { resolveUserLocale, type Locale } from "../../../lib/i18n"
-import { selectEligibleMarketplaces } from "../../../lib/automatic-thrifting/marketplace-eligibility"
+import {
+  resolveSearchTermsLocale,
+  selectEligibleMarketplaces,
+} from "../../../lib/automatic-thrifting/marketplace-eligibility"
 import { createLogger } from "../../../lib/logger"
 
 export interface LoadGenerateSearchTermsContextResult {
   wardrobePanoramaId: string
   userId: string
+  /** Language for generated `term` values (user locale when the catalog supports it). */
   locale: Locale
   panoramaContent: string
   routineDescription: string | null
@@ -34,18 +38,20 @@ export async function loadGenerateSearchTermsContextStep(
     throw new Error(`wardrobe_panorama not found: ${wardrobePanoramaId}`)
   }
 
-  const [locale, preferences, shoppingPreferences, catalog] = await Promise.all([
+  const [userLocale, preferences, shoppingPreferences, catalog] = await Promise.all([
     resolveUserLocale(panorama.userId),
     preferencesRepo.findByUserId(panorama.userId),
     shoppingPrefsRepo.findByUserId(panorama.userId),
     catalogRepo.findAll(),
   ])
 
-  const eligibleMarketplaces = selectEligibleMarketplaces(catalog, locale)
+  const eligibleMarketplaces = selectEligibleMarketplaces(catalog)
+  const locale = resolveSearchTermsLocale(userLocale, eligibleMarketplaces)
 
   log.info("Loaded generate-search-terms context", {
     wardrobePanoramaId,
     userId: panorama.userId,
+    userLocale,
     locale,
     eligibleMarketplaceCount: eligibleMarketplaces.length,
     hasRoutine: Boolean(preferences?.routineDescription),

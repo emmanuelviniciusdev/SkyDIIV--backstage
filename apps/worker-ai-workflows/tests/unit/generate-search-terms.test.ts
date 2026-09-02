@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import { parseWardrobePanoramaIdPayload } from "../../src/lib/automatic-thrifting/payload"
 import {
   assignMarketplacesRoundRobin,
+  resolveSearchTermsLocale,
   selectEligibleMarketplaces,
 } from "../../src/lib/automatic-thrifting/marketplace-eligibility"
 import { parseSearchTermsLlmOutput } from "../../src/lib/prompt/search-terms-response"
@@ -48,12 +49,9 @@ describe("marketplace eligibility", () => {
   const enjoei = { id: "m1", name: "enjoei", supportedLanguages: ["pt-BR"] }
   const other = { id: "m2", name: "other-shop", supportedLanguages: ["en-US", "pt-BR"] }
 
-  it("selects enjoei for pt-BR", () => {
-    expect(selectEligibleMarketplaces([enjoei], "pt-BR")).toEqual([enjoei])
-  })
-
-  it("selects no marketplace for an ineligible locale", () => {
-    expect(selectEligibleMarketplaces([enjoei], "en-US")).toEqual([])
+  it("selects catalog rows that declare supported languages", () => {
+    expect(selectEligibleMarketplaces([enjoei])).toEqual([enjoei])
+    expect(selectEligibleMarketplaces([enjoei, other])).toEqual([enjoei, other])
   })
 
   it("round-robins marketplaces and respects the cap of 10", () => {
@@ -75,6 +73,21 @@ describe("marketplace eligibility", () => {
       "enjoei",
       "other-shop",
     ])
+  })
+})
+
+describe("resolveSearchTermsLocale", () => {
+  const enjoei = { id: "m1", name: "enjoei", supportedLanguages: ["pt-BR"] }
+  const bilingual = { id: "m2", name: "shop", supportedLanguages: ["pt-BR", "es-PE"] }
+
+  it("uses the user locale when the marketplace supports it", () => {
+    expect(resolveSearchTermsLocale("es-PE", [bilingual])).toBe("es-PE")
+    expect(resolveSearchTermsLocale("pt-BR", [enjoei])).toBe("pt-BR")
+  })
+
+  it("uses a marketplace language when the user locale is not supported", () => {
+    expect(resolveSearchTermsLocale("es-PE", [enjoei])).toBe("pt-BR")
+    expect(resolveSearchTermsLocale("en-US", [enjoei])).toBe("pt-BR")
   })
 })
 
