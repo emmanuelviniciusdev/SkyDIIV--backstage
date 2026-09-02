@@ -15,6 +15,7 @@ import {
 import type { OutboxPublisherPort } from "../infrastructure/messaging/qstash-outbox.publisher.js"
 import { jsonSearchToSearchParams } from "../infrastructure/scraping/json-search-to-params.js"
 import type { ScrapedProduct } from "../domain/entities/scraped-product.js"
+import { toSearchParamsJson } from "../domain/entities/search-params.js"
 
 export interface ScrapeProductsBatchRunnerDeps {
   searchTermsRepository: SqlSearchTermsRepository
@@ -54,7 +55,7 @@ function toJsonResult(product: ScrapedProduct): JsonResult {
     url: product.url,
     image_url: product.imageUrl || PLACEHOLDER_IMAGE_URL,
     metadata: {
-      searchParams: product.searchParams,
+      searchParams: toSearchParamsJson(product.searchParams),
     },
   }
 }
