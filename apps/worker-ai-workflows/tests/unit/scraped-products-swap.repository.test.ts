@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from "vitest"
 import type postgres from "postgres"
-import { SqlScrapedProductsSwapRepository } from "../../src/lib/db/scraped-products-swap.repository"
+import {
+  SqlScrapedProductsSwapRepository,
+  uniqueSearchTermIds,
+} from "../../src/lib/db/scraped-products-swap.repository"
 
 type SqlMock = ReturnType<typeof vi.fn> & {
   begin?: ReturnType<typeof vi.fn>
@@ -25,16 +28,20 @@ function makeWriteDb(): { db: postgres.Sql; tx: ReturnType<typeof vi.fn>; begin:
   return { db: db as unknown as postgres.Sql, tx, begin }
 }
 
-function getSqlStrings(mock: ReturnType<typeof vi.fn>): string {
+function getSqlCallStrings(mock: ReturnType<typeof vi.fn>): string[] {
   return mock.mock.calls
-    .flatMap((call) => {
+    .map((call) => {
       const first = call[0]
       if (Array.isArray(first) && Object.prototype.hasOwnProperty.call(first, "raw")) {
-        return first.filter((s): s is string => typeof s === "string")
+        return first.filter((s): s is string => typeof s === "string").join(" ")
       }
-      return []
+      return ""
     })
-    .join(" ")
+    .filter((sql) => sql.length > 0)
+}
+
+function getSqlStrings(mock: ReturnType<typeof vi.fn>): string {
+  return getSqlCallStrings(mock).join(" ")
 }
 
 function getInterpolatedValues(mock: ReturnType<typeof vi.fn>): unknown[] {
@@ -58,27 +65,93 @@ const PRODUCT = {
   scrapingMetadata: { marketplace: "enjoei" },
 }
 
+describe("uniqueSearchTermIds", () => {
+  it("deduplicates search-term ids from this run's results", () => {
+    expect(
+      uniqueSearchTermIds([
+        {
+          resultId: "r1",
+          searchTermId: "s1",
+          jsonResult: {},
+          jsonSearch: {},
+          marketplace: "enjoei",
+        },
+        {
+          resultId: "r2",
+          searchTermId: "s1",
+          jsonResult: {},
+          jsonSearch: {},
+          marketplace: "enjoei",
+        },
+        {
+          resultId: "r3",
+          searchTermId: "s2",
+          jsonResult: {},
+          jsonSearch: {},
+          marketplace: "enjoei",
+        },
+      ]),
+    ).toEqual(["s1", "s2"])
+  })
+})
+
 describe("SqlScrapedProductsSwapRepository.swapForPanorama", () => {
-  it("is a no-op when the product list is empty", async () => {
+  it("is a no-op when the product list is empty (no register deletes)", async () => {
     const { db, begin } = makeWriteDb()
     const repo = new SqlScrapedProductsSwapRepository(db)
-    await repo.swapForPanorama({ wardrobePanoramaId: "p1", products: [] })
+    await repo.swapForPanorama({
+      wardrobePanoramaId: "p1",
+      products: [],
+      keepSearchTermIds: ["s1"],
+    })
     expect(begin).not.toHaveBeenCalled()
   })
 
-  it("deletes then inserts then deletes related results and terms only for that panorama", async () => {
+  it("replaces products then deletes only prior registers, keeping this run's ids", async () => {
     const { db, tx, begin } = makeWriteDb()
     const repo = new SqlScrapedProductsSwapRepository(db)
 
-    await repo.swapForPanorama({ wardrobePanoramaId: "p1", products: [PRODUCT] })
+    await repo.swapForPanorama({
+      wardrobePanoramaId: "p1",
+      products: [PRODUCT],
+      keepSearchTermIds: ["s-new"],
+    })
+
+    expect(begin).toHaveBeenCalledOnce()
+    const calls = getSqlCallStrings(tx)
+    expect(calls[0]).toMatch(/DELETE FROM scraped_products/)
+    expect(calls[1]).toMatch(/INSERT INTO scraped_products/)
+    expect(calls[2]).toMatch(/DELETE FROM results_search_terms_scraped_products/)
+    expect(calls[2]).toMatch(/NOT IN/)
+    expect(calls[3]).toMatch(/DELETE FROM search_terms_scraped_products/)
+    expect(calls[3]).toMatch(/NOT IN/)
+    expect(calls[4]).toMatch(/UPDATE results_search_terms_scraped_products/)
+    expect(calls[4]).toMatch(/is_processed = true/)
+
+    const sql = calls.join(" ")
+    expect(sql).not.toMatch(/DELETE FROM scraped_products[\s\S]*INSERT INTO scraped_products[\s\S]*DELETE FROM scraped_products/)
+
+    const values = getInterpolatedValues(tx)
+    expect(values).toContain("p1")
+    expect(values).toContainEqual(["s-new"])
+    expect(values).not.toContain("p2")
+  })
+
+  it("does not delete search or result registers when keepSearchTermIds is empty", async () => {
+    const { db, tx, begin } = makeWriteDb()
+    const repo = new SqlScrapedProductsSwapRepository(db)
+
+    await repo.swapForPanorama({
+      wardrobePanoramaId: "p1",
+      products: [PRODUCT],
+      keepSearchTermIds: [],
+    })
 
     expect(begin).toHaveBeenCalledOnce()
     const sql = getSqlStrings(tx)
     expect(sql).toMatch(/DELETE FROM scraped_products/)
     expect(sql).toMatch(/INSERT INTO scraped_products/)
-    expect(sql).toMatch(/DELETE FROM results_search_terms_scraped_products/)
-    expect(sql).toMatch(/DELETE FROM search_terms_scraped_products/)
-    expect(getInterpolatedValues(tx)).toContain("p1")
-    expect(getInterpolatedValues(tx)).not.toContain("p2")
+    expect(sql).not.toMatch(/DELETE FROM results_search_terms_scraped_products/)
+    expect(sql).not.toMatch(/DELETE FROM search_terms_scraped_products/)
   })
 })

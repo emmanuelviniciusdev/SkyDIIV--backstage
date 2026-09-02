@@ -141,17 +141,19 @@ The workflow MUST read `marketplaces_catalog_scraped_products` and the panorama 
 
 The analyze workflow MUST load panorama markdown, routine description when present, and unprocessed scrape results for that panorama (`results_search_terms_scraped_products` joined to `search_terms_scraped_products`). When unprocessed results exist, it MUST call the LLM to choose at most one listing per search term and MUST persist the LLM call in `llm_interactions`. Search terms with no usable listing MAY be omitted from the new product set.
 
-Only when at least one new `scraped_products` row is ready to insert, the workflow MUST, in a single transaction for that `wardrobe_panorama_id`: delete existing `scraped_products`; insert the chosen listings (same product-type domain as today's clothing-item scraped products); delete related `results_search_terms_scraped_products` and `search_terms_scraped_products` (all rows for that panorama, including this week’s pipeline rows). It MUST NOT delete those registers before the new product rows are prepared.
+The analyze workflow MUST NOT delete `search_terms_scraped_products` or `results_search_terms_scraped_products` except inside the product swap. Only when at least one new `scraped_products` row is ready to insert, the workflow MUST, in a single transaction for that `wardrobe_panorama_id`: delete existing `scraped_products`; insert the chosen listings (same product-type domain as today's clothing-item scraped products); delete leftover `results_search_terms_scraped_products` and `search_terms_scraped_products` from prior pipeline runs for that panorama (search-term ids not among this run's unprocessed results). It MUST keep the newly inserted `scraped_products`. It MUST keep this run's `search_terms_scraped_products` and `results_search_terms_scraped_products` rows and MUST mark those kept result rows `is_processed = true`. It MUST NOT delete search/result registers before the new product rows are inserted, and MUST NOT delete them when no new products are inserted.
 
 If there are no unprocessed results, or the LLM yields zero listings to insert, the workflow MUST NOT call a delete, MUST NOT insert `scraped_products`, MUST NOT set a notification, and last week’s `scraped_products` and related registers MUST remain.
 
 #### Scenario: Swap replaces last week when new products are ready
 
 - **GIVEN** panorama `p1` has last week’s `scraped_products` plus this week’s unprocessed result rows for two search terms
+- **AND** leftover search-term/result rows from a prior run
 - **WHEN** analyze chooses one listing per term and completes successfully
 - **THEN** `scraped_products` for `p1` contains only the newly chosen listings
 - **AND** last week’s `scraped_products` for `p1` are gone
-- **AND** `p1` has no remaining `search_terms_scraped_products` or `results_search_terms_scraped_products` rows
+- **AND** this run’s `search_terms_scraped_products` and `results_search_terms_scraped_products` rows for `p1` still exist
+- **AND** leftover search-term/result rows from the prior run for `p1` are gone
 
 #### Scenario: Empty or failed selection keeps last week
 
@@ -161,6 +163,7 @@ If there are no unprocessed results, or the LLM yields zero listings to insert, 
 - **THEN** last week’s `scraped_products` for `p1` still exist
 - **AND** related search-term and result rows for `p1` still exist
 - **AND** no unread automatic-thrifting notification key is set
+- **AND** no DELETE is issued against `search_terms_scraped_products` or `results_search_terms_scraped_products`
 
 ### Requirement: Redis cache and notification after successful analysis
 

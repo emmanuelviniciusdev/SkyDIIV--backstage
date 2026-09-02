@@ -8,6 +8,8 @@ Workflows are registered with `serveMany`, which routes requests by the **last p
 |---|---|---|
 | `POST /generate-weekly-outfits` | `generate-weekly-outfits` | [docs/WEEKLY_OUTFITS_WORKFLOW.md](./docs/WEEKLY_OUTFITS_WORKFLOW.md) |
 | `POST /generate-wardrobe-panorama` | `generate-wardrobe-panorama` | [docs/WARDROBE_PANORAMA_WORKFLOW.md](./docs/WARDROBE_PANORAMA_WORKFLOW.md) |
+| `POST /generate-search-terms-products-scraping` | `generate-search-terms-products-scraping` | [docs/I18N.md](./docs/I18N.md#generate-search-terms-products-scraping) |
+| `POST /analyze-scraped-products-results` | `analyze-scraped-products-results` | [docs/ANALYZE_SCRAPED_PRODUCTS_RESULTS.md](./docs/ANALYZE_SCRAPED_PRODUCTS_RESULTS.md) |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
 Upstream dispatch is handled by [`worker-scheduler`](../worker-scheduler/README.md), which publishes signed messages to these endpoints on a configured schedule.
@@ -15,15 +17,16 @@ Upstream dispatch is handled by [`worker-scheduler`](../worker-scheduler/README.
 ```mermaid
 flowchart LR
     SCHED["worker-scheduler"] -->|POST signed payload| WO["POST /generate-weekly-outfits"]
+    SCHED -->|Friday outbox| OUT["worker-outbox-events"]
     SCHED -->|POST signed payload| WP["POST /generate-wardrobe-panorama"]
-    WO --> WFW["generate-weekly-outfits workflow"]
-    WP --> PFW["generate-wardrobe-panorama workflow"]
-    WFW --> DB[("Neon PostgreSQL")]
-    PFW --> DB
-    WFW --> LLM["Gemini"]
-    PFW --> LLM
-    PFW -->|outbox + QStash| OUT["worker-outbox-events"]
-    OUT -->|messages/batch| CF["CF Queues"]
+    OUT -->|generate-search-terms| GST["POST /generate-search-terms-products-scraping"]
+    ROBOT["robot-scrape-products"] -->|analyze outbox| OUT
+    OUT -->|analyze-scraped-products-results| AN["POST /analyze-scraped-products-results"]
+    WO --> DB[("Neon PostgreSQL")]
+    WP --> DB
+    GST --> DB
+    AN --> DB
+    AN --> REDIS[("web Redis")]
 ```
 
 ---
@@ -55,13 +58,16 @@ flowchart LR
 ├── docs/
 │   ├── I18N.md                             # Multi-language support (locales, resolution, module map)
 │   ├── WEEKLY_OUTFITS_WORKFLOW.md          # generate-weekly-outfits — full workflow reference
-│   └── WARDROBE_PANORAMA_WORKFLOW.md       # generate-wardrobe-panorama — full workflow reference
+│   ├── WARDROBE_PANORAMA_WORKFLOW.md       # generate-wardrobe-panorama — full workflow reference
+│   └── ANALYZE_SCRAPED_PRODUCTS_RESULTS.md # analyze-scraped-products-results — swap + registers
 ├── src/
 │   ├── index.ts                            # Worker entry (health check + serveMany dispatch)
 │   ├── workflows/
 │   │   ├── index.ts                        # Endpoint registry
 │   │   ├── generate-weekly-outfits/
-│   │   └── generate-wardrobe-panorama/
+│   │   ├── generate-wardrobe-panorama/
+│   │   ├── generate-search-terms-products-scraping/
+│   │   └── analyze-scraped-products-results/
 │   └── lib/                                # Shared DB, i18n, LLM, weather, cache, logging
 ├── tests/
 ├── wrangler.toml
@@ -210,6 +216,11 @@ Configure `worker-scheduler` with `WORKER_AI_WORKFLOWS_URL` (origin only). Flows
 
 - `{WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits`
 - `{WORKER_AI_WORKFLOWS_URL}/generate-wardrobe-panorama`
+
+Automatic-thrifting workflows are reached via `worker-outbox-events`, not the scheduler:
+
+- `{WORKER_AI_WORKFLOWS_URL}/generate-search-terms-products-scraping`
+- `{WORKER_AI_WORKFLOWS_URL}/analyze-scraped-products-results`
 
 ### GitHub Secrets (deploy)
 

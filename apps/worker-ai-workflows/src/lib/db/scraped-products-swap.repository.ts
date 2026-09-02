@@ -31,7 +31,13 @@ export interface ScrapedProductsSwapRepository {
   swapForPanorama(input: {
     wardrobePanoramaId: string
     products: ScrapedProductInsert[]
+    keepSearchTermIds: string[]
   }): Promise<void>
+}
+
+/** Search-term ids from this run's unprocessed results — keep these on swap. */
+export function uniqueSearchTermIds(results: UnprocessedScrapeResult[]): string[] {
+  return [...new Set(results.map((row) => row.searchTermId))]
 }
 
 interface DomainRow {
@@ -101,17 +107,24 @@ export class SqlScrapedProductsSwapRepository implements ScrapedProductsSwapRepo
   }
 
   /**
-   * Atomically replaces scraped_products for a panorama, then deletes related
-   * result and search-term rows. No-op when `products` is empty.
+   * Atomically replaces scraped_products for a panorama. No-op when `products`
+   * is empty — search/result registers are never deleted outside this swap.
+   *
+   * When inserting, last week's `scraped_products` are removed and the new
+   * rows are kept. Prior search-term/result rows for other pipeline runs are
+   * removed; this run's ids in `keepSearchTermIds` stay, with their result
+   * rows marked processed.
    */
   async swapForPanorama(input: {
     wardrobePanoramaId: string
     products: ScrapedProductInsert[]
+    keepSearchTermIds: string[]
   }): Promise<void> {
     if (input.products.length === 0) return
 
     const productTypeId = await this.findClothingItemProductTypeId()
     const now = new Date()
+    const keepSearchTermIds = [...new Set(input.keepSearchTermIds)]
 
     await this.db.begin(async (tx) => {
       await tx`
@@ -159,18 +172,32 @@ export class SqlScrapedProductsSwapRepository implements ScrapedProductsSwapRepo
         `
       }
 
-      await tx`
-        DELETE FROM results_search_terms_scraped_products
-        WHERE search_term_scraped_product_id IN (
-          SELECT id FROM search_terms_scraped_products
-          WHERE wardrobe_panorama_id = ${input.wardrobePanoramaId}
-        )
-      `
+      if (keepSearchTermIds.length > 0) {
+        await tx`
+          DELETE FROM results_search_terms_scraped_products
+          WHERE search_term_scraped_product_id IN (
+            SELECT id FROM search_terms_scraped_products
+            WHERE wardrobe_panorama_id = ${input.wardrobePanoramaId}
+              AND id NOT IN ${tx(keepSearchTermIds)}
+          )
+        `
 
-      await tx`
-        DELETE FROM search_terms_scraped_products
-        WHERE wardrobe_panorama_id = ${input.wardrobePanoramaId}
-      `
+        await tx`
+          DELETE FROM search_terms_scraped_products
+          WHERE wardrobe_panorama_id = ${input.wardrobePanoramaId}
+            AND id NOT IN ${tx(keepSearchTermIds)}
+        `
+
+        await tx`
+          UPDATE results_search_terms_scraped_products
+          SET
+            is_processed = true,
+            updated_at = ${now},
+            updated_by = ${CREATED_BY}
+          WHERE search_term_scraped_product_id IN ${tx(keepSearchTermIds)}
+            AND is_processed = false
+        `
+      }
     })
   }
 }
