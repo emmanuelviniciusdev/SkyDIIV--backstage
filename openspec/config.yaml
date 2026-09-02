@@ -43,7 +43,9 @@ context: |
   Hard no's: no Temporal, no Prisma in workers, no schema migrations from this
   repo, no skipping QStash verification, no committing secrets.
 
-  Per-app READMEs and docs/ under each app are the detailed references.
+  Per-app READMEs and docs/ under each app (or script) are the detailed
+  references. They MUST stay in sync with shipped behavior. An OpenSpec apply
+  is incomplete until those files match the implementation.
 
 rules:
   proposal:
@@ -67,6 +69,7 @@ rules:
     - Group tasks by app. Each task is one implementable chunk with a checkbox.
     - Include lint and Vitest in the affected app. Do not add Playwright or E2E tests.
     - If the change needs a web-repo Prisma migration or outbox catalog update, add an explicit follow-up task and do not implement it in this repo.
+    - "For each affected app or script whose endpoints, schedule, env, payloads, data flow, or operator-facing behavior change: add an explicit documentation task that updates that project's README.md and the matching docs/ file(s). Create docs/<TOPIC>.md and a README link when introducing a new workflow, endpoint, or flow. Skip only when the change has no operator-facing surface (lint-only, test-only, comment-only)."
 
 operations:
   apply:
@@ -75,7 +78,10 @@ operations:
       - Verify QStash signing on new POST endpoints. Invalidate the same Redis keys the web app uses.
       - Run npm run lint and npm run test in the touched app. Keep test summaries concise.
       - Stop if a Prisma/schema or web outbox-catalog change is required; report it as a skydiiv/web follow-up.
+      - Update the affected app/script README.md and docs/ in the same apply pass as the code. New workflows, endpoints, or scheduled flows need a new docs/ file and a README link, matching existing apps.
+      - Do not mark apply complete, and do not check off a docs task, while README/docs still describe the previous behavior, env, schedule, or endpoints. If tasks.md omitted a docs task but behavior changed, add the task and update the docs before finishing.
   archive:
     guidance:
       - Summarize which apps shipped and whether a web-repo follow-up remains.
       - Preserve capability paths when promoting delta specs to main specs.
+      - Confirm affected README.md and docs/ match the shipped implementation before archiving; call out any stale docs.
