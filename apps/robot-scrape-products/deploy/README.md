@@ -222,6 +222,23 @@ VCN. That avoids the OCI `409 Conflict` on `DeleteSubnet` when a CI VNIC still
 references the subnet. Retries never `terraform state rm` the CI without an
 API delete — that orphans the VNIC and blocks the rest of the stack.
 
+### Verify a region is empty
+
+Terraform state can be empty while OCI still has leftovers in a region you
+abandoned (failed São Paulo apply, 409 on subnet delete, etc.). Check **that
+region’s APIs**, not state:
+
+```bash
+./deploy/verify-oci-hard-destroy.sh sa-saopaulo-1
+./deploy/verify-oci-hard-destroy.sh sa-vinhedo-1
+```
+
+Exit `0` = no robot Container Instances, VCN/networking, or OCIR images in
+that region. Exit `2` = leftovers (prints OCIDs). IAM dynamic groups, OCIR
+pull policy, and the monthly budget live in the **tenancy home region**
+(Ashburn) — they are not South America leftovers. Pass `--include-tenancy` to
+list those too, or `--skip-ocir` to ignore registry images.
+
 ### Debugging image-pull failures
 
 `A container's image could not be pulled due to inadequate network configuration`
