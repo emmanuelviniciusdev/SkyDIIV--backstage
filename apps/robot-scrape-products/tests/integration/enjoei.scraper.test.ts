@@ -206,7 +206,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     const products = await scraper.scrape({
       searchParams: [searchParams("jaqueta jeans youcom"), searchParams("vestido floral")],
-      userId: "user-9",
+      wardrobePanoramaId: "p9",
     })
 
     expect(browser.visitedUrls).toEqual([
@@ -237,7 +237,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
           footSize: "38",
         }),
       ],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(browser.visitedUrls).toEqual([
@@ -249,7 +249,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
     const browser = fakeBrowser({ cards: [] })
     const products = await scraperWith(browser).scrape({
       searchParams: [searchParams("produto inexistente xyz")],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(products).toEqual([])
@@ -264,7 +264,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
         isEnabled: () => true,
         next: () => ({ proxyUrl: "socks5://proxy-a.example.com:1080" }),
       },
-    }).scrape({ searchParams: [searchParams("saia")], userId: "u1" })
+    }).scrape({ searchParams: [searchParams("saia")], wardrobePanoramaId: "p1" })
 
     expect(onLaunch).toHaveBeenCalledWith({
       proxyUrl: "socks5://proxy-a.example.com:1080",
@@ -280,7 +280,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     const products = await scraperWith(browser).scrape({
       searchParams: [searchParams("blazer")],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(products).toHaveLength(10)
@@ -295,7 +295,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     const products = await scraperWith(browser).scrape({
       searchParams: [searchParams("cinto couro")],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(browser.jsonBatches).toEqual([])
@@ -319,7 +319,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     const products = await scraperWith(browser).scrape({
       searchParams: [searchParams("blusa", { topSize: "M, G" })],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     // The GG card is never looked up — its card size already fails the request.
@@ -345,7 +345,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     const products = await scraperWith(browser).scrape({
       searchParams: [searchParams("blusa", { topSize: "M" })],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(products.map((p) => p.url)).toEqual([
@@ -362,7 +362,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     const products = await scraperWith(browser).scrape({
       searchParams: [searchParams("tênis", { footSize: "38" })],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(browser.jsonBatches).toEqual([["301"]])
@@ -383,7 +383,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     const products = await scraperWith(browser).scrape({
       searchParams: [searchParams("camiseta", { topSize: "M" })],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(products).toHaveLength(10)
@@ -402,7 +402,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     await scraperWith(browser).scrape({
       searchParams: [searchParams("camiseta", { topSize: "M" })],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(browser.jsonBatches).toEqual([
@@ -423,7 +423,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     const products = await scraperWith(browser, { logger }).scrape({
       searchParams: [searchParams("camiseta", { topSize: "M" })],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(products).toEqual([])
@@ -448,7 +448,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     const products = await scraperWith(browser).scrape({
       searchParams: [searchParams("blusa", { topSize: "M" })],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(browser.visitedListings).toEqual(["https://www.enjoei.com.br/p/gone-801"])
@@ -466,7 +466,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     const products = await scraperWith(browser).scrape({
       searchParams: [searchParams("blusa", { topSize: "M" })],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(browser.jsonBatches).toEqual([])
@@ -489,7 +489,7 @@ describe("EnjoeiScraper (integration with fake browser)", () => {
 
     const products = await scraperWith(browser, { logger }).scrape({
       searchParams: [searchParams("blusa", { topSize: "M" })],
-      userId: "u1",
+      wardrobePanoramaId: "p1",
     })
 
     expect(products).toHaveLength(2)

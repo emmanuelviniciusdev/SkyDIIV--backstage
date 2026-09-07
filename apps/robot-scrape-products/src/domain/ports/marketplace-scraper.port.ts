@@ -6,7 +6,8 @@ import type { SearchParams } from "../entities/search-params.js"
  */
 export interface MarketplaceScrapeInput {
   searchParams: SearchParams[]
-  userId: string
+  /** Wardrobe panorama this scrape belongs to — correlation id in scraper logs. */
+  wardrobePanoramaId: string
 }
 
 /**

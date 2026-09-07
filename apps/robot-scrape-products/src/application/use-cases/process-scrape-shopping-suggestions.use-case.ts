@@ -73,7 +73,7 @@ export class ProcessScrapeShoppingSuggestionsUseCase {
       const scraper = this.deps.resolveScraper(marketplace)
       products = await scraper.scrape({
         searchParams,
-        userId,
+        wardrobePanoramaId: panoramaId,
       })
     } catch (err) {
       const errorMeta = toErrorMeta(err)

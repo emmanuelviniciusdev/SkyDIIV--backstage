@@ -105,12 +105,12 @@ function makeMessage(id: string, userId: string): PulledQueueMessage {
 
 describe("BatchDrainRunner (integration)", () => {
   it("drains all batches (2 at a time) then self-deletes", async () => {
-    const scrapedUsers: string[] = []
+    const scrapedPanoramas: string[] = []
 
     const scraper: MarketplaceScraperPort = {
       marketplace: "enjoei",
-      scrape: async ({ userId }) => {
-        scrapedUsers.push(userId)
+      scrape: async ({ wardrobePanoramaId }) => {
+        scrapedPanoramas.push(wardrobePanoramaId)
         await new Promise((r) => setTimeout(r, 10))
         return []
       },
@@ -142,13 +142,8 @@ describe("BatchDrainRunner (integration)", () => {
     await runner.start()
 
     expect(queue.acked).toHaveLength(5)
-    expect(scrapedUsers.sort()).toEqual([
-      "user-0",
-      "user-1",
-      "user-2",
-      "user-3",
-      "user-4",
-    ])
+    expect(scrapedPanoramas).toHaveLength(5)
+    expect(scrapedPanoramas.every((id) => id === "panorama-1")).toBe(true)
     expect(selfDelete.calls).toBe(1)
     expect(queue.pullCount).toBeGreaterThanOrEqual(4) // 3 batches + empty
   })

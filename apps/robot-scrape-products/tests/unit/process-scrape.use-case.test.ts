@@ -112,7 +112,7 @@ describe("ProcessScrapeShoppingSuggestionsUseCase", () => {
 
     expect(scrape).toHaveBeenCalledWith({
       searchParams: [params],
-      userId: "user-42",
+      wardrobePanoramaId: "panorama-1",
     })
     expect(result.products).toHaveLength(1)
     expect(result.userId).toBe("user-42")

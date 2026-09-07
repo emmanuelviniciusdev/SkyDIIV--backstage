@@ -76,6 +76,12 @@ describe("ScrapeProductsBatchRunner", () => {
     expect(insertAnalyze).toHaveBeenCalledTimes(2)
     expect(insertAnalyze).toHaveBeenNthCalledWith(1, { wardrobePanoramaId: "p1" })
     expect(insertAnalyze).toHaveBeenNthCalledWith(2, { wardrobePanoramaId: "p2" })
+    expect(scrape).toHaveBeenCalledWith(
+      expect.objectContaining({ wardrobePanoramaId: "p1" }),
+    )
+    expect(scrape).toHaveBeenCalledWith(
+      expect.objectContaining({ wardrobePanoramaId: "p2" }),
+    )
     expect(publish).toHaveBeenCalledTimes(2)
     expect(deleteSelf).toHaveBeenCalledOnce()
   })

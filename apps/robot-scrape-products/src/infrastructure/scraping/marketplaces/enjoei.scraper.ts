@@ -247,7 +247,7 @@ export class EnjoeiScraper implements MarketplaceScraperPort {
         }
 
         this.deps.logger.info("Scraping Enjoei search", {
-          userId: input.userId,
+          wardrobePanoramaId: input.wardrobePanoramaId,
           searchTerm: params.searchTerm,
           gender: params.gender,
           topSize: params.topSize,
@@ -264,7 +264,7 @@ export class EnjoeiScraper implements MarketplaceScraperPort {
     }
 
     this.deps.logger.debug("Enjoei scrape output", {
-      userId: input.userId,
+      wardrobePanoramaId: input.wardrobePanoramaId,
       searchParams: input.searchParams,
       productCount: products.length,
       products,

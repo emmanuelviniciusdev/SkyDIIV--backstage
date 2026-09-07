@@ -132,7 +132,7 @@ export class ScrapeProductsBatchRunner {
     try {
       const products = await scraper.scrape({
         searchParams: [searchParams],
-        userId: term.wardrobePanoramaId,
+        wardrobePanoramaId: term.wardrobePanoramaId,
       })
       results = products.map(toJsonResult)
     } catch (err) {

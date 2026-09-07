@@ -597,7 +597,7 @@ All Enjoei logs come from the `enjoei-scraper` logger.
 
 | Level | Message | Meaning |
 |---|---|---|
-| `info` | `Scraping Enjoei search` | Per term; includes `requestedSizes` |
+| `info` | `Scraping Enjoei search` | Per term; includes `wardrobePanoramaId` and `requestedSizes` |
 | `warn` | `No relevant Enjoei products found` | Zero cards extracted; includes the URL |
 | `info` | `Confirmed Enjoei listing sizes` | Per term tally: `cardCount`, `candidateCount`, `checked`, `kept`, `discarded`, `listingPageFallbacks` |
 | `debug` | `Discarded Enjoei listing with a non-requested size` | Per rejected listing, with its size |
@@ -617,10 +617,6 @@ size is being read but the filters were not applied at all, and a non-zero
 The `error` line is deliberate: an endpoint change is the one failure mode of
 this design that would otherwise be indistinguishable from a quiet week with
 nothing in the user's size.
-
-One naming wrinkle: the `userId` field in these logs carries the
-`wardrobePanoramaId`, because the batch runner passes the panorama id into the
-port's `userId`. It is not a user id.
 
 ## When results look wrong
 
