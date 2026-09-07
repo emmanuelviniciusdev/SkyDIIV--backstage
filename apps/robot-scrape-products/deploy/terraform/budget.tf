@@ -25,11 +25,13 @@ locals {
 }
 
 data "oci_budget_budgets" "existing" {
+  provider       = oci.home
   compartment_id = var.tenancy_ocid
 }
 
 resource "oci_budget_budget" "css" {
-  count = local.create_budget ? 1 : 0
+  count    = local.create_budget ? 1 : 0
+  provider = oci.home
 
   # Budgets are owned at the tenancy (root) compartment.
   compartment_id = var.tenancy_ocid
@@ -54,7 +56,8 @@ resource "oci_budget_budget" "css" {
 // Created alongside the budget only: an adopted budget already carries the
 // rules from the run that created it.
 resource "oci_budget_alert_rule" "actual_at_limit" {
-  count = local.create_budget ? 1 : 0
+  count    = local.create_budget ? 1 : 0
+  provider = oci.home
 
   budget_id      = oci_budget_budget.css[0].id
   display_name   = "${local.name_prefix}-alert-100pct"
@@ -69,7 +72,8 @@ resource "oci_budget_alert_rule" "actual_at_limit" {
 }
 
 resource "oci_budget_alert_rule" "actual_warning" {
-  count = local.create_budget ? 1 : 0
+  count    = local.create_budget ? 1 : 0
+  provider = oci.home
 
   budget_id      = oci_budget_budget.css[0].id
   display_name   = "${local.name_prefix}-alert-80pct"

@@ -53,6 +53,11 @@ output "name_prefix" {
   value       = local.name_prefix
 }
 
+output "home_region" {
+  description = "Tenancy home region used for Identity and Budgets"
+  value       = var.home_region
+}
+
 output "enable_cost_limit" {
   description = "Whether the monthly OCI Budget + cost guard ceiling is enabled"
   value       = var.enable_cost_limit

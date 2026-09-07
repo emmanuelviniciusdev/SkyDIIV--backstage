@@ -24,6 +24,15 @@ variable "region" {
   default     = "us-ashburn-1"
 }
 
+variable "home_region" {
+  type        = string
+  description = <<-EOT
+    Tenancy home region. Identity dynamic groups/policies and Budgets only
+    accept writes there (403 NotAllowed elsewhere). Independent of `region`.
+  EOT
+  default     = "us-ashburn-1"
+}
+
 variable "compartment_ocid" {
   type        = string
   description = "Compartment OCID for all resources"

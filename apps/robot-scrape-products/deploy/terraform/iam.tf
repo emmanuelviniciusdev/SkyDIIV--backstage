@@ -8,9 +8,9 @@
  * "A container's image could not be pulled due to inadequate network
  * configuration." work-request error, even though egress is healthy.
  *
- * Both resources are tenancy-scoped, so the apply identity needs to be a
- * tenancy administrator. Set create_ocir_pull_policy = false when the policy is
- * managed elsewhere (or when the OCIR repository is public).
+ * Both resources are tenancy-scoped and must be written in the tenancy home
+ * region (`provider = oci.home`). Set create_ocir_pull_policy = false when the
+ * policy is managed elsewhere (or when the OCIR repository is public).
  *
  * When a previous run left the group/policy behind (lost state), they are
  * imported into this stack and their matching rule / statements are reconciled.
@@ -50,6 +50,7 @@ locals {
 }
 
 data "oci_identity_dynamic_groups" "existing" {
+  provider       = oci.home
   compartment_id = var.tenancy_ocid
 
   filter {
@@ -59,6 +60,7 @@ data "oci_identity_dynamic_groups" "existing" {
 }
 
 data "oci_identity_policies" "existing" {
+  provider       = oci.home
   compartment_id = var.tenancy_ocid
 
   filter {
@@ -83,6 +85,7 @@ import {
 
 resource "oci_identity_dynamic_group" "container_instances" {
   for_each = local.ocir_pull_keys
+  provider = oci.home
 
   compartment_id = var.tenancy_ocid
   name           = local.dynamic_group_name
@@ -94,6 +97,7 @@ resource "oci_identity_dynamic_group" "container_instances" {
 
 resource "oci_identity_policy" "ocir_pull" {
   for_each = local.ocir_pull_keys
+  provider = oci.home
 
   depends_on = [oci_identity_dynamic_group.container_instances]
 

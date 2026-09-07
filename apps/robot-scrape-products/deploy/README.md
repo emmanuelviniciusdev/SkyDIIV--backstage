@@ -131,6 +131,12 @@ is the compute/OCIR region; the gate discovers the tenancy home region via IAM
 (or `OCI_HOME_REGION`) and queries Usage there. Usage API data can lag ~24h, so
 the kill is eventual rather than instantaneous.
 
+Terraform uses two OCI providers: `region` for VCN/Container Instance, and
+`home_region` (default `us-ashburn-1`) for Identity dynamic groups/policies and
+Budgets. Those APIs reject CREATE/UPDATE/DELETE outside the tenancy home
+region (`403 NotAllowed` / Budget `404`). `set-oci-region.sh` does not change
+`home_region`.
+
 ## Secrets / variables
 
 `production` environment secrets:

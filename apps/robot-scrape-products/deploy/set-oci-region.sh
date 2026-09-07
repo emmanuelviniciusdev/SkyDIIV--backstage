@@ -13,7 +13,8 @@
 # Writes:
 #   deploy/terraform/terraform.tfvars  region = "…"
 #   deploy/local.env                   TF_VAR_container_image_url host
-# Does not touch backend.hcl (Object Storage state can stay in the home region).
+# Does not touch backend.hcl (Object Storage state can stay in the home region)
+# or terraform home_region (Identity + Budgets stay in the tenancy home region).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
