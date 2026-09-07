@@ -20,7 +20,7 @@ variable "private_key_path" {
 
 variable "region" {
   type        = string
-  description = "OCI home region — default US East (Ashburn)."
+  description = "OCI region for the Container Instance, VCN, and OCIR (not necessarily the tenancy home region)."
   default     = "us-ashburn-1"
 }
 

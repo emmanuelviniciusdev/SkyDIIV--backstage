@@ -126,7 +126,10 @@ Default shape: `CI.Standard.A1.Flex` — 2 OCPU / 4 GB.
 | **Cost guard** (`oci_cost_guard.py`) | Usage API MTD ≥ limit → hard destroy (daily) |
 | **Cost gate** (`--check-only`) | Runs before every apply; exit `10` refuses to create new infra |
 
-Usage API data can lag ~24h, so the kill is eventual rather than instantaneous.
+Usage API is **home-region only**. After moving compute to São Paulo, `OCI_REGION`
+is the compute/OCIR region; the gate discovers the tenancy home region via IAM
+(or `OCI_HOME_REGION`) and queries Usage there. Usage API data can lag ~24h, so
+the kill is eventual rather than instantaneous.
 
 ## Secrets / variables
 
@@ -134,7 +137,7 @@ Usage API data can lag ~24h, so the kill is eventual rather than instantaneous.
 
 | Secret | Purpose |
 |---|---|
-| `OCI_TENANCY_OCID` / `OCI_USER_OCID` / `OCI_FINGERPRINT` / `OCI_API_PRIVATE_KEY` / `OCI_REGION` / `OCI_COMPARTMENT_OCID` | OCI identity for Terraform, the cost guard and self-delete |
+| `OCI_TENANCY_OCID` / `OCI_USER_OCID` / `OCI_FINGERPRINT` / `OCI_API_PRIVATE_KEY` / `OCI_REGION` / `OCI_COMPARTMENT_OCID` | OCI identity for Terraform, OCIR, self-delete. `OCI_REGION` is the **compute** region. Usage API (cost gate) uses the tenancy home region, discovered via IAM or `OCI_HOME_REGION`. |
 | `OCIR_NAMESPACE` / `OCIR_USERNAME` / `OCIR_AUTH_TOKEN` | Push/pull the robot image |
 | `ROBOT_SCRAPE_PRODUCTS_ENV` | App `.env` → `TF_VAR_robot_env` ([ENV.md](../docs/ENV.md)) |
 | `COST_ALERT_EMAIL` | Budget alert recipient |

@@ -19,7 +19,11 @@ Usage:
   python3 deploy/oci_cost_guard.py --check-only [--limit 5.0]
 
 Environment:
-  OCI_TENANCY_OCID, OCI_USER_OCID, OCI_FINGERPRINT, OCI_API_PRIVATE_KEY_PATH, OCI_REGION
+  OCI_TENANCY_OCID, OCI_USER_OCID, OCI_FINGERPRINT, OCI_API_PRIVATE_KEY_PATH
+  OCI_REGION          compute region (Container Instance / terraform)
+  OCI_HOME_REGION     tenancy home region for Usage API (optional; discovered
+                      via IAM, else us-ashburn-1). Usage API refuses any other
+                      region with 403 NotAllowed.
   OCI_COMPARTMENT_OCID (defaults to tenancy)
   COST_LIMIT_USD (default 5)
   OCI_INSTANCE_OCID (optional fallback Container Instance OCID)
@@ -71,6 +75,44 @@ def load_config(region: str):
         config["region"] = region or config.get("region")
 
     return config, oci
+
+
+def copy_config(config: dict, region: str) -> dict:
+    out = dict(config)
+    out["region"] = region
+    return out
+
+
+def resolve_home_region(oci_mod, config: dict, tenant_id: str) -> str:
+    """Usage API is home-region-only. Compute (`OCI_REGION`) may be elsewhere."""
+    override = os.environ.get("OCI_HOME_REGION", "").strip()
+    if override:
+        return override
+
+    try:
+        identity = oci_mod.identity.IdentityClient(config)
+        for sub in identity.list_region_subscriptions(tenant_id).data or []:
+            if getattr(sub, "is_home_region", False):
+                name = getattr(sub, "region_name", None)
+                if name:
+                    return str(name)
+    except Exception as err:  # noqa: BLE001
+        print(f"Could not list region subscriptions from {config.get('region')}: {err}")
+
+    fallback = "us-ashburn-1"
+    if config.get("region") and config["region"] != fallback:
+        try:
+            identity = oci_mod.identity.IdentityClient(copy_config(config, fallback))
+            for sub in identity.list_region_subscriptions(tenant_id).data or []:
+                if getattr(sub, "is_home_region", False):
+                    name = getattr(sub, "region_name", None)
+                    if name:
+                        return str(name)
+        except Exception as err:  # noqa: BLE001
+            print(f"Could not list region subscriptions from {fallback}: {err}")
+
+    print(f"Falling back to Usage API region {fallback}")
+    return fallback
 
 
 def month_bounds_utc(now: datetime) -> tuple[datetime, datetime]:
@@ -223,7 +265,16 @@ def main() -> None:
         action="store_true",
         help="Only check MTD vs limit (exit 10 if at/over). Never destroy.",
     )
-    parser.add_argument("--region", default=os.environ.get("OCI_REGION", "us-ashburn-1"))
+    parser.add_argument(
+        "--region",
+        default=os.environ.get("OCI_REGION", "us-ashburn-1"),
+        help="Compute region (Container Instance delete). Usage API uses home region.",
+    )
+    parser.add_argument(
+        "--home-region",
+        default=None,
+        help="Override tenancy home region for Usage API (else OCI_HOME_REGION / IAM).",
+    )
     parser.add_argument(
         "--terraform-dir",
         default=os.environ.get("COST_GUARD_TF_DIR", "deploy/terraform"),
@@ -240,11 +291,19 @@ def main() -> None:
     if not tenant_id:
         raise SystemExit("Missing OCI_TENANCY_OCID")
 
-    config, oci_mod = load_config(args.region)
+    if args.home_region:
+        os.environ["OCI_HOME_REGION"] = args.home_region
 
-    print(f"Checking MTD cost for compartment={compartment_id} limit=${limit:.2f}")
+    compute_config, oci_mod = load_config(args.region)
+    home_region = resolve_home_region(oci_mod, compute_config, tenant_id)
+    usage_config = copy_config(compute_config, home_region)
+
+    print(
+        f"Checking MTD cost for compartment={compartment_id} limit=${limit:.2f} "
+        f"(Usage API region={home_region}, compute region={args.region})"
+    )
     try:
-        cost = fetch_mtd_cost_usd(oci_mod, config, tenant_id, compartment_id)
+        cost = fetch_mtd_cost_usd(oci_mod, usage_config, tenant_id, compartment_id)
     except Exception as err:  # noqa: BLE001
         raise SystemExit(f"Usage API query failed: {err}") from err
 
@@ -286,7 +345,7 @@ def main() -> None:
         )
 
     print("Falling back to Container Instance DELETE only")
-    delete_container_instance(oci_mod, config, instance_id, dry_run=args.dry_run)
+    delete_container_instance(oci_mod, compute_config, instance_id, dry_run=args.dry_run)
     if not args.dry_run:
         print(
             "Container Instance delete requested (stack destroy skipped). "
