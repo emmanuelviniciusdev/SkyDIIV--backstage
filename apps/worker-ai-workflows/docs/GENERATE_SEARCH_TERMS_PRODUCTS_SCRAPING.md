@@ -32,7 +32,7 @@ sequenceDiagram
   alt no eligible marketplace
     AI-->>AI: exit — no writes
   else will generate terms
-    AI->>DB: count feedbacks; load summaries_feedbacks_automatic_thrifting
+    AI->>DB: count feedbacks, load summaries_feedbacks_automatic_thrifting
     alt zero feedbacks
       AI->>DB: if outdated row exists, clear summary (CAS)
     else outdated false
@@ -46,7 +46,7 @@ sequenceDiagram
       end
       AI->>DB: upsert summary (CAS outdated)
     end
-    AI->>LLM: search-term prompt (summary if non-empty; keep variety)
+    AI->>LLM: search-term prompt (summary if non-empty, keep variety)
     AI->>DB: insert search_terms_scraped_products
   end
   Note over R: Friday GHA scrapes Enjoei from those rows
