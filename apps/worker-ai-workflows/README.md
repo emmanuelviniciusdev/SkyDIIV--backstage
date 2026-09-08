@@ -8,7 +8,7 @@ Workflows are registered with `serveMany`, which routes requests by the **last p
 |---|---|---|
 | `POST /generate-weekly-outfits` | `generate-weekly-outfits` | [docs/WEEKLY_OUTFITS_WORKFLOW.md](./docs/WEEKLY_OUTFITS_WORKFLOW.md) |
 | `POST /generate-wardrobe-panorama` | `generate-wardrobe-panorama` | [docs/WARDROBE_PANORAMA_WORKFLOW.md](./docs/WARDROBE_PANORAMA_WORKFLOW.md) |
-| `POST /generate-search-terms-products-scraping` | `generate-search-terms-products-scraping` | [docs/I18N.md](./docs/I18N.md#generate-search-terms-products-scraping) |
+| `POST /generate-search-terms-products-scraping` | `generate-search-terms-products-scraping` | [docs/GENERATE_SEARCH_TERMS_PRODUCTS_SCRAPING.md](./docs/GENERATE_SEARCH_TERMS_PRODUCTS_SCRAPING.md) |
 | `POST /analyze-scraped-products-results` | `analyze-scraped-products-results` | [docs/ANALYZE_SCRAPED_PRODUCTS_RESULTS.md](./docs/ANALYZE_SCRAPED_PRODUCTS_RESULTS.md) |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
@@ -59,7 +59,8 @@ flowchart LR
 │   ├── I18N.md                             # Multi-language support (locales, resolution, module map)
 │   ├── WEEKLY_OUTFITS_WORKFLOW.md          # generate-weekly-outfits — full workflow reference
 │   ├── WARDROBE_PANORAMA_WORKFLOW.md       # generate-wardrobe-panorama — full workflow reference
-│   └── ANALYZE_SCRAPED_PRODUCTS_RESULTS.md # analyze-scraped-products-results — swap + registers
+│   ├── GENERATE_SEARCH_TERMS_PRODUCTS_SCRAPING.md  # generate-search-terms + feedback summaries
+│   ├── ANALYZE_SCRAPED_PRODUCTS_RESULTS.md # analyze-scraped-products-results — swap + registers
 ├── src/
 │   ├── index.ts                            # Worker entry (health check + serveMany dispatch)
 │   ├── workflows/
@@ -191,6 +192,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | All workflows |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | `generate-weekly-outfits` — R2 credentials (secrets) |
 | `R2_BUCKET`, `R2_PUBLIC_URL` | `generate-weekly-outfits` — bucket name and public URL prefix (vars) |
+| `FEEDBACK_SUMMARY_CHUNK_SIZE`, `FEEDBACK_SUMMARY_MAX_ENTRIES` | `generate-search-terms-products-scraping` — summarizer chunk (default 50) and max recent feedbacks (default 250); `wrangler.toml` `[vars]` |
 
 Per-workflow env requirements and scheduler upstream URLs are documented in each workflow's doc.
 

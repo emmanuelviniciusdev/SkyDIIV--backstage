@@ -3,6 +3,7 @@ import type { LoadGenerateSearchTermsContextResult } from "./load-context"
 
 export function buildGenerateSearchTermsPromptStep(
   ctx: LoadGenerateSearchTermsContextResult,
+  feedbackSummary?: string | null,
 ): string {
   return buildGenerateSearchTermsPrompt({
     locale: ctx.locale,
@@ -13,5 +14,6 @@ export function buildGenerateSearchTermsPromptStep(
     bottomSize: ctx.shoppingPreferences?.bottomSize ?? null,
     footSize: ctx.shoppingPreferences?.footSize ?? null,
     eligibleMarketplaces: ctx.eligibleMarketplaces.map((m) => m.name),
+    feedbackSummary,
   })
 }

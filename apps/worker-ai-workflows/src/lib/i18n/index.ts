@@ -13,6 +13,7 @@ export { getLocaleMessages } from "./locales"
 export { buildWeeklyOutfitsPrompt, getWeeklyOutfitsPromptTemplate } from "./prompts/weekly-outfits"
 export { buildWardrobePanoramaPrompt } from "./prompts/wardrobe-panorama"
 export { buildGenerateSearchTermsPrompt } from "./prompts/generate-search-terms"
+export { buildSummarizeAutomaticThriftingFeedbackPrompt } from "./prompts/summarize-automatic-thrifting-feedback"
 export { buildAnalyzeScrapedResultsPrompt } from "./prompts/analyze-scraped-results"
 export {
   buildDayWeatherInfo,

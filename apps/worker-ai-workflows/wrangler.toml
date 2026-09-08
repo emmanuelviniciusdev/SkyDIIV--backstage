@@ -12,6 +12,8 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 LLM_PROVIDER = "gemini_flash"
 # GEMINI_MODEL = "gemini-2.5-flash"
+FEEDBACK_SUMMARY_CHUNK_SIZE = "50"
+FEEDBACK_SUMMARY_MAX_ENTRIES = "250"
 
 # ── Secrets ───────────────────────────────────────────────────────────────────
 # Set each secret once with: wrangler secret put <KEY>
@@ -65,3 +67,5 @@ binding = "IMAGES"
 
 [env.staging.vars]
 LLM_PROVIDER = "gemini_flash"
+FEEDBACK_SUMMARY_CHUNK_SIZE = "50"
+FEEDBACK_SUMMARY_MAX_ENTRIES = "250"
