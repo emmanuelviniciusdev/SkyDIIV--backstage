@@ -11,7 +11,7 @@ instance.
 It does **not** drain Cloudflare Queues, write `scraped_products`, or set web
 Redis shopping-suggestions keys.
 
-Env: [docs/ENV.md](docs/ENV.md) · Deploy: [deploy/README.md](deploy/README.md)
+Env: [docs/ENV.md](docs/ENV.md) · Deploy: [deploy/README.md](deploy/README.md) · Observability: [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)
 
 ## Weekly job
 

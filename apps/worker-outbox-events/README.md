@@ -7,6 +7,8 @@ Cloudflare Worker that implements the processor side of SkyDIIV's Transactional 
 | `POST /process-outbox-event` | Process one outbox event by ID | [docs/PROCESS_OUTBOX_EVENT.md](docs/PROCESS_OUTBOX_EVENT.md) |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
+Observability (Grafana Cloud OTLP, vendor-agnostic port): [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md).
+
 Upstream publishing is handled by the **SkyDIIV web app**, which inserts a row into `outbox_events` (with `event_id` referencing the `events` catalog) inside a database transaction, then publishes the row's ID to QStash. This worker is the sole consumer.
 
 ```mermaid

@@ -67,6 +67,12 @@ const envSchema = z.object({
   SELF_DELETE_ACTIVE_GRACE_MS: z.coerce.number().int().nonnegative().default(120_000),
 
   LOG_LEVEL: z.enum(["DEBUG", "INFO", "WARN", "ERROR"]).default("INFO"),
+
+  OBSERVABILITY_PROVIDER: z.string().optional(),
+  OTEL_SERVICE_NAME: z.string().optional(),
+  DEPLOYMENT_ENVIRONMENT: z.string().optional(),
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
+  OTEL_EXPORTER_OTLP_HEADERS: z.string().optional(),
 })
 
 export type AppConfig = z.infer<typeof envSchema>

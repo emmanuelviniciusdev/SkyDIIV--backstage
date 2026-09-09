@@ -14,6 +14,7 @@ LLM_PROVIDER = "gemini_flash"
 # GEMINI_MODEL = "gemini-2.5-flash"
 FEEDBACK_SUMMARY_CHUNK_SIZE = "50"
 FEEDBACK_SUMMARY_MAX_ENTRIES = "250"
+DEPLOYMENT_ENVIRONMENT = "production"
 
 # ── Secrets ───────────────────────────────────────────────────────────────────
 # Set each secret once with: wrangler secret put <KEY>
@@ -27,6 +28,12 @@ FEEDBACK_SUMMARY_MAX_ENTRIES = "250"
 #   wrangler secret put GEMINI_API_KEY
 #   wrangler secret put WORKER_AI_WORKFLOWS_URL
 #   wrangler secret put WORKER_OUTBOX_EVENTS_URL
+#
+# ── Observability (Grafana Cloud OTLP) ────────────────────────────────────────
+#   wrangler secret put OTEL_EXPORTER_OTLP_ENDPOINT
+#   wrangler secret put OTEL_EXPORTER_OTLP_HEADERS
+# Optional vars: OBSERVABILITY_PROVIDER (grafana-cloud|noop), OTEL_SERVICE_NAME
+# DEPLOYMENT_ENVIRONMENT is set in [vars] / [env.staging.vars]. See docs/OBSERVABILITY.md.
 #
 # ── Redis ─────────────────────────────────────────────────────────────────────
 #   wrangler secret put UPSTASH_REDIS_REST_URL
@@ -69,3 +76,4 @@ binding = "IMAGES"
 LLM_PROVIDER = "gemini_flash"
 FEEDBACK_SUMMARY_CHUNK_SIZE = "50"
 FEEDBACK_SUMMARY_MAX_ENTRIES = "250"
+DEPLOYMENT_ENVIRONMENT = "staging"

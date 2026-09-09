@@ -4,7 +4,8 @@ import { closeDbClients, createDbClients } from "./infrastructure/db/client.js"
 import { SqlOutboxEventsRepository } from "./infrastructure/db/outbox-events.repository.js"
 import { SqlSearchResultsRepository } from "./infrastructure/db/search-results.repository.js"
 import { SqlSearchTermsRepository } from "./infrastructure/db/search-terms.repository.js"
-import { createLoggerFactory } from "./infrastructure/logging/logger.js"
+import { createObservabilityProvider } from "./infrastructure/observability/observability.factory.js"
+import { withBatchTelemetry } from "./infrastructure/observability/with-batch-telemetry.js"
 import { QStashOutboxPublisher } from "./infrastructure/messaging/qstash-outbox.publisher.js"
 import {
   DisabledProxyRotator,
@@ -28,8 +29,16 @@ import { ScrapeProductsBatchRunner } from "./presentation/scrape-products-batch.
  */
 async function main(): Promise<void> {
   const config = loadConfig()
-  const createLogger = createLoggerFactory(config.LOG_LEVEL)
-  const log = createLogger("main")
+  const observability = createObservabilityProvider({
+    provider: config.OBSERVABILITY_PROVIDER,
+    serviceName: config.OTEL_SERVICE_NAME?.trim() || "robot-scrape-products",
+    deploymentEnvironment: config.DEPLOYMENT_ENVIRONMENT,
+    otlp: {
+      endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT,
+      headers: config.OTEL_EXPORTER_OTLP_HEADERS,
+    },
+  })
+  const log = observability.logger("main")
 
   if (config.CAMOUFOX_INSTALL_DIR) {
     process.env.CAMOUFOX_INSTALL_DIR = config.CAMOUFOX_INSTALL_DIR
@@ -47,7 +56,7 @@ async function main(): Promise<void> {
 
   const browserFactory = new CamoufoxBrowserFactory(
     { headless: config.CAMOUFOX_HEADLESS },
-    createLogger("browser-factory"),
+    observability.logger("browser-factory"),
   )
 
   const delay = new RandomHumanDelay({
@@ -62,13 +71,13 @@ async function main(): Promise<void> {
         browserFactory,
         delay,
         proxyRotator,
-        logger: createLogger("enjoei-scraper"),
+        logger: observability.logger("enjoei-scraper"),
       }),
   )
 
   const selfDelete = createSelfDeleteProvider({
     provider: config.COMPUTE_PROVIDER,
-    logger: createLogger("self-delete"),
+    logger: observability.logger("self-delete"),
     oci: {
       containerInstanceId: config.OCI_CONTAINER_INSTANCE_OCID,
       compartmentId: config.OCI_COMPARTMENT_OCID,
@@ -101,12 +110,13 @@ async function main(): Promise<void> {
       }
     },
     selfDelete,
-    logger: createLogger("scrape-batch"),
+    logger: observability.logger("scrape-batch"),
     concurrency: config.ROBOT_CONCURRENCY,
   })
 
   const shutdown = async (signal: string) => {
     log.info("Received shutdown signal", { signal })
+    await observability.shutdown()
     await closeDbClients(db)
     process.exit(0)
   }
@@ -124,7 +134,13 @@ async function main(): Promise<void> {
   })
 
   try {
-    await runner.start()
+    await withBatchTelemetry(
+      observability,
+      {
+        "compute.provider": config.COMPUTE_PROVIDER || "auto",
+      },
+      () => runner.start(),
+    )
   } finally {
     await closeDbClients(db)
   }

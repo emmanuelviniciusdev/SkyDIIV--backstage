@@ -14,6 +14,16 @@ function makeRequest(method: string, path: string): Request {
   return new Request(`https://worker-outbox-events.workers.dev${path}`, { method })
 }
 
+function makeCtx(): ExecutionContext {
+  return {
+    waitUntil: (promise: Promise<unknown>) => {
+      void promise
+    },
+    passThroughOnException: () => undefined,
+    props: {},
+  }
+}
+
 describe("worker fetch routing", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -21,7 +31,7 @@ describe("worker fetch routing", () => {
   })
 
   it("responds to GET / health check without invoking workflows", async () => {
-    const res = await worker.fetch(makeRequest("GET", "/"), {})
+    const res = await worker.fetch(makeRequest("GET", "/"), {}, makeCtx())
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.status).toBe("ok")
@@ -31,16 +41,21 @@ describe("worker fetch routing", () => {
 
   it("delegates non-health requests to workflowsFetch", async () => {
     const req = makeRequest("POST", "/process-outbox-event")
-    await worker.fetch(req, { WORKER_OUTBOX_EVENTS_URL: "https://example.workers.dev" })
-    expect(mockWorkflowsFetch).toHaveBeenCalledWith(req, {
-      WORKER_OUTBOX_EVENTS_URL: "https://example.workers.dev",
-    })
+    const env = { WORKER_OUTBOX_EVENTS_URL: "https://example.workers.dev" }
+    await worker.fetch(req, env, makeCtx())
+    expect(mockWorkflowsFetch).toHaveBeenCalledWith(req, env)
+  })
+
+  it("returns 401 for an unsigned process-outbox-event request", async () => {
+    mockWorkflowsFetch.mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }))
+    const res = await worker.fetch(makeRequest("POST", "/process-outbox-event"), {}, makeCtx())
+    expect(res.status).toBe(401)
   })
 
   it("rethrows unhandled workflow errors", async () => {
     mockWorkflowsFetch.mockRejectedValueOnce(new Error("workflow failed"))
     await expect(
-      worker.fetch(makeRequest("POST", "/process-outbox-event"), {}),
+      worker.fetch(makeRequest("POST", "/process-outbox-event"), {}, makeCtx()),
     ).rejects.toThrow("workflow failed")
   })
 })

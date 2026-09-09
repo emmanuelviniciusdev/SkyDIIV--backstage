@@ -28,6 +28,8 @@ Stale outbox events are re-enqueued via [`worker-outbox-events`](../worker-outbo
 | `POST /schedule/everyday` | — | _(none)_ |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
+Observability (Grafana Cloud OTLP, vendor-agnostic port): [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md).
+
 Friday `generate-search-terms-products-scraping` runs after Thursday panorama and before the Friday 19:00 BRT `robot-scrape-products` window. It inserts one `generate-search-terms-products-scraping` outbox row per existing `wardrobe_panorama` and publishes `{ outboxEventId }` to `{WORKER_OUTBOX_EVENTS_URL}/process-outbox-event` (batches of 100). It does not publish directly to `worker-ai-workflows`.
 
 Flow assignments come from `src/flows/registry.ts` and may change independently of this table.
@@ -178,7 +180,8 @@ Runs all flows registered in `everyday-registry.ts` **in parallel**. One flow fa
 ├── docs/
 │   ├── CATCH_UP_OUTBOX_EVENTS.md
 │   ├── EVERYDAY_SCHEDULE.md
-│   └── NEON_DATABASE_SNAPSHOT.md
+│   ├── NEON_DATABASE_SNAPSHOT.md
+│   └── OBSERVABILITY.md
 ├── tests/unit/
 ├── wrangler.toml
 ├── .env.example                            # Copy to .dev.vars for local dev

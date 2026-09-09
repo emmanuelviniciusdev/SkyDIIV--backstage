@@ -9,6 +9,8 @@ Workflows are registered with `serveMany`, which routes requests by the **last p
 | `POST /sync/language` | `sync-language` | [docs/SYNC_LANGUAGE_WORKFLOW.md](./docs/SYNC_LANGUAGE_WORKFLOW.md) |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
+Observability (Grafana Cloud OTLP, vendor-agnostic port): [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md).
+
 ```mermaid
 flowchart LR
     APP["SkyDIIV app / services"] -->|POST signed payload| SL["POST /sync/language"]

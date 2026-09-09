@@ -9,6 +9,8 @@ Workflows are registered with `serveMany`, which routes requests by the **last p
 | `POST /email--welcome` | `email--welcome` | [docs/EMAIL_WELCOME_WORKFLOW.md](./docs/EMAIL_WELCOME_WORKFLOW.md) |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
+Observability (Grafana Cloud OTLP, vendor-agnostic port): [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md).
+
 ```mermaid
 flowchart LR
     WEB["SkyDIIV web app\n(POST /api/register)"]

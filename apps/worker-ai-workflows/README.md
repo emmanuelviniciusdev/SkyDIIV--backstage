@@ -12,6 +12,8 @@ Workflows are registered with `serveMany`, which routes requests by the **last p
 | `POST /analyze-scraped-products-results` | `analyze-scraped-products-results` | [docs/ANALYZE_SCRAPED_PRODUCTS_RESULTS.md](./docs/ANALYZE_SCRAPED_PRODUCTS_RESULTS.md) |
 | `GET /` | — | Health check → `{ status: "ok", timestamp }` |
 
+Observability (Grafana Cloud OTLP, vendor-agnostic port): [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md).
+
 Upstream dispatch is handled by [`worker-scheduler`](../worker-scheduler/README.md), which publishes signed messages to these endpoints on a configured schedule.
 
 ```mermaid
@@ -45,6 +47,7 @@ flowchart LR
 | Object storage | [Cloudflare R2](https://developers.cloudflare.com/r2/) | Outfit thumbnail uploads (`outfits/{id}.png`) |
 | Weather | [Open-Meteo](https://open-meteo.com) | Forecast + geocoding (`generate-weekly-outfits` only) |
 | Validation | [Zod](https://zod.dev/) | LLM response parsing |
+| Observability | Grafana Cloud OTLP (vendor-agnostic port) | Traces, metrics, logs — [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) |
 | Dev / deploy | Wrangler 4 | Local dev and Cloudflare deployment |
 | Testing | Vitest 4 | Unit + integration tests |
 | Linting | ESLint 10 + typescript-eslint | Code quality |
@@ -61,6 +64,7 @@ flowchart LR
 │   ├── WARDROBE_PANORAMA_WORKFLOW.md       # generate-wardrobe-panorama — full workflow reference
 │   ├── GENERATE_SEARCH_TERMS_PRODUCTS_SCRAPING.md  # generate-search-terms + feedback summaries
 │   ├── ANALYZE_SCRAPED_PRODUCTS_RESULTS.md # analyze-scraped-products-results — swap + registers
+│   ├── OBSERVABILITY.md                    # Grafana Cloud OTLP — port, factory, secrets
 ├── src/
 │   ├── index.ts                            # Worker entry (health check + serveMany dispatch)
 │   ├── workflows/
@@ -193,6 +197,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | `generate-weekly-outfits` — R2 credentials (secrets) |
 | `R2_BUCKET`, `R2_PUBLIC_URL` | `generate-weekly-outfits` — bucket name and public URL prefix (vars) |
 | `FEEDBACK_SUMMARY_CHUNK_SIZE`, `FEEDBACK_SUMMARY_MAX_ENTRIES` | `generate-search-terms-products-scraping` — summarizer chunk (default 50) and max recent feedbacks (default 250); `wrangler.toml` `[vars]` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | Grafana Cloud OTLP (optional; missing → noop). See [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) |
 
 Per-workflow env requirements and scheduler upstream URLs are documented in each workflow's doc.
 
@@ -238,6 +243,7 @@ Configure these in the **staging** and **production** GitHub environments (Setti
 | `GEMINI_API_KEY` | LLM provider |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Redis cache + notifications |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Outfit thumbnail uploads (R2 credentials) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | Grafana Cloud OTLP gateway URL and `Authorization=Basic …` header |
 
 Also configure GitHub **environment variables** (`QSTASH_URL`, `WORKER_AI_WORKFLOWS_URL`, `WORKER_OUTBOX_EVENTS_URL`, `R2_BUCKET`, `R2_PUBLIC_URL`) — CI injects these into `wrangler.toml` `[vars]` before deploy.
 

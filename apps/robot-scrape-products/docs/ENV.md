@@ -41,6 +41,11 @@ boot, not mid-drain.
 | `CAMOUFOX_INSTALL_DIR` | _(image default)_ | Camoufox location inside the image |
 | `PROXY_URLS` | _(empty)_ | Comma-separated outbound proxies |
 | `LOG_LEVEL` | `INFO` | `DEBUG` \| `INFO` \| `WARN` \| `ERROR` |
+| `OBSERVABILITY_PROVIDER` | _(auto)_ | `grafana-cloud` \| `noop`. Unset: Grafana when OTLP endpoint+headers are set, else noop |
+| `OTEL_SERVICE_NAME` | `robot-scrape-products` | Resource `service.name` |
+| `DEPLOYMENT_ENVIRONMENT` | _(optional)_ | `staging` \| `production` \| `local` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(optional)_ | Grafana Cloud OTLP gateway URL |
+| `OTEL_EXPORTER_OTLP_HEADERS` | _(optional)_ | `Authorization=Basic …` |
 
 Validated by `src/infrastructure/config/env.ts` (Zod) — an invalid value fails at
 boot, not mid-scrape.
@@ -57,6 +62,8 @@ WORKER_OUTBOX_EVENTS_URL=https://worker-outbox-events.<subdomain>.workers.dev
 DATABASE_URL=postgresql://user:pass@host:5432/dbname?sslmode=require
 DATABASE_URL_UNPOOLED=postgresql://user:pass@host:5432/dbname?sslmode=require
 LOG_LEVEL=INFO
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-<region>.grafana.net/otlp
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <token>
 ```
 
 ```bash

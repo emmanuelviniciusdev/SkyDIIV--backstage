@@ -1,9 +1,9 @@
 /**
- * Minimal structured logger for the worker-ai-workflows Cloudflare Worker.
+ * Structured logger for the worker-ai-workflows Cloudflare Worker.
  *
- * Emits newline-delimited JSON to stdout/stderr, which is captured by
- * Cloudflare Workers Logs (Real-time Logs / Workers Trace Events) and
- * any external log drain configured in the dashboard.
+ * When a request is wrapped with `withRequestTelemetry`, logs go through the
+ * selected ObservabilityPort (Grafana Cloud dual-writes OTLP + console NDJSON;
+ * noop writes console only). Outside a request, logs fall back to console NDJSON.
  *
  * Usage:
  *   const log = createLogger("build-prompt", userId)
@@ -11,41 +11,21 @@
  *   log.error("DB error", { error: err.message })
  */
 
-type Level = "DEBUG" | "INFO" | "WARN" | "ERROR"
+import type { Logger } from "../domain/ports/logger.port"
+import { createConsoleLogger } from "../infrastructure/observability/console-ndjson"
+import { getRequestObservability } from "../infrastructure/observability/observability-context"
 
-export interface Logger {
-  debug(msg: string, extra?: Record<string, unknown>): void
-  info(msg: string, extra?: Record<string, unknown>): void
-  warn(msg: string, extra?: Record<string, unknown>): void
-  error(msg: string, extra?: Record<string, unknown>): void
-}
+export type { Logger } from "../domain/ports/logger.port"
 
 const APP = "worker-ai-workflows"
-
-function emit(level: Level, msg: string, ctx: Record<string, unknown>): void {
-  const entry = JSON.stringify({
-    ts: new Date().toISOString(),
-    level,
-    app: APP,
-    msg,
-    ...ctx,
-  })
-  if (level === "ERROR") console.error(entry)
-  else if (level === "WARN") console.warn(entry)
-  else console.log(entry)
-}
 
 /**
  * Creates a logger pre-scoped to a step/module name and optional userId.
  * Additional fields can be passed per-call and are merged into the log entry.
  */
 export function createLogger(step: string, userId?: string): Logger {
-  const base: Record<string, unknown> = { step }
-  if (userId) base.userId = userId
-  return {
-    debug: (msg, extra) => emit("DEBUG", msg, { ...base, ...extra }),
-    info:  (msg, extra) => emit("INFO",  msg, { ...base, ...extra }),
-    warn:  (msg, extra) => emit("WARN",  msg, { ...base, ...extra }),
-    error: (msg, extra) => emit("ERROR", msg, { ...base, ...extra }),
-  }
+  const context = userId ? { userId } : undefined
+  const observability = getRequestObservability()
+  if (observability) return observability.logger(step, context)
+  return createConsoleLogger(APP, step, context)
 }

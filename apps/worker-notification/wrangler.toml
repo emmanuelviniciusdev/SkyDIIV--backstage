@@ -24,10 +24,18 @@ compatibility_flags = ["nodejs_compat"]
 # ── Email (Resend) ──────────────────────────────────────────────────────────────
 #   wrangler secret put RESEND_API_KEY
 #
+# ── Observability (Grafana Cloud OTLP) ────────────────────────────────────────
+#   wrangler secret put OTEL_EXPORTER_OTLP_ENDPOINT
+#   wrangler secret put OTEL_EXPORTER_OTLP_HEADERS
+# See docs/OBSERVABILITY.md.
+#
 # ── Vars (non-secrets) ────────────────────────────────────────────────────────
 # Injected at deploy from GitHub Environment *variables* (not secrets):
 #   EMAIL_PROVIDER, EMAIL_FROM, APP_URL
 # See README → Deployment → First-time setup.
+
+[vars]
+DEPLOYMENT_ENVIRONMENT = "production"
 
 [observability.logs]
 enabled = true
@@ -36,3 +44,6 @@ invocation_logs = true
 # ── Staging / preview environment ─────────────────────────────────────────────
 [env.staging]
 name = "worker-notification-staging"
+
+[env.staging.vars]
+DEPLOYMENT_ENVIRONMENT = "staging"

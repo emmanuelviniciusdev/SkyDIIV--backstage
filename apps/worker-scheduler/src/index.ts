@@ -4,8 +4,12 @@ import { resetDbClient } from "./lib/db/client"
 import { handleSchedule } from "./scheduler"
 import { createLogger } from "./lib/logger"
 import type { Weekday } from "./flows/types"
+import { createObservabilityProvider } from "./infrastructure/observability/observability.factory"
+import { withRequestTelemetry } from "./infrastructure/observability/with-request-telemetry"
 
 type Env = Record<string, string | undefined>
+
+const SERVICE_NAME = "worker-scheduler"
 
 const CATCH_UP_OUTBOX_EVENTS_PATH = "/schedule/catch-up-outbox-events"
 const EVERYDAY_PATH = "/schedule/everyday"
@@ -36,38 +40,52 @@ const DAY_ROUTES: Readonly<Record<string, Weekday>> = {
  * POST /schedule/everyday                 → signed trigger; runs registered everyday flows.
  */
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     Object.assign(process.env, env)
     // CF Workers isolates are reused across requests; drop any postgres.js
     // connection from a prior request so I/O stays scoped to this handler.
     resetDbClient()
 
-    const { method, url } = request
-    const { pathname } = new URL(url)
-    const log = createLogger("worker")
+    const observability = createObservabilityProvider({
+      provider: env.OBSERVABILITY_PROVIDER,
+      serviceName: env.OTEL_SERVICE_NAME?.trim() || SERVICE_NAME,
+      deploymentEnvironment: env.DEPLOYMENT_ENVIRONMENT,
+      otlp: {
+        endpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT,
+        headers: env.OTEL_EXPORTER_OTLP_HEADERS,
+      },
+    })
 
-    log.info("Request received", { method, path: pathname })
-
-    if (method === "GET" && pathname === "/") {
-      const body = { status: "ok", timestamp: new Date().toISOString() }
-      log.info("Health check", body)
-      return Response.json(body)
-    }
-
-    if (method === "POST") {
-      if (pathname === CATCH_UP_OUTBOX_EVENTS_PATH) {
-        return handleCatchUpOutboxEventsSchedule(request)
-      }
-
-      if (pathname === EVERYDAY_PATH) {
-        return handleEverydaySchedule(request)
-      }
-
-      const day = DAY_ROUTES[pathname]
-      if (day) return handleSchedule(request, day)
-    }
-
-    log.warn("Route not found", { method, path: pathname })
-    return new Response("Not Found", { status: 404 })
+    return withRequestTelemetry(observability, request, ctx, () => handleRequest(request))
   },
+}
+
+async function handleRequest(request: Request): Promise<Response> {
+  const { method, url } = request
+  const { pathname } = new URL(url)
+  const log = createLogger("worker")
+
+  log.info("Request received", { method, path: pathname })
+
+  if (method === "GET" && pathname === "/") {
+    const body = { status: "ok", timestamp: new Date().toISOString() }
+    log.info("Health check", body)
+    return Response.json(body)
+  }
+
+  if (method === "POST") {
+    if (pathname === CATCH_UP_OUTBOX_EVENTS_PATH) {
+      return handleCatchUpOutboxEventsSchedule(request)
+    }
+
+    if (pathname === EVERYDAY_PATH) {
+      return handleEverydaySchedule(request)
+    }
+
+    const day = DAY_ROUTES[pathname]
+    if (day) return handleSchedule(request, day)
+  }
+
+  log.warn("Route not found", { method, path: pathname })
+  return new Response("Not Found", { status: 404 })
 }

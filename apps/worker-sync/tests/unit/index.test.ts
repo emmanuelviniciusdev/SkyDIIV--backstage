@@ -14,6 +14,16 @@ function makeRequest(method: string, path: string): Request {
   return new Request(`https://worker-sync.workers.dev${path}`, { method })
 }
 
+function makeCtx(): ExecutionContext {
+  return {
+    waitUntil: (promise: Promise<unknown>) => {
+      void promise
+    },
+    passThroughOnException: () => undefined,
+    props: {},
+  }
+}
+
 describe("worker fetch routing", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -21,7 +31,7 @@ describe("worker fetch routing", () => {
   })
 
   it("responds to GET / health check without invoking a workflow", async () => {
-    const res = await worker.fetch(makeRequest("GET", "/"), {})
+    const res = await worker.fetch(makeRequest("GET", "/"), {}, makeCtx())
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.status).toBe("ok")
@@ -31,20 +41,27 @@ describe("worker fetch routing", () => {
   it("delegates POST /sync/language to the workflow router", async () => {
     const request = makeRequest("POST", "/sync/language")
     const env = {}
-    await worker.fetch(request, env)
+    await worker.fetch(request, env, makeCtx())
     expect(mockWorkflowsFetch).toHaveBeenCalledOnce()
     expect(mockWorkflowsFetch).toHaveBeenCalledWith(request, env)
   })
 
+  it("returns 401 for an unsigned sync/language request", async () => {
+    mockWorkflowsFetch.mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }))
+    const res = await worker.fetch(makeRequest("POST", "/sync/language"), {}, makeCtx())
+    expect(res.status).toBe(401)
+    expect(mockWorkflowsFetch).toHaveBeenCalledOnce()
+  })
+
   it("delegates unknown non-GET paths to the workflow router", async () => {
-    await worker.fetch(makeRequest("POST", "/unknown"), {})
+    await worker.fetch(makeRequest("POST", "/unknown"), {}, makeCtx())
     expect(mockWorkflowsFetch).toHaveBeenCalledOnce()
   })
 
   it("propagates errors thrown by the workflow router", async () => {
     mockWorkflowsFetch.mockRejectedValueOnce(new Error("boom"))
-    await expect(worker.fetch(makeRequest("POST", "/sync/language"), {})).rejects.toThrow(
-      "boom",
-    )
+    await expect(
+      worker.fetch(makeRequest("POST", "/sync/language"), {}, makeCtx()),
+    ).rejects.toThrow("boom")
   })
 })

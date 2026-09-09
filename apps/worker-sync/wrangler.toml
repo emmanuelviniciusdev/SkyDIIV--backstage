@@ -29,10 +29,16 @@ compatibility_flags = ["nodejs_compat"]
 #
 # ── LLM ───────────────────────────────────────────────────────────────────────
 #   wrangler secret put GEMINI_API_KEY
+#
+# ── Observability (Grafana Cloud OTLP) ────────────────────────────────────────
+#   wrangler secret put OTEL_EXPORTER_OTLP_ENDPOINT
+#   wrangler secret put OTEL_EXPORTER_OTLP_HEADERS
+# See docs/OBSERVABILITY.md.
 
 [vars]
 LLM_PROVIDER = "gemini_flash"
 # GEMINI_MODEL = "gemini-2.5-flash"
+DEPLOYMENT_ENVIRONMENT = "production"
 
 [observability.logs]
 enabled = true
@@ -44,3 +50,4 @@ name = "worker-sync-staging"
 
 [env.staging.vars]
 LLM_PROVIDER = "gemini_flash"
+DEPLOYMENT_ENVIRONMENT = "staging"

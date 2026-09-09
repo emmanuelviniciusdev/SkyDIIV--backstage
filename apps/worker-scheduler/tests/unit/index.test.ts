@@ -37,6 +37,16 @@ function makeRequest(method: string, path: string): Request {
   return new Request(`https://worker-scheduler.workers.dev${path}`, { method })
 }
 
+function makeCtx(): ExecutionContext {
+  return {
+    waitUntil: (promise: Promise<unknown>) => {
+      void promise
+    },
+    passThroughOnException: () => undefined,
+    props: {},
+  }
+}
+
 describe("worker fetch routing", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -46,7 +56,7 @@ describe("worker fetch routing", () => {
   })
 
   it("responds to GET / health check without invoking a flow", async () => {
-    const res = await worker.fetch(makeRequest("GET", "/"), {})
+    const res = await worker.fetch(makeRequest("GET", "/"), {}, makeCtx())
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.status).toBe("ok")
@@ -65,7 +75,7 @@ describe("worker fetch routing", () => {
     ["/schedule/every-saturday", "saturday"],
     ["/schedule/every-sunday", "sunday"],
   ])("routes POST %s to handleSchedule with day %s", async (path, day) => {
-    await worker.fetch(makeRequest("POST", path), {})
+    await worker.fetch(makeRequest("POST", path), {}, makeCtx())
     expect(mockHandleSchedule).toHaveBeenCalledOnce()
     expect(mockHandleSchedule.mock.calls[0]![1]).toBe(day)
     expect(mockHandleCatchUp).not.toHaveBeenCalled()
@@ -73,41 +83,48 @@ describe("worker fetch routing", () => {
   })
 
   it("routes POST /schedule/catch-up-outbox-events to the dedicated handler", async () => {
-    await worker.fetch(makeRequest("POST", "/schedule/catch-up-outbox-events"), {})
+    await worker.fetch(makeRequest("POST", "/schedule/catch-up-outbox-events"), {}, makeCtx())
     expect(mockHandleCatchUp).toHaveBeenCalledOnce()
     expect(mockHandleSchedule).not.toHaveBeenCalled()
     expect(mockHandleEveryday).not.toHaveBeenCalled()
   })
 
   it("routes POST /schedule/everyday to the dedicated handler", async () => {
-    await worker.fetch(makeRequest("POST", "/schedule/everyday"), {})
+    await worker.fetch(makeRequest("POST", "/schedule/everyday"), {}, makeCtx())
     expect(mockHandleEveryday).toHaveBeenCalledOnce()
     expect(mockHandleSchedule).not.toHaveBeenCalled()
     expect(mockHandleCatchUp).not.toHaveBeenCalled()
   })
 
   it("returns 404 for an unknown path", async () => {
-    const res = await worker.fetch(makeRequest("POST", "/schedule/every-someday"), {})
+    const res = await worker.fetch(makeRequest("POST", "/schedule/every-someday"), {}, makeCtx())
     expect(res.status).toBe(404)
     expect(mockHandleSchedule).not.toHaveBeenCalled()
   })
 
   it("returns 404 for GET on a schedule endpoint", async () => {
-    const res = await worker.fetch(makeRequest("GET", "/schedule/every-sunday"), {})
+    const res = await worker.fetch(makeRequest("GET", "/schedule/every-sunday"), {}, makeCtx())
     expect(res.status).toBe(404)
     expect(mockHandleSchedule).not.toHaveBeenCalled()
   })
 
   it("returns 404 for GET on the catch-up schedule endpoint", async () => {
-    const res = await worker.fetch(makeRequest("GET", "/schedule/catch-up-outbox-events"), {})
+    const res = await worker.fetch(makeRequest("GET", "/schedule/catch-up-outbox-events"), {}, makeCtx())
     expect(res.status).toBe(404)
     expect(mockHandleCatchUp).not.toHaveBeenCalled()
     expect(mockHandleEveryday).not.toHaveBeenCalled()
   })
 
   it("returns 404 for GET on the everyday schedule endpoint", async () => {
-    const res = await worker.fetch(makeRequest("GET", "/schedule/everyday"), {})
+    const res = await worker.fetch(makeRequest("GET", "/schedule/everyday"), {}, makeCtx())
     expect(res.status).toBe(404)
     expect(mockHandleEveryday).not.toHaveBeenCalled()
+  })
+
+  it("returns 401 for an unsigned Friday schedule and does not run flows", async () => {
+    mockHandleSchedule.mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }))
+    const res = await worker.fetch(makeRequest("POST", "/schedule/every-friday"), {}, makeCtx())
+    expect(res.status).toBe(401)
+    expect(mockHandleSchedule).toHaveBeenCalledOnce()
   })
 })

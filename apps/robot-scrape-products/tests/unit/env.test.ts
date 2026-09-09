@@ -75,6 +75,25 @@ describe("loadConfig", () => {
     ).toThrow(/SCRAPE_DELAY_MIN_MS/)
   })
 
+  it("accepts optional Grafana OTLP keys without requiring them", () => {
+    const config = loadConfig({
+      ...requiredEnv,
+      OBSERVABILITY_PROVIDER: "grafana-cloud",
+      OTEL_SERVICE_NAME: "robot-scrape-products",
+      DEPLOYMENT_ENVIRONMENT: "production",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp-gateway.example/otlp",
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic abc",
+    })
+    expect(config.OBSERVABILITY_PROVIDER).toBe("grafana-cloud")
+    expect(config.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("https://otlp-gateway.example/otlp")
+  })
+
+  it("boots when OTLP keys are absent", () => {
+    const config = loadConfig(requiredEnv)
+    expect(config.OTEL_EXPORTER_OTLP_ENDPOINT).toBeUndefined()
+    expect(config.OTEL_EXPORTER_OTLP_HEADERS).toBeUndefined()
+  })
+
   it("accepts optional web-app Redis without using it", () => {
     const config = loadConfig({
       ...requiredEnv,
