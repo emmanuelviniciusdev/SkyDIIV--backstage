@@ -23,7 +23,13 @@ Put keys in local `.env` and in GitHub Environment secret `ROBOT_SCRAPE_PRODUCTS
 | `OTEL_SERVICE_NAME` (default `robot-scrape-products`) | no |
 | `DEPLOYMENT_ENVIRONMENT` | no |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | yes |
-| `OTEL_EXPORTER_OTLP_HEADERS` (`Authorization=Basic …`) | yes |
+| `OTEL_EXPORTER_OTLP_HEADERS` (`Authorization=Basic …`, `Authorization=Basic%20…`, the base64 blob alone, or `instanceId:glc_…`) | yes |
+
+From the Grafana Cloud OpenTelemetry Configure page, paste **the value** of each variable (no `export`, no extra quotes). A bare `base64(instanceId:token)` blob is sent as `Authorization: Basic …`. Do not paste only a `glc_…` token without the instance id.
+
+### 401 `OTLP export rejected`
+
+The POST reached Grafana and auth was refused. The warn includes `auth`, `headersEnv` (length/flags of the secret, never the value), and `grafanaError`.
 
 ## What is recorded
 

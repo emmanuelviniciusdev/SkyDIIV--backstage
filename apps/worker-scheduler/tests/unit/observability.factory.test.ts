@@ -140,6 +140,59 @@ describe("GrafanaCloudOtlpProvider", () => {
     await expect(port.flush()).resolves.toBeUndefined()
     expect(warn).toHaveBeenCalled()
   })
+
+  it("sends Authorization from a bare base64 credential blob", async () => {
+    const bytes = new TextEncoder().encode("33755:glc_eyJtesttoken")
+    let binary = ""
+    for (const byte of bytes) binary += String.fromCharCode(byte)
+    const blob = btoa(binary)
+    const port = new GrafanaCloudOtlpProvider({
+      serviceName: "worker-scheduler",
+      deploymentEnvironment: "staging",
+      endpoint: ENDPOINT,
+      headers: blob,
+    })
+    port.startSpan("HTTP GET").end()
+    await port.flush()
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    const headers = new Headers(init.headers)
+    expect(headers.get("Authorization")).toBe(`Basic ${blob}`)
+  })
+
+  it("logs Grafana error text and auth scheme when export returns 401", async () => {
+    fetchMock.mockResolvedValue(
+      new Response('{"status":"error","error":"authentication error: no credentials provided"}', {
+        status: 401,
+      }),
+    )
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+    const port = new GrafanaCloudOtlpProvider({
+      serviceName: "worker-scheduler",
+      deploymentEnvironment: "staging",
+      endpoint: ENDPOINT,
+      headers: HEADERS,
+    })
+    port.logger("worker").info("request")
+    await port.flush()
+    expect(warn).toHaveBeenCalled()
+    const payload = JSON.parse(String(warn.mock.calls[0]?.[0])) as {
+      msg: string
+      status: number
+      auth: string
+      grafanaError: string
+      headersEnv: { hasAuthorizationWord: boolean; hasBasicWord: boolean }
+    }
+    expect(payload).toMatchObject({
+      msg: "OTLP export rejected",
+      status: 401,
+      auth: "basic",
+    })
+    expect(payload.grafanaError).toContain("no credentials provided")
+    expect(payload.headersEnv).toMatchObject({
+      hasAuthorizationWord: true,
+      hasBasicWord: true,
+    })
+  })
 })
 
 describe("NoopObservabilityProvider", () => {

@@ -33,11 +33,30 @@ Adding another backend: implement the port under `infrastructure/observability/p
 | `OTEL_SERVICE_NAME` | optional; default `worker-sync` | no |
 | `DEPLOYMENT_ENVIRONMENT` | wrangler `[vars]=production`, `[env.staging.vars]=staging` | no |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Worker secret / `.dev.vars` (Grafana OTLP gateway, e.g. `https://otlp-gateway-….grafana.net/otlp`) | yes |
-| `OTEL_EXPORTER_OTLP_HEADERS` | Worker secret / `.dev.vars` (`Authorization=Basic …`) | yes |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Worker secret / `.dev.vars` (`Authorization=Basic …`, `Authorization=Basic%20…`, the base64 blob alone, or `instanceId:glc_…`) | yes |
 
 Do not put OTLP credentials in wrangler.toml `[vars]`. GitHub Environments **staging** and **production** need the two OTEL secrets; CI syncs them with `wrangler secret bulk`.
 
+From the Grafana Cloud OpenTelemetry Configure page, paste **the value** of each variable (no `export`, no extra quotes):
+
+| Variable | Value |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `https://otlp-gateway-prod-<region>.grafana.net/otlp` (no `/v1/traces` suffix) |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Basic%20…`, `Authorization=Basic <blob>`, the base64 blob alone, or `instanceId:glc_…` |
+
+The adapter percent-decodes the header. A bare `base64(instanceId:token)` blob is sent as `Authorization: Basic …`. Do not paste only a `glc_…` token without the instance id.
+
 Locally, leave the OTEL secrets empty in `.dev.vars` to stay on noop.
+
+### 401 `OTLP export rejected`
+
+The POST reached Grafana and auth was refused. The warn includes `auth`, `headersEnv` (length/flags of the secret, never the value), and `grafanaError`.
+
+| `auth` / `headersEnv` | Typical cause |
+|---|---|
+| `missing` + `looksLikeBase64` | old parser; the blob alone did not become `Authorization` |
+| `other` + `hasPercent` | `Basic%20` was not decoded |
+| `basic` + Grafana `invalid token` | wrong instance id or token scopes (`logs:write`, `metrics:write`, `traces:write`) |
 
 ## What is recorded
 

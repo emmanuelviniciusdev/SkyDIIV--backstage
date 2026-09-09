@@ -7,10 +7,12 @@ import type {
 } from "../../../domain/ports/observability.port"
 import { emitConsoleNdjson } from "../console-ndjson"
 import {
+  describeOtlpHeadersEnv,
   exceptionMessage,
   normalizeOtlpEndpoint,
   otlpAttribute,
   otlpAttributes,
+  otlpAuthorizationScheme,
   parseOtlpHeaders,
   parseTraceparent,
   randomHex,
@@ -300,15 +302,24 @@ export class GrafanaCloudOtlpProvider implements ObservabilityPort {
   private async postJson(path: string, body: unknown): Promise<void> {
     const url = `${this.endpoint}${path}`
     try {
+      const headers = new Headers()
+      headers.set("Content-Type", "application/json")
+      for (const [key, value] of Object.entries(this.headers)) {
+        headers.set(key, value)
+      }
       const response = await fetch(url, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...this.headers,
-        },
+        headers,
         body: JSON.stringify(body),
       })
       if (!response.ok) {
+        let grafanaError: string | undefined
+        try {
+          const text = (await response.text()).trim()
+          if (text) grafanaError = text.slice(0, 300)
+        } catch {
+          grafanaError = undefined
+        }
         console.warn(
           JSON.stringify({
             ts: new Date().toISOString(),
@@ -317,6 +328,9 @@ export class GrafanaCloudOtlpProvider implements ObservabilityPort {
             msg: "OTLP export rejected",
             path,
             status: response.status,
+            auth: otlpAuthorizationScheme(this.headers),
+            headersEnv: describeOtlpHeadersEnv(this.config.headers),
+            grafanaError,
           }),
         )
       }

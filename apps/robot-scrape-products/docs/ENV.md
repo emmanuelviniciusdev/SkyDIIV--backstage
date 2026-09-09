@@ -45,7 +45,7 @@ boot, not mid-drain.
 | `OTEL_SERVICE_NAME` | `robot-scrape-products` | Resource `service.name` |
 | `DEPLOYMENT_ENVIRONMENT` | _(optional)_ | `staging` \| `production` \| `local` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | _(optional)_ | Grafana Cloud OTLP gateway URL |
-| `OTEL_EXPORTER_OTLP_HEADERS` | _(optional)_ | `Authorization=Basic …` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | _(optional)_ | `Authorization=Basic …`, Grafana `Basic%20` paste, base64 blob, or `instanceId:glc_…` |
 
 Validated by `src/infrastructure/config/env.ts` (Zod) — an invalid value fails at
 boot, not mid-scrape.
@@ -64,6 +64,7 @@ DATABASE_URL_UNPOOLED=postgresql://user:pass@host:5432/dbname?sslmode=require
 LOG_LEVEL=INFO
 OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-<region>.grafana.net/otlp
 OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <token>
+# also accepted: Grafana Basic%20 paste, the base64 blob alone, or instanceId:glc_…
 ```
 
 ```bash
