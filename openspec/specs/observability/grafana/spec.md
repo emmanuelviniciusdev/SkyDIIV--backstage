@@ -2,20 +2,25 @@
 
 ## Purpose
 
-Give operators a version-controlled Grafana Cloud overview dashboard that shows backstage RED metrics, and deploy that dashboard automatically from git.
+Give operators version-controlled Grafana Cloud dashboards that show backstage RED metrics and skydiiv-web image-upload RED metrics, and deploy those dashboards automatically from git.
 
 ## Requirements
 
 ### Requirement: Dashboard definitions live in the backstage repo
 
-The repository MUST keep Grafana dashboard definitions under `observability/grafana/`. Each dashboard MUST have a stable unique identifier that does not change across deploys. The set MUST include a platform overview of all backstage services. The set MUST NOT include a dedicated web ↔ backstage interactions dashboard, scheduled-pipelines dashboard, or per-service RED dashboard.
+The repository MUST keep Grafana dashboard definitions under `observability/grafana/`. Each dashboard MUST have a stable unique identifier that does not change across deploys. The set MUST include:
+
+- a platform overview of all backstage services
+- an images-uploads view of clothing-piece and profile-picture uploads from `skydiiv-web`
+
+The set MUST NOT include a dedicated web ↔ backstage interactions dashboard, scheduled-pipelines dashboard, or per-service RED dashboard.
 
 #### Scenario: Operators find dashboard sources in-repo
 
 - **GIVEN** the change is applied
 - **WHEN** an operator opens `observability/grafana/`
-- **THEN** a dashboard definition for overview is present
-- **AND** that definition includes a stable unique identifier
+- **THEN** dashboard definitions for overview and images uploads are present
+- **AND** each definition includes a stable unique identifier
 - **AND** no dashboard is dedicated to scheduled pipelines, per-service RED, or web ↔ backstage outbox, welcome-email, or language-sync hops
 
 ### Requirement: Overview dashboard shows backstage RED by service
@@ -38,6 +43,25 @@ Worker panels MUST use the existing `http.server.request.count` and `http.server
 - **WHEN** the operator selects environment `production`
 - **THEN** request volume, error rate, and latency are shown per service for that environment
 - **AND** health-check traffic (`GET /`) is distinguishable from signed work traffic
+
+### Requirement: Images-uploads dashboard shows clothing-piece and profile-picture upload RED
+
+The images-uploads dashboard MUST query `skydiiv-web` `http.server.request.count` and `http.server.request.duration` for:
+
+- `POST /api/upload/presign`
+- `POST /api/upload/stamp-owner`
+- `POST /api/pieces/classify`
+- `PUT` and `DELETE` `/api/user/profile-picture`
+
+Panels MUST be filterable by `deployment.environment` (`staging` | `production` | `local`). Clothing-piece success MUST be taken from classify 2xx, not from presign. Profile-picture saves MUST be taken from `PUT /api/user/profile-picture` 2xx. Queries MUST NOT assume a `purpose` label on presign or stamp-owner.
+
+#### Scenario: Operator inspects production image uploads
+
+- **GIVEN** Grafana Cloud contains OTLP telemetry from `skydiiv-web`
+- **AND** the images-uploads dashboard is loaded
+- **WHEN** the operator selects environment `production`
+- **THEN** presign and stamp-owner volume, clothing-piece classify success/errors, and profile-picture save/remove volume are shown for that environment
+- **AND** profile-picture saves are distinguishable from removals by HTTP method
 
 ### Requirement: Dashboards MUST NOT expose PII
 

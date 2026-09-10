@@ -8,7 +8,7 @@ Everything lands in the **SkyDIIV** folder.
 
 `dashboards/overview.json` · uid `skydiiv-bs-overview`
 
-The one dashboard we ship today. It answers "is backstage healthy right now?" across all the workers plus the scraping robot, without needing to know which app does what. Defaults to the last 24 hours and refreshes every minute. An **Environment** picker at the top switches between `production`, `staging`, and `local`; every panel is filtered by it.
+Answers "is backstage healthy right now?" across all the workers plus the scraping robot, without needing to know which app does what. Defaults to the last 24 hours and refreshes every minute. An **Environment** picker at the top switches between `production`, `staging`, and `local`; every panel is filtered by it.
 
 ### Workers
 
@@ -23,6 +23,33 @@ These four panels cover `worker-ai-workflows`, `worker-scheduler`, `worker-outbo
 
 - **Batch runs** — `batch_run_count` for `robot-scrape-products`, grouped by `batch_status`, so successes and failures sit side by side. The robot runs on a schedule, so this should look like regular pulses rather than a continuous line.
 - **Batch duration** — average `batch_run_duration` in milliseconds. A steadily climbing line usually means the catalogue is growing or the upstream site got slower, not that the robot broke.
+
+## SkyDIIV — Images Uploads
+
+`dashboards/image-uploads.json` · uid `skydiiv-bs-image-uploads`
+
+User-facing image uploads from `skydiiv-web` (`/api/*` RED metrics). Same environment picker and `_over_time` queries as overview. Direct PUTs to R2 are not in these series — only the Next.js routes around them.
+
+### Upload pipeline (R2)
+
+Presign (`POST /api/upload/presign`) and stamp-owner (`POST /api/upload/stamp-owner`) are shared by clothing pieces, profile pictures, and outfit (creative-board) uploads. `purpose` is not a metric label, so those two routes cannot be split by kind.
+
+- **Presigns (2xx)** / **Files landed (stamp-owner 2xx)** — range totals. A gap means the browser got a signed URL but never finished the R2 PUT (or stamp-owner failed).
+- **Presign vs stamp-owner volume** — the same funnel over time.
+- **Pipeline errors** — 4xx/5xx on those two routes.
+- **Pipeline p95 duration** — slow presign usually means R2 signing; slow stamp-owner is metadata copy on the object.
+- **Presign status codes** — 401 unauthenticated, 403 access key, 400 unsupported type or invalid input, 5xx R2/presign failure.
+
+### Clothing pieces
+
+- **Pieces saved** — `POST /api/pieces/classify` 2xx vs 4xx vs 5xx. A 2xx is a clothing item written to the database after the user classifies the image. This is the piece-specific success signal; it is not mixed with outfit or profile uploads.
+- **Classify p95 duration** — classification + Prisma write.
+
+### Profile pictures
+
+- **Profile pictures saved (PUT 2xx)** — range total after presign + R2 PUT + persist.
+- **Saved vs removed** — `PUT` vs `DELETE` on `/api/user/profile-picture`.
+- **Errors** and **p95** split by method.
 
 ## Writing queries
 

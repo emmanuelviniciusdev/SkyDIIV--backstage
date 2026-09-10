@@ -6,7 +6,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 
 export const DASHBOARDS_DIR = path.join(ROOT, "dashboards")
 
-export const REQUIRED_UIDS = ["skydiiv-bs-overview"]
+export const REQUIRED_UIDS = ["skydiiv-bs-overview", "skydiiv-bs-image-uploads"]
 
 export const REJECTED_UIDS = [
   "skydiiv-bs-web-interactions",
@@ -26,6 +26,15 @@ export const SERVICES = [
   "worker-notification",
   "worker-sync",
   "robot-scrape-products",
+]
+
+export const IMAGE_UPLOAD_SERVICE = "skydiiv-web"
+
+export const IMAGE_UPLOAD_ROUTES = [
+  "/api/upload/presign",
+  "/api/upload/stamp-owner",
+  "/api/pieces/classify",
+  "/api/user/profile-picture",
 ]
 
 export const PII_TERMS = ["email", "prompt", "payload"]
@@ -98,6 +107,7 @@ export function validateDashboardDir(dir = DASHBOARDS_DIR) {
 
   const uids = new Set()
   let overviewBlob = ""
+  let imageUploadsBlob = ""
 
   for (const { name, dashboard } of files) {
     if (!dashboard.uid || typeof dashboard.uid !== "string") {
@@ -127,6 +137,7 @@ export function validateDashboardDir(dir = DASHBOARDS_DIR) {
     }
 
     if (dashboard.uid === "skydiiv-bs-overview") overviewBlob = blob
+    if (dashboard.uid === "skydiiv-bs-image-uploads") imageUploadsBlob = blob
   }
 
   for (const uid of REQUIRED_UIDS) {
@@ -144,6 +155,20 @@ export function validateDashboardDir(dir = DASHBOARDS_DIR) {
     }
     if (!overviewBlob.includes("batch_run_count") || !overviewBlob.includes("batch_run_duration")) {
       errors.push("overview: robot batch_run_count and batch_run_duration queries are required")
+    }
+  }
+
+  if (imageUploadsBlob) {
+    if (!imageUploadsBlob.includes(`service_name="${IMAGE_UPLOAD_SERVICE}"`)) {
+      errors.push(`image-uploads: panel targets must include service_name ${IMAGE_UPLOAD_SERVICE}`)
+    }
+    for (const route of IMAGE_UPLOAD_ROUTES) {
+      if (!imageUploadsBlob.includes(route)) {
+        errors.push(`image-uploads: panel targets must include http_route ${route}`)
+      }
+    }
+    if (!imageUploadsBlob.includes('http_request_method="PUT"')) {
+      errors.push('image-uploads: profile-picture PUT filter is missing')
     }
   }
 

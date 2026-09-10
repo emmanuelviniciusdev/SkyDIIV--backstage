@@ -1,0 +1,686 @@
+{
+  "uid": "skydiiv-bs-image-uploads",
+  "title": "SkyDIIV — Images Uploads",
+  "description": "Clothing-piece and profile-picture uploads from skydiiv-web. Presign and stamp-owner also include outfit (creative-board) uploads because purpose is not a metric label.",
+  "tags": [],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "type": "custom",
+        "label": "Environment",
+        "query": "production,staging,local",
+        "current": {
+          "selected": true,
+          "text": "production",
+          "value": "production"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "production",
+            "value": "production"
+          },
+          {
+            "selected": false,
+            "text": "staging",
+            "value": "staging"
+          },
+          {
+            "selected": false,
+            "text": "local",
+            "value": "local"
+          }
+        ],
+        "includeAll": false,
+        "multi": false,
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Upload pipeline (R2)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Presigns (2xx)",
+      "description": "Signed URLs issued. Includes piece, profile-picture, and outfit purposes.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/upload/presign\",http_response_status_code=~\"2..\"}[$__range]))",
+          "legendFormat": "presigns"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Files landed (stamp-owner 2xx)",
+      "description": "R2 PUT succeeded and owner metadata was stamped. Gap vs presigns is abandoned or failed direct uploads.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/upload/stamp-owner\",http_response_status_code=~\"2..\"}[$__range]))",
+          "legendFormat": "landed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Pieces saved (classify 2xx)",
+      "description": "Clothing items written after classification. This is the piece-specific success signal.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/pieces/classify\",http_request_method=\"POST\",http_response_status_code=~\"2..\"}[$__range]))",
+          "legendFormat": "pieces"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Profile pictures saved (PUT 2xx)",
+      "description": "Profile picture URL persisted on the user after a successful upload.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/user/profile-picture\",http_request_method=\"PUT\",http_response_status_code=~\"2..\"}[$__range]))",
+          "legendFormat": "profiles"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Presign vs stamp-owner volume",
+      "description": "Drop-off after presign is a failed or abandoned R2 PUT. Both series include outfit uploads.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/upload/presign\"}[$__interval]))",
+          "legendFormat": "presign"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/upload/stamp-owner\"}[$__interval]))",
+          "legendFormat": "stamp-owner"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Pipeline errors (4xx/5xx)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (http_route) (count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=~\"/api/upload/presign|/api/upload/stamp-owner\",http_response_status_code=~\"4..|5..\"}[$__interval]))",
+          "legendFormat": "{{http_route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Pipeline p95 duration",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, http_server_request_duration{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/upload/presign\"}[$__interval])",
+          "legendFormat": "presign"
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, http_server_request_duration{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/upload/stamp-owner\"}[$__interval])",
+          "legendFormat": "stamp-owner"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Presign status codes",
+      "description": "401 unauthenticated, 403 access key, 400 unsupported type or invalid input, 5xx R2/presign failure.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (http_response_status_code) (count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/upload/presign\"}[$__interval]))",
+          "legendFormat": "{{http_response_status_code}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Clothing pieces",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Pieces saved (POST /api/pieces/classify)",
+      "description": "A 2xx here is a clothing item written to the database. 4xx is usually validation; 5xx is the app.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/pieces/classify\",http_request_method=\"POST\",http_response_status_code=~\"2..\"}[$__interval]))",
+          "legendFormat": "saved"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/pieces/classify\",http_request_method=\"POST\",http_response_status_code=~\"4..\"}[$__interval]))",
+          "legendFormat": "4xx"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/pieces/classify\",http_request_method=\"POST\",http_response_status_code=~\"5..\"}[$__interval]))",
+          "legendFormat": "5xx"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Classify p95 duration",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, http_server_request_duration{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/pieces/classify\",http_request_method=\"POST\"}[$__interval])",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "Profile pictures",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Profile picture saved vs removed",
+      "description": "PUT persists a new avatar after presign + R2 PUT. DELETE clears it. Both hit /api/user/profile-picture.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 31
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/user/profile-picture\",http_request_method=\"PUT\",http_response_status_code=~\"2..\"}[$__interval]))",
+          "legendFormat": "saved"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/user/profile-picture\",http_request_method=\"DELETE\",http_response_status_code=~\"2..\"}[$__interval]))",
+          "legendFormat": "removed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Profile picture errors (4xx/5xx)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 31
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (http_request_method) (count_over_time(http_server_request_count{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/user/profile-picture\",http_response_status_code=~\"4..|5..\"}[$__interval]))",
+          "legendFormat": "{{http_request_method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Profile picture p95 duration",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, http_server_request_duration{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/user/profile-picture\",http_request_method=\"PUT\"}[$__interval])",
+          "legendFormat": "PUT"
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, http_server_request_duration{deployment_environment=\"$environment\",service_name=\"skydiiv-web\",http_route=\"/api/user/profile-picture\",http_request_method=\"DELETE\"}[$__interval])",
+          "legendFormat": "DELETE"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}

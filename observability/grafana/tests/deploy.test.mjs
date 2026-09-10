@@ -92,7 +92,7 @@ describe("deployDashboards", () => {
     const folder = posts.find((item) => item.kind === "folder")
     expect(folder.body).toEqual({ uid: FOLDER_UID, title: FOLDER_TITLE })
     const dashPosts = posts.filter((item) => item.kind === "dashboard")
-    expect(dashPosts).toHaveLength(1)
+    expect(dashPosts).toHaveLength(2)
     for (const item of dashPosts) {
       expect(item.body.overwrite).toBe(true)
       expect(item.body.folderUid).toBe(FOLDER_UID)

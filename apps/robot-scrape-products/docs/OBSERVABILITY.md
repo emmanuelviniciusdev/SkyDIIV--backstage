@@ -37,7 +37,7 @@ Each process invocation gets a root `batch.run` span (`compute.provider`, `batch
 
 ## Dashboards
 
-Git-owned Grafana Cloud dashboard (**SkyDIIV — Overview**) lives in [`observability/grafana/README.md`](../../../observability/grafana/README.md). It queries this robot's OTLP metrics, logs, and traces. Git is the source of truth; UI-only edits are overwritten on deploy.
+Git-owned Grafana Cloud dashboards live in [`observability/grafana/README.md`](../../../observability/grafana/README.md). **SkyDIIV — Overview** queries this robot's OTLP metrics. Git is the source of truth; UI-only edits are overwritten on deploy.
 
 ## PII
 

@@ -4,6 +4,8 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   DASHBOARDS_DIR,
+  IMAGE_UPLOAD_ROUTES,
+  IMAGE_UPLOAD_SERVICE,
   REQUIRED_UIDS,
   SERVICES,
   collectQueryBlob,
@@ -47,11 +49,34 @@ function overviewTargets() {
   ]
 }
 
+function imageUploadTargets() {
+  return [
+    ...IMAGE_UPLOAD_ROUTES.map((route) => ({
+      expr: `count_over_time(http_server_request_count{service_name="${IMAGE_UPLOAD_SERVICE}",http_route="${route}"}[$__interval])`,
+    })),
+    {
+      expr: `count_over_time(http_server_request_count{service_name="${IMAGE_UPLOAD_SERVICE}",http_route="/api/user/profile-picture",http_request_method="PUT"}[$__interval])`,
+    },
+  ]
+}
+
+function requiredStubs() {
+  return {
+    "overview.json": stubDashboard("skydiiv-bs-overview", {
+      panels: [{ targets: overviewTargets() }],
+    }),
+    "image-uploads.json": stubDashboard("skydiiv-bs-image-uploads", {
+      panels: [{ targets: imageUploadTargets() }],
+    }),
+  }
+}
+
 describe("validateDashboardDir", () => {
   it("fails when a required uid is missing", () => {
     const dir = writeTempDashboards({})
     const errors = validateDashboardDir(dir)
     expect(errors.some((error) => error.includes("skydiiv-bs-overview"))).toBe(true)
+    expect(errors.some((error) => error.includes("skydiiv-bs-image-uploads"))).toBe(true)
   })
 
   it("rejects extra dashboard files and uids", () => {
@@ -69,22 +94,34 @@ describe("validateDashboardDir", () => {
     expect(errors.some((error) => error.includes("skydiiv-bs-service-red"))).toBe(true)
   })
 
-  it("passes a well-formed overview stub", () => {
-    const dir = writeTempDashboards({
-      "overview.json": stubDashboard("skydiiv-bs-overview", {
-        panels: [{ targets: overviewTargets() }],
-      }),
-    })
+  it("passes well-formed required dashboard stubs", () => {
+    const dir = writeTempDashboards(requiredStubs())
     expect(validateDashboardDir(dir)).toEqual([])
   })
 
-  it("accepts committed dashboards", () => {
-    expect(validateDashboardDir(DASHBOARDS_DIR)).toEqual([])
+  it("fails image-uploads stub that omits classify or profile PUT", () => {
+    const dir = writeTempDashboards({
+      ...requiredStubs(),
+      "image-uploads.json": stubDashboard("skydiiv-bs-image-uploads", {
+        panels: [
+          {
+            targets: [
+              {
+                expr: 'count_over_time(http_server_request_count{service_name="skydiiv-web",http_route="/api/upload/presign"}[$__interval])',
+              },
+            ],
+          },
+        ],
+      }),
+    })
+    const errors = validateDashboardDir(dir)
+    expect(errors.some((error) => error.includes("/api/pieces/classify"))).toBe(true)
+    expect(errors.some((error) => error.includes("PUT"))).toBe(true)
   })
 })
 
 describe("committed dashboards", () => {
-  it("ships only overview and forbids PII query terms", () => {
+  it("ships required dashboards and forbids PII query terms", () => {
     const files = Object.fromEntries(
       loadDashboardFiles(DASHBOARDS_DIR).map((file) => [file.dashboard.uid, file.dashboard]),
     )
@@ -93,9 +130,17 @@ describe("committed dashboards", () => {
     for (const service of SERVICES) {
       expect(overview).toContain(service)
     }
-    expect(overview).not.toMatch(/\brate\s*\(/)
-    for (const term of ["email", "prompt", "payload"]) {
-      expect(overview.toLowerCase()).not.toContain(term)
+    const imageUploads = collectQueryBlob(files["skydiiv-bs-image-uploads"])
+    expect(imageUploads).toContain(IMAGE_UPLOAD_SERVICE)
+    for (const route of IMAGE_UPLOAD_ROUTES) {
+      expect(imageUploads).toContain(route)
+    }
+    expect(files["skydiiv-bs-image-uploads"].title).toBe("SkyDIIV — Images Uploads")
+    for (const blob of [overview, imageUploads]) {
+      expect(blob).not.toMatch(/\brate\s*\(/)
+      for (const term of ["email", "prompt", "payload"]) {
+        expect(blob.toLowerCase()).not.toContain(term)
+      }
     }
   })
 })
