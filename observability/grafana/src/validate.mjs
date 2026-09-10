@@ -6,15 +6,18 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 
 export const DASHBOARDS_DIR = path.join(ROOT, "dashboards")
 
-export const REQUIRED_UIDS = [
-  "skydiiv-bs-overview",
+export const REQUIRED_UIDS = ["skydiiv-bs-overview"]
+
+export const REJECTED_UIDS = [
+  "skydiiv-bs-web-interactions",
   "skydiiv-bs-schedules",
   "skydiiv-bs-service-red",
 ]
-
-export const REJECTED_UIDS = ["skydiiv-bs-web-interactions"]
-export const REJECTED_FILES = ["web-backstage-interactions.json"]
-export const REQUIRED_TAGS = ["skydiiv", "backstage"]
+export const REJECTED_FILES = [
+  "web-backstage-interactions.json",
+  "scheduled-pipelines.json",
+  "service-red.json",
+]
 
 export const SERVICES = [
   "worker-ai-workflows",
@@ -23,24 +26,6 @@ export const SERVICES = [
   "worker-notification",
   "worker-sync",
   "robot-scrape-products",
-]
-
-export const SCHEDULE_ROUTES = [
-  "/schedule/every-sunday",
-  "/schedule/every-monday",
-  "/schedule/every-tuesday",
-  "/schedule/every-wednesday",
-  "/schedule/every-thursday",
-  "/schedule/every-friday",
-  "/schedule/every-saturday",
-  "/schedule/everyday",
-]
-
-export const AI_ROUTES = [
-  "/generate-weekly-outfits",
-  "/generate-wardrobe-panorama",
-  "/generate-search-terms-products-scraping",
-  "/analyze-scraped-products-results",
 ]
 
 export const PII_TERMS = ["email", "prompt", "payload"]
@@ -113,8 +98,6 @@ export function validateDashboardDir(dir = DASHBOARDS_DIR) {
 
   const uids = new Set()
   let overviewBlob = ""
-  let schedulesBlob = ""
-  let serviceRed = null
 
   for (const { name, dashboard } of files) {
     if (!dashboard.uid || typeof dashboard.uid !== "string") {
@@ -128,11 +111,6 @@ export function validateDashboardDir(dir = DASHBOARDS_DIR) {
       errors.push(`${name}: duplicate uid ${dashboard.uid}`)
     }
     uids.add(dashboard.uid)
-
-    const tags = dashboard.tags ?? []
-    for (const tag of REQUIRED_TAGS) {
-      if (!tags.includes(tag)) errors.push(`${name}: missing tag ${tag}`)
-    }
 
     if (!hasVariable(dashboard, "environment")) {
       errors.push(`${name}: missing templating variable environment`)
@@ -149,8 +127,6 @@ export function validateDashboardDir(dir = DASHBOARDS_DIR) {
     }
 
     if (dashboard.uid === "skydiiv-bs-overview") overviewBlob = blob
-    if (dashboard.uid === "skydiiv-bs-schedules") schedulesBlob = blob
-    if (dashboard.uid === "skydiiv-bs-service-red") serviceRed = dashboard
   }
 
   for (const uid of REQUIRED_UIDS) {
@@ -169,34 +145,6 @@ export function validateDashboardDir(dir = DASHBOARDS_DIR) {
     if (!overviewBlob.includes("batch_run_count") || !overviewBlob.includes("batch_run_duration")) {
       errors.push("overview: robot batch_run_count and batch_run_duration queries are required")
     }
-  }
-
-  if (schedulesBlob) {
-    for (const route of [...SCHEDULE_ROUTES, ...AI_ROUTES]) {
-      if (!schedulesBlob.includes(route)) {
-        errors.push(`scheduled-pipelines: panel targets must include ${route}`)
-      }
-    }
-    if (!schedulesBlob.includes("batch_run_count")) {
-      errors.push("scheduled-pipelines: robot batch_run_count query is required")
-    }
-  }
-
-  if (serviceRed) {
-    if (!hasVariable(serviceRed, "service")) {
-      errors.push("service-red: missing templating variable service")
-    } else {
-      const serviceVar = serviceRed.templating.list.find((item) => item.name === "service")
-      const haystack = JSON.stringify(serviceVar)
-      for (const service of SERVICES) {
-        if (!haystack.includes(service)) {
-          errors.push(`service-red: service variable must include ${service}`)
-        }
-      }
-    }
-    const raw = JSON.stringify(serviceRed)
-    if (!raw.includes("DS_LOKI")) errors.push("service-red: must reference DS_LOKI")
-    if (!raw.includes("DS_TEMPO")) errors.push("service-red: must reference DS_TEMPO")
   }
 
   return errors

@@ -1,10 +1,7 @@
 {
   "uid": "skydiiv-bs-overview",
-  "title": "SkyDIIV Backstage — Overview",
-  "tags": [
-    "skydiiv",
-    "backstage"
-  ],
+  "title": "SkyDIIV — Overview",
+  "tags": [],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "1m",

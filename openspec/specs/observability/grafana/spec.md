@@ -2,27 +2,21 @@
 
 ## Purpose
 
-Give operators version-controlled Grafana Cloud dashboards that show backstage RED metrics and scheduled pipelines (weekday CRON, AI workflows, robot batch), and deploy those dashboards automatically from git.
+Give operators a version-controlled Grafana Cloud overview dashboard that shows backstage RED metrics, and deploy that dashboard automatically from git.
 
 ## Requirements
 
 ### Requirement: Dashboard definitions live in the backstage repo
 
-The repository MUST keep Grafana dashboard definitions under `observability/grafana/`. Each dashboard MUST have a stable unique identifier that does not change across deploys. The set MUST include at least:
-
-- a platform overview of all backstage services
-- a scheduled-pipelines view
-- a per-service RED view that can be filtered by service name and deployment environment
-
-The set MUST NOT include a dedicated web ↔ backstage interactions dashboard.
+The repository MUST keep Grafana dashboard definitions under `observability/grafana/`. Each dashboard MUST have a stable unique identifier that does not change across deploys. The set MUST include a platform overview of all backstage services. The set MUST NOT include a dedicated web ↔ backstage interactions dashboard, scheduled-pipelines dashboard, or per-service RED dashboard.
 
 #### Scenario: Operators find dashboard sources in-repo
 
 - **GIVEN** the change is applied
 - **WHEN** an operator opens `observability/grafana/`
-- **THEN** dashboard definitions for overview, scheduled pipelines, and per-service RED are present
-- **AND** each definition includes a stable unique identifier
-- **AND** no dashboard is dedicated to web ↔ backstage outbox, welcome-email, or language-sync hops
+- **THEN** a dashboard definition for overview is present
+- **AND** that definition includes a stable unique identifier
+- **AND** no dashboard is dedicated to scheduled pipelines, per-service RED, or web ↔ backstage outbox, welcome-email, or language-sync hops
 
 ### Requirement: Overview dashboard shows backstage RED by service
 
@@ -44,32 +38,6 @@ Worker panels MUST use the existing `http.server.request.count` and `http.server
 - **WHEN** the operator selects environment `production`
 - **THEN** request volume, error rate, and latency are shown per service for that environment
 - **AND** health-check traffic (`GET /`) is distinguishable from signed work traffic
-
-### Requirement: Scheduled-pipelines dashboard covers CRON and robot work
-
-The scheduled-pipelines dashboard MUST show volume, errors, and latency for:
-
-- `worker-scheduler` weekday routes `/schedule/every-sunday` through `/schedule/every-saturday` and `/schedule/everyday`
-- `worker-ai-workflows` routes `/generate-weekly-outfits`, `/generate-wardrobe-panorama`, `/generate-search-terms-products-scraping`, and `/analyze-scraped-products-results`
-- `robot-scrape-products` batch runs (`batch.run.*`)
-
-#### Scenario: Sunday outfits pipeline is visible
-
-- **GIVEN** telemetry exists for `POST` `/schedule/every-sunday` and `POST` `/generate-weekly-outfits`
-- **WHEN** the operator opens the scheduled-pipelines dashboard
-- **THEN** both routes are plotted
-- **AND** robot batch success vs error is visible independently of worker HTTP
-
-### Requirement: Per-service RED dashboard is parameterized
-
-The per-service RED dashboard MUST accept a service-name variable whose values are the six backstage service names and an environment variable. Changing the service MUST update request (or batch) volume, status breakdown, latency percentiles, recent error logs, and a traces entry point for that service.
-
-#### Scenario: Operator drills into worker-scheduler
-
-- **GIVEN** the per-service dashboard is open
-- **WHEN** the operator selects service `worker-scheduler` and environment `production`
-- **THEN** panels show that service's request count, status codes, and duration
-- **AND** logs and traces for that service in that environment are reachable from the dashboard
 
 ### Requirement: Dashboards MUST NOT expose PII
 
@@ -100,7 +68,7 @@ On a pull request that changes `observability/grafana/` or the deploy workflow, 
 
 ### Requirement: Push deploys dashboards to Grafana Cloud
 
-When `observability/grafana/` or the Grafana deploy workflow changes on `staging` or `main` (or an operator runs the workflow manually on those branches), CI MUST upsert every dashboard into the Grafana Cloud stack configured for that GitHub Environment. Upsert MUST be keyed by the dashboard unique identifier so a second deploy of the same git tree does not create duplicate dashboards. Dashboards MUST land in a dedicated Grafana folder for SkyDIIV backstage. Datasource references MUST be resolved against that stack (Prometheus-compatible metrics, Loki logs, Tempo traces) rather than hard-coding another stack's datasource ids.
+When `observability/grafana/` or the Grafana deploy workflow changes on `staging` or `main` (or an operator runs the workflow manually on those branches), CI MUST upsert every dashboard into the Grafana Cloud stack configured for that GitHub Environment. Upsert MUST be keyed by the dashboard unique identifier so a second deploy of the same git tree does not create duplicate dashboards. Dashboards MUST land in the Grafana folder titled SkyDIIV. Datasource references MUST be resolved against that stack (Prometheus-compatible metrics, Loki logs, Tempo traces) rather than hard-coding another stack's datasource ids.
 
 Missing `GRAFANA_URL` or `GRAFANA_SERVICE_ACCOUNT_TOKEN` MUST fail the deploy job. A Grafana API error MUST fail the job. Deploy MUST NOT deploy, restart, or reconfigure any Cloudflare Worker or the robot.
 
@@ -109,7 +77,7 @@ Missing `GRAFANA_URL` or `GRAFANA_SERVICE_ACCOUNT_TOKEN` MUST fail the deploy jo
 - **GIVEN** GitHub Environment `production` has Grafana URL and service-account token
 - **AND** the dashboards do not yet exist in that Grafana Cloud stack
 - **WHEN** the workflow runs on `main`
-- **THEN** a SkyDIIV backstage folder exists in Grafana
+- **THEN** a SkyDIIV folder exists in Grafana
 - **AND** each dashboard in `observability/grafana/` is present with its stable unique identifier
 
 #### Scenario: Second deploy is idempotent

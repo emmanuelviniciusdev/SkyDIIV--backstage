@@ -64,7 +64,7 @@ Each `fetch` gets a root span (`http.request.method`, `http.route`, `http.respon
 
 ## Dashboards
 
-Git-owned Grafana Cloud dashboards (overview, scheduled pipelines, per-service RED) live in [`observability/grafana/README.md`](../../../observability/grafana/README.md). They query this worker's OTLP metrics, logs, and traces. Git is the source of truth; UI-only edits are overwritten on deploy.
+Git-owned Grafana Cloud dashboard (**SkyDIIV — Overview**) lives in [`observability/grafana/README.md`](../../../observability/grafana/README.md). It queries this worker's OTLP metrics, logs, and traces. Git is the source of truth; UI-only edits are overwritten on deploy.
 
 ## PII
 

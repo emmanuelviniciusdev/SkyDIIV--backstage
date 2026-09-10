@@ -7,8 +7,8 @@ import {
   resolveDatasourceUids,
 } from "./datasources.mjs"
 
-export const FOLDER_UID = "skydiiv-backstage"
-export const FOLDER_TITLE = "SkyDIIV Backstage"
+export const FOLDER_UID = "skydiiv"
+export const FOLDER_TITLE = "SkyDIIV"
 
 export function requireCredentials(env = process.env) {
   const grafanaUrl = env.GRAFANA_URL?.trim()
@@ -75,7 +75,7 @@ export async function upsertDashboard({
     dashboard: substituteDatasourceUids(dashboard, datasourceUids),
     folderUid: FOLDER_UID,
     overwrite: true,
-    message: "skydiiv-backstage observability/grafana from git",
+    message: "observability/grafana from git",
   }
   const response = await fetchImpl(`${grafanaUrl}/api/dashboards/db`, {
     method: "POST",

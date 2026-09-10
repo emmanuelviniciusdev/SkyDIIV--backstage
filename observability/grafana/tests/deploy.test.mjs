@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { pickDatasourceUid, resolveDatasourceUids } from "../src/datasources.mjs"
-import { deployDashboards, FOLDER_UID, requireCredentials } from "../src/deploy.mjs"
+import { deployDashboards, FOLDER_TITLE, FOLDER_UID, requireCredentials } from "../src/deploy.mjs"
 import { DASHBOARDS_DIR } from "../src/validate.mjs"
 
 describe("pickDatasourceUid", () => {
@@ -90,9 +90,9 @@ describe("deployDashboards", () => {
     await deployDashboards({ env, dashboardsDir: DASHBOARDS_DIR, fetchImpl })
 
     const folder = posts.find((item) => item.kind === "folder")
-    expect(folder.body).toEqual({ uid: FOLDER_UID, title: "SkyDIIV Backstage" })
+    expect(folder.body).toEqual({ uid: FOLDER_UID, title: FOLDER_TITLE })
     const dashPosts = posts.filter((item) => item.kind === "dashboard")
-    expect(dashPosts.length).toBeGreaterThanOrEqual(3)
+    expect(dashPosts).toHaveLength(1)
     for (const item of dashPosts) {
       expect(item.body.overwrite).toBe(true)
       expect(item.body.folderUid).toBe(FOLDER_UID)
@@ -107,7 +107,7 @@ describe("deployDashboards", () => {
       const method = init.method ?? "GET"
       const href = String(url)
       if (method === "GET" && href.endsWith("/api/folders")) {
-        return jsonResponse(200, [{ uid: FOLDER_UID, title: "SkyDIIV Backstage" }])
+        return jsonResponse(200, [{ uid: FOLDER_UID, title: FOLDER_TITLE }])
       }
       if (method === "GET" && href.endsWith("/api/datasources")) {
         return jsonResponse(200, datasources)

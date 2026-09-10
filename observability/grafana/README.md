@@ -1,38 +1,48 @@
 # Grafana Cloud dashboards
 
-Git is the **source of truth** for SkyDIIV backstage Grafana Cloud dashboards. Edits made only in the Grafana UI are overwritten the next time this project deploys.
+Git is the source of truth for the SkyDIIV backstage dashboards. If you tweak a panel in the Grafana UI, the next deploy overwrites it — change the JSON here instead.
 
-This directory is an independent Node 22 project (not a Cloudflare Worker). It does not change worker URLs, QStash, or OTLP adapters. Dashboards query telemetry already exported by the apps.
+Everything lands in the **SkyDIIV** folder.
 
-## Dashboards
+## SkyDIIV — Overview
 
-| File | uid | Purpose |
-|---|---|---|
-| `dashboards/overview.json` | `skydiiv-bs-overview` | RED by service, health (`GET /`) vs work, robot batch |
-| `dashboards/scheduled-pipelines.json` | `skydiiv-bs-schedules` | Weekday CRON routes, AI workflows, robot batch |
-| `dashboards/service-red.json` | `skydiiv-bs-service-red` | Drill-down with `$service` + `$environment`, Loki errors, Tempo traces |
+`dashboards/overview.json` · uid `skydiiv-bs-overview`
 
-Folder in Grafana Cloud: **SkyDIIV Backstage** (`skydiiv-backstage`). Tags: `skydiiv`, `backstage`. Default time range: last 24h.
+The one dashboard we ship today. It answers "is backstage healthy right now?" across all the workers plus the scraping robot, without needing to know which app does what. Defaults to the last 24 hours and refreshes every minute. An **Environment** picker at the top switches between `production`, `staging`, and `local`; every panel is filtered by it.
 
-There is no web ↔ backstage interactions dashboard. Outbox, welcome email, and language sync still appear as services on Overview and Service RED.
+### Workers
 
-## Queries
+These four panels cover `worker-ai-workflows`, `worker-scheduler`, `worker-outbox-events`, `worker-notification`, and `worker-sync`, each broken out as its own series so you can tell which app is misbehaving.
 
-OTLP metrics are **gauges** (count = 1 per request, duration in ms). Do **not** use Prometheus `rate()`. Use:
+- **Request volume** — how many HTTP requests each worker handled, from `http_server_request_count`. This is your baseline: a worker that normally sits at a steady line and suddenly drops to zero has either stopped being triggered or stopped responding.
+- **Error count (status 4xx/5xx)** — the same count filtered to `http_response_status_code=~"4..|5.."`. In practice 4xx here is usually a rejected QStash signature and 5xx is the worker itself failing, so a spike on one worker is the first place to look.
+- **p95 duration** — 95th percentile of `http_server_request_duration`, in milliseconds. Catches the slow tail that an average hides, which matters most for the AI workflows worker.
+- **Health (GET /) vs work** — splits request volume into `http_route="/"` and everything else. Health checks are cheap and constant; real work is the QStash-signed POSTs. Seeing both on one panel tells you whether a quiet worker is actually down or just not being asked to do anything.
 
-| Intent | Shape |
+### Robot scrape products
+
+- **Batch runs** — `batch_run_count` for `robot-scrape-products`, grouped by `batch_status`, so successes and failures sit side by side. The robot runs on a schedule, so this should look like regular pulses rather than a continuous line.
+- **Batch duration** — average `batch_run_duration` in milliseconds. A steadily climbing line usually means the catalogue is growing or the upstream site got slower, not that the robot broke.
+
+## Writing queries
+
+Our OTLP metrics arrive as **gauges** — each request emits a count of 1 plus a duration in milliseconds. Prometheus `rate()` gives wrong answers on those series, so use the `_over_time` family:
+
+| You want | Query |
 |---|---|
 | Volume | `count_over_time(http_server_request_count{...}[$__interval])` |
 | Average latency | `avg_over_time(http_server_request_duration{...}[$__interval])` |
 | p95 latency | `quantile_over_time(0.95, http_server_request_duration{...}[$__interval])` |
-| Errors | same count query with `http_response_status_code=~"4..\|5.."` |
-| Robot | `batch_run_count` / `batch_run_duration` with `batch_status` |
+| Errors | the volume query plus `http_response_status_code=~"4..\|5.."` |
+| Robot batches | `batch_run_count` / `batch_run_duration`, split by `batch_status` |
 
-Labels: `service_name`, `deployment_environment`, `http_route`, `http_request_method`, `http_response_status_code`.
+Labels available: `service_name`, `deployment_environment`, `http_route`, `http_request_method`, `http_response_status_code`.
 
-Datasource placeholders in JSON (`DS_PROMETHEUS`, `DS_LOKI`, `DS_TEMPO`) are replaced at deploy time from `GET /api/datasources`.
+Panels reference `DS_PROMETHEUS` instead of a real datasource id; deploy swaps in the actual UID so the same JSON works against any stack.
 
-## Local commands
+Never query email addresses, LLM prompts, or raw QStash payloads.
+
+## Working locally
 
 ```bash
 cd observability/grafana
@@ -42,11 +52,7 @@ npm test
 npm run validate
 ```
 
-`npm run validate` never calls Grafana Cloud.
-
-Grafana Cloud returns **403** (not 404) for `GET /api/folders/<uid>` when the folder does not exist. Deploy lists `GET /api/folders` and creates `SkyDIIV Backstage` if the uid is missing.
-
-To upsert into a stack:
+`npm run validate` is offline — it checks structure and never talks to Grafana Cloud. To push to a stack yourself:
 
 ```bash
 export GRAFANA_URL="https://<stack>.grafana.net"
@@ -54,24 +60,10 @@ export GRAFANA_SERVICE_ACCOUNT_TOKEN="..."
 npm run deploy
 ```
 
-Do not put these values in wrangler.toml, `.dev.vars`, or git.
+Keep those out of `wrangler.toml`, `.dev.vars`, and git.
 
-## GitHub Actions
+## CI
 
-`.github/workflows/deploy-grafana-dashboards.yml` validates on pull requests that touch this directory or the workflow file. On push to `staging` / `main` (and `workflow_dispatch` on those branches) it upserts dashboards.
+`.github/workflows/deploy-grafana-dashboards.yml` validates on pull requests that touch this directory, and upserts on pushes to `staging` and `main`. Both the `staging` and `production` GitHub Environments need `GRAFANA_URL` and a `GRAFANA_SERVICE_ACCOUNT_TOKEN` with `dashboards:write`, `folders:write`, and `datasources:read`. These are separate from the OTLP write credentials the workers use, and a missing one fails only this job.
 
-Add these **GitHub Environment** secrets on `staging` and `production` (distinct from worker OTLP write secrets):
-
-| Secret | Value |
-|---|---|
-| `GRAFANA_URL` | Grafana Cloud stack origin, no trailing path (example `https://<stack>.grafana.net`) |
-| `GRAFANA_SERVICE_ACCOUNT_TOKEN` | Service account token with `dashboards:write`, `folders:write`, `datasources:read` |
-
-Missing secrets fail only this deploy job. Worker and robot deploys are unchanged.
-
-## Adding a panel
-
-1. Edit the dashboard JSON under `dashboards/`.
-2. Keep the existing `uid`. Use `_over_time` queries. Do not add email, prompt, or raw QStash payload fields.
-3. Run `npm test` and `npm run validate`.
-4. Merge; CI deploys on `staging` / `main`.
+Deploy upserts by uid and never deletes, so a dashboard removed from git stays in Grafana until someone deletes it there.
