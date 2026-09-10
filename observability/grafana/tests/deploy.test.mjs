@@ -61,13 +61,16 @@ describe("deployDashboards", () => {
     { type: "tempo", name: "grafanacloud-traces", uid: "tempo-uid" },
   ]
 
-  it("creates the folder on 404 then upserts dashboards with overwrite and stripped id", async () => {
+  it("creates the folder when the list does not include it, then upserts dashboards", async () => {
     const posts = []
     const fetchImpl = vi.fn(async (url, init = {}) => {
       const method = init.method ?? "GET"
       const href = String(url)
-      if (method === "GET" && href.endsWith(`/api/folders/${FOLDER_UID}`)) {
-        return jsonResponse(404, { message: "not found" })
+      if (method === "GET" && href.endsWith("/api/folders")) {
+        return jsonResponse(200, [
+          { id: -1, uid: "sharedwithme", title: "Shared with me" },
+          { id: 1, uid: "cfxoue45zbabkf", title: "GrafanaCloud" },
+        ])
       }
       if (method === "POST" && href.endsWith("/api/folders")) {
         posts.push({ kind: "folder", body: JSON.parse(init.body) })
@@ -103,8 +106,8 @@ describe("deployDashboards", () => {
     const fetchImpl = vi.fn(async (url, init = {}) => {
       const method = init.method ?? "GET"
       const href = String(url)
-      if (method === "GET" && href.endsWith(`/api/folders/${FOLDER_UID}`)) {
-        return jsonResponse(200, { uid: FOLDER_UID, title: "SkyDIIV Backstage" })
+      if (method === "GET" && href.endsWith("/api/folders")) {
+        return jsonResponse(200, [{ uid: FOLDER_UID, title: "SkyDIIV Backstage" }])
       }
       if (method === "GET" && href.endsWith("/api/datasources")) {
         return jsonResponse(200, datasources)
@@ -130,7 +133,7 @@ describe("deployDashboards", () => {
 
   it("fails the process on Grafana 5xx", async () => {
     const fetchImpl = vi.fn(async (url) => {
-      if (String(url).endsWith(`/api/folders/${FOLDER_UID}`)) {
+      if (String(url).endsWith("/api/folders")) {
         return jsonResponse(500, { message: "boom" })
       }
       throw new Error(`unexpected ${url}`)

@@ -45,15 +45,16 @@ async function readJson(response, label) {
 }
 
 export async function ensureFolder({ grafanaUrl, token, fetchImpl = fetch }) {
-  const getUrl = `${grafanaUrl}/api/folders/${FOLDER_UID}`
-  const existing = await fetchImpl(getUrl, { headers: authHeaders(token) })
-  if (existing.status === 200) {
-    return readJson(existing, "GET /api/folders")
-  }
-  if (existing.status !== 404) {
-    const text = await existing.text()
-    throw new Error(`GET /api/folders/${FOLDER_UID} failed: ${existing.status} ${text.slice(0, 300)}`)
-  }
+  // List folders instead of GET /api/folders/:uid. Grafana Cloud returns 403
+  // (not 404) for an unknown uid, which looks like a permission error.
+  const listed = await fetchImpl(`${grafanaUrl}/api/folders`, {
+    headers: authHeaders(token),
+  })
+  const folders = await readJson(listed, "GET /api/folders")
+  const existing = Array.isArray(folders)
+    ? folders.find((folder) => folder.uid === FOLDER_UID)
+    : undefined
+  if (existing) return existing
 
   const created = await fetchImpl(`${grafanaUrl}/api/folders`, {
     method: "POST",

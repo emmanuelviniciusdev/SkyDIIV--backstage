@@ -44,6 +44,8 @@ npm run validate
 
 `npm run validate` never calls Grafana Cloud.
 
+Grafana Cloud returns **403** (not 404) for `GET /api/folders/<uid>` when the folder does not exist. Deploy lists `GET /api/folders` and creates `SkyDIIV Backstage` if the uid is missing.
+
 To upsert into a stack:
 
 ```bash

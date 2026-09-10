@@ -28,7 +28,7 @@ Do not commit `.env`, `.dev.vars`, credentials, or files that look like secrets.
 type(scope): subject
 ```
 
-Omit `(scope)` only for repo-wide work (root README, OpenSpec config, shared `.cursor/` files that are not app-specific).
+Omit `(scope)` only for repo-wide work with no natural area (root README, OpenSpec config, shared `.cursor/` files). Use `observability` for `observability/` (Grafana dashboards, deploy tooling).
 
 Subject: imperative, lowercase after the colon, no trailing period, focus on **why** not a file list.
 
@@ -57,10 +57,11 @@ Derive from the top-level path of the change:
 | `apps/worker-sync/` | `worker-sync` |
 | `apps/robot-scrape-products/` | `robot-scrape-products` |
 | `scripts/` | `scripts` |
+| `observability/` | `observability` |
 | `.github/workflows/` | `ci` |
 | deploy/Terraform under an app | that app's name, or `deploy` if the change is deploy-only across apps |
 
-If several apps changed, prefer **one commit per app**. If the user wants a single commit, drop the scope or use the dominant app.
+If several apps changed, prefer **one commit per app**. If the user wants a single commit, use the dominant app scope, or `observability` when the change is under `observability/` plus docs/CI for that area. Drop scope only when no row in the table fits.
 
 ## Output
 
@@ -73,6 +74,7 @@ If the user asked to **commit**, follow the repo git safety rules: stage the rel
 ```
 feat(worker-ai-workflows): use preferred_name in wardrobe panorama prompts
 fix(robot-scrape-products): make hard destroy reliable with OCI state
+fix(observability): list grafana folders before create to survive cloud 403 on missing uid
 chore(worker-scheduler): move neon-database-snapshot to every wednesday schedule
 chore: OpenSpec init
 ```
