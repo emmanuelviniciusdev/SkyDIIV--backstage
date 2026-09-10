@@ -62,6 +62,10 @@ The POST reached Grafana and auth was refused. The warn includes `auth`, `header
 
 Each `fetch` gets a root span (`http.request.method`, `http.route`, `http.response.status_code`), `http.server.request.count`, and `http.server.request.duration` (ms). Logs from `createLogger` attach to that span when Grafana Cloud is selected. Export runs in `waitUntil` so a Grafana outage does not change HTTP status.
 
+## Dashboards
+
+Git-owned Grafana Cloud dashboards (overview, scheduled pipelines, per-service RED) live in [`observability/grafana/README.md`](../../../observability/grafana/README.md). They query this worker's OTLP metrics, logs, and traces. Git is the source of truth; UI-only edits are overwritten on deploy.
+
 ## PII
 
 Allowed: `userId` when existing loggers already pass it. Forbidden as span/metric attributes: email, LLM prompt bodies, clothing images, and raw QStash payloads.

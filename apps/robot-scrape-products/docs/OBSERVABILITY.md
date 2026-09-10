@@ -35,6 +35,10 @@ The POST reached Grafana and auth was refused. The warn includes `auth`, `header
 
 Each process invocation gets a root `batch.run` span (`compute.provider`, `batch.status`), `batch.run.count`, and `batch.run.duration` (ms). Logs from the composition-root loggers attach when Grafana Cloud is selected. Export runs at shutdown; a Grafana outage does not skip scrape persistence, analyze outbox, or self-delete.
 
+## Dashboards
+
+Git-owned Grafana Cloud dashboards (overview, scheduled pipelines, per-service RED) live in [`observability/grafana/README.md`](../../../observability/grafana/README.md). They query this robot's OTLP metrics, logs, and traces. Git is the source of truth; UI-only edits are overwritten on deploy.
+
 ## PII
 
 Forbidden as span/metric attributes: listing HTML, proxy credentials, clothing images, and full outbox payloads.

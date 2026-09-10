@@ -1,0 +1,111 @@
+name: Deploy — Grafana dashboards
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - staging
+    paths:
+      - "observability/grafana/**"
+      - ".github/workflows/deploy-grafana-dashboards.yml"
+  pull_request:
+    branches:
+      - main
+      - staging
+    paths:
+      - "observability/grafana/**"
+      - ".github/workflows/deploy-grafana-dashboards.yml"
+
+concurrency:
+  group: grafana-dashboards-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: observability/grafana
+
+jobs:
+  validate:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: observability/grafana/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Validate dashboards
+        run: npm run validate
+
+  deploy-staging:
+    name: Deploy → Staging Grafana
+    needs: validate
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging')
+    environment:
+      name: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: observability/grafana/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Upsert dashboards
+        run: npm run deploy
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_SERVICE_ACCOUNT_TOKEN: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+
+  deploy-production:
+    name: Deploy → Production Grafana
+    needs: validate
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    environment:
+      name: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: observability/grafana/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Upsert dashboards
+        run: npm run deploy
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_SERVICE_ACCOUNT_TOKEN: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
