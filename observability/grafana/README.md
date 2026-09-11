@@ -21,7 +21,7 @@ These four panels cover `worker-ai-workflows`, `worker-scheduler`, `worker-outbo
 
 ### Robot scrape products
 
-- **Batch runs** — `batch_run_count` for `robot-scrape-products`, grouped by `batch_status`, so successes and failures sit side by side. The robot runs on a schedule, so this should look like regular pulses rather than a continuous line.
+- **Batch runs** — `batch_run_count` for `robot-scrape-products`, grouped by `batch_status`. While a scrape is in progress you should see `running`; when it finishes, `success` or `error`. The weekly job is a pulse, not a continuous worker line.
 - **Batch duration** — average `batch_run_duration` in milliseconds. A steadily climbing line usually means the catalogue is growing or the upstream site got slower, not that the robot broke.
 
 ## SkyDIIV — Images Uploads

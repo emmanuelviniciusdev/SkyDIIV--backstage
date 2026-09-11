@@ -36,7 +36,6 @@ describe("ScrapeProductsBatchRunner", () => {
     const insertResultsAndMarkProcessed = vi.fn().mockResolvedValue(undefined)
     const insertAnalyze = vi.fn().mockResolvedValueOnce("outbox-1").mockResolvedValueOnce("outbox-2")
     const publish = vi.fn().mockResolvedValue(undefined)
-    const deleteSelf = vi.fn().mockResolvedValue(undefined)
     const scrape = vi.fn().mockResolvedValue([
       {
         marketplace: "enjoei",
@@ -66,7 +65,6 @@ describe("ScrapeProductsBatchRunner", () => {
       outboxRepository: { insertAnalyzeScrapedProductsResults: insertAnalyze } as never,
       outboxPublisher: { publishProcessOutboxEvent: publish },
       resolveScraper: () => scraper,
-      selfDelete: { deleteSelf },
       logger: silentLogger(),
       concurrency: 2,
     })
@@ -83,7 +81,6 @@ describe("ScrapeProductsBatchRunner", () => {
       expect.objectContaining({ wardrobePanoramaId: "p2" }),
     )
     expect(publish).toHaveBeenCalledTimes(2)
-    expect(deleteSelf).toHaveBeenCalledOnce()
   })
 
   it("persists the confirmed listing size in json_result.metadata", async () => {
@@ -139,7 +136,6 @@ describe("ScrapeProductsBatchRunner", () => {
           },
         ]),
       }),
-      selfDelete: { deleteSelf: vi.fn() },
       logger: silentLogger(),
       concurrency: 2,
     })
@@ -167,7 +163,6 @@ describe("ScrapeProductsBatchRunner", () => {
       outboxRepository: { insertAnalyzeScrapedProductsResults: vi.fn() } as never,
       outboxPublisher: { publishProcessOutboxEvent: vi.fn() },
       resolveScraper: () => ({ marketplace: "enjoei", scrape }),
-      selfDelete: { deleteSelf: vi.fn() },
       logger: silentLogger(),
       concurrency: 2,
     })
@@ -208,7 +203,6 @@ describe("ScrapeProductsBatchRunner", () => {
       outboxPublisher: { publishProcessOutboxEvent: vi.fn() },
       resolveScraper: (name) =>
         name.toLowerCase() === "enjoei" ? { marketplace: "enjoei", scrape } : null,
-      selfDelete: { deleteSelf: vi.fn() },
       logger: silentLogger(),
       concurrency: 2,
     })

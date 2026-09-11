@@ -77,6 +77,9 @@ resource "oci_container_instances_container_instance" "robot" {
         CF_QUEUES_BATCH_SIZE = tostring(var.robot_batch_size)
         ROBOT_CONCURRENCY    = tostring(var.robot_concurrency)
         CAMOUFOX_HEADLESS    = "true"
+        # Overview dashboard filters on this label (default picker: production).
+        # Without it the OTLP adapter falls back to "local" and robot panels stay empty.
+        DEPLOYMENT_ENVIRONMENT = var.environment
       },
     )
 

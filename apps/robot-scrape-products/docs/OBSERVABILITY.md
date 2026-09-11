@@ -21,7 +21,7 @@ Put keys in local `.env` and in GitHub Environment secret `ROBOT_SCRAPE_PRODUCTS
 |---|---|
 | `OBSERVABILITY_PROVIDER` | no |
 | `OTEL_SERVICE_NAME` (default `robot-scrape-products`) | no |
-| `DEPLOYMENT_ENVIRONMENT` | no |
+| `DEPLOYMENT_ENVIRONMENT` | no (Terraform sets `var.environment` on the Container Instance) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | yes |
 | `OTEL_EXPORTER_OTLP_HEADERS` (`Authorization=Basic …`, `Authorization=Basic%20…`, the base64 blob alone, or `instanceId:glc_…`) | yes |
 
@@ -33,7 +33,9 @@ The POST reached Grafana and auth was refused. The warn includes `auth`, `header
 
 ## What is recorded
 
-Each process invocation gets a root `batch.run` span (`compute.provider`, `batch.status`), `batch.run.count`, and `batch.run.duration` (ms). Logs from the composition-root loggers attach when Grafana Cloud is selected. Export runs at shutdown; a Grafana outage does not skip scrape persistence, analyze outbox, or self-delete.
+Each process invocation gets a root `batch.run` span (`compute.provider`, `batch.status`), `batch.run.count`, and `batch.run.duration` (ms). A `batch.status=running` count is flushed at boot and again every 60s so the overview dashboard shows the robot while it scrapes; `success` or `error` plus duration are flushed after the batch and **before** OCI self-delete. Logs from the composition-root loggers attach when Grafana Cloud is selected. A Grafana outage does not skip scrape persistence, analyze outbox, or self-delete.
+
+If `DEPLOYMENT_ENVIRONMENT` is unset, the adapter labels series `local`. The overview dashboard defaults to **production**, so those series would not appear. Weekly OCI runs get `production` from Terraform.
 
 ## Dashboards
 

@@ -1,6 +1,5 @@
 import type { Logger } from "../domain/ports/logger.port.js"
 import type { MarketplaceScraperPort } from "../domain/ports/marketplace-scraper.port.js"
-import type { SelfDeletePort } from "../domain/ports/self-delete.port.js"
 import type { SqlOutboxEventsRepository } from "../infrastructure/db/outbox-events.repository.js"
 import type { SqlSearchResultsRepository } from "../infrastructure/db/search-results.repository.js"
 import type {
@@ -23,7 +22,6 @@ export interface ScrapeProductsBatchRunnerDeps {
   outboxRepository: SqlOutboxEventsRepository
   outboxPublisher: OutboxPublisherPort
   resolveScraper: (marketplace: string) => MarketplaceScraperPort | null
-  selfDelete: SelfDeletePort
   logger: Logger
   concurrency: number
 }
@@ -69,25 +67,14 @@ export class ScrapeProductsBatchRunner {
       concurrency: this.deps.concurrency,
     })
 
-    try {
-      const groups = await this.deps.searchTermsRepository.findUnprocessedGroupedByPanorama()
-      this.deps.logger.info("Unprocessed search-term groups loaded", {
-        panoramaCount: groups.length,
-        termCount: groups.reduce((sum, g) => sum + g.terms.length, 0),
-      })
+    const groups = await this.deps.searchTermsRepository.findUnprocessedGroupedByPanorama()
+    this.deps.logger.info("Unprocessed search-term groups loaded", {
+      panoramaCount: groups.length,
+      termCount: groups.reduce((sum, g) => sum + g.terms.length, 0),
+    })
 
-      for (const group of groups) {
-        await this.processPanorama(group)
-      }
-    } finally {
-      this.deps.logger.info("Invoking self-delete after scrape batch")
-      try {
-        await this.deps.selfDelete.deleteSelf()
-      } catch (err) {
-        this.deps.logger.error("Self-delete failed — GHA terraform destroy remains the fallback", {
-          error: err instanceof Error ? err.message : String(err),
-        })
-      }
+    for (const group of groups) {
+      await this.processPanorama(group)
     }
   }
 

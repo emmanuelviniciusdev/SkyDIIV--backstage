@@ -43,7 +43,7 @@ boot, not mid-drain.
 | `LOG_LEVEL` | `INFO` | `DEBUG` \| `INFO` \| `WARN` \| `ERROR` |
 | `OBSERVABILITY_PROVIDER` | _(auto)_ | `grafana-cloud` \| `noop`. Unset: Grafana when OTLP endpoint+headers are set, else noop |
 | `OTEL_SERVICE_NAME` | `robot-scrape-products` | Resource `service.name` |
-| `DEPLOYMENT_ENVIRONMENT` | _(optional)_ | `staging` \| `production` \| `local` |
+| `DEPLOYMENT_ENVIRONMENT` | _(injected by Terraform)_ | `staging` \| `production` \| `local`. OCI sets this from `var.environment`. Unset locally → OTLP label `local` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | _(optional)_ | Grafana Cloud OTLP gateway URL |
 | `OTEL_EXPORTER_OTLP_HEADERS` | _(optional)_ | `Authorization=Basic …`, Grafana `Basic%20` paste, base64 blob, or `instanceId:glc_…` |
 
@@ -75,8 +75,8 @@ Terraform merges its own values **over** this secret, so these keys are set by
 the infrastructure and do not need to be in it: `COMPUTE_PROVIDER`,
 `ROBOT_DISPLAY_NAME`, `OCI_COMPARTMENT_OCID`, `OCI_REGION`, `OCI_TENANCY_OCID`,
 `OCI_USER_OCID`, `OCI_FINGERPRINT`, `ROBOT_CONCURRENCY`,
-`CAMOUFOX_HEADLESS`. `OCI_API_PRIVATE_KEY` is injected by the workflow from the
-`OCI_API_PRIVATE_KEY` secret.
+`CAMOUFOX_HEADLESS`, `DEPLOYMENT_ENVIRONMENT`. `OCI_API_PRIVATE_KEY` is injected
+by the workflow from the `OCI_API_PRIVATE_KEY` secret.
 
 Registry secrets (`OCIR_NAMESPACE`, `OCIR_USERNAME`, `OCIR_AUTH_TOKEN`) and the
 OCI identity secrets are listed in [deploy/README.md](../deploy/README.md#secrets--variables).

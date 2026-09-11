@@ -109,7 +109,6 @@ async function main(): Promise<void> {
         return null
       }
     },
-    selfDelete,
     logger: observability.logger("scrape-batch"),
     concurrency: config.ROBOT_CONCURRENCY,
   })
@@ -142,6 +141,16 @@ async function main(): Promise<void> {
       () => runner.start(),
     )
   } finally {
+    // Self-delete after OTLP flush so completion metrics are not lost when OCI
+    // starts tearing down the Container Instance.
+    log.info("Invoking self-delete after scrape batch")
+    try {
+      await selfDelete.deleteSelf()
+    } catch (err: unknown) {
+      log.error("Self-delete failed — GHA terraform destroy remains the fallback", {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
     await closeDbClients(db)
   }
 }

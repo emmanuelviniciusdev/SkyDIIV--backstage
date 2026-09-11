@@ -59,6 +59,26 @@ describe("createObservabilityProvider", () => {
     expect(warn).toHaveBeenCalled()
   })
 
+  it("defaults deployment.environment to local when DEPLOYMENT_ENVIRONMENT is unset", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const port = createObservabilityProvider({
+      provider: "grafana-cloud",
+      serviceName: "robot-scrape-products",
+      otlp: { endpoint: ENDPOINT, headers: HEADERS },
+    })
+    port.startSpan("batch.run").end()
+    await port.flush()
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(typeof init.body).toBe("string")
+    const body = JSON.parse(init.body as string) as {
+      resourceSpans: { resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> } }[]
+    }
+    const env = body.resourceSpans[0]?.resource.attributes.find((a) => a.key === "deployment.environment")
+    expect(env?.value.stringValue).toBe("local")
+    vi.unstubAllGlobals()
+  })
+
   it("throws on an unknown provider id", () => {
     expect(() =>
       createObservabilityProvider({
