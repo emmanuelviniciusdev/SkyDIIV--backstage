@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
+  ANALYZE_LEAST_BAD_SELECTION_INSTRUCTION,
   buildAnalyzeScrapedResultsPrompt,
   toAnalyzePromptListing,
 } from "../../../src/lib/i18n/prompts/analyze-scraped-results"
@@ -67,5 +68,40 @@ describe("buildAnalyzeScrapedResultsPrompt()", () => {
     expect(prompt).not.toContain("searchParams")
     expect(prompt).not.toContain("marketplace")
     expect(prompt).not.toContain('"searchTerm"')
+    expect(prompt).toContain(ANALYZE_LEAST_BAD_SELECTION_INSTRUCTION)
+    expect(prompt).toContain("Grupo s1 (termo: casual blazer):")
+    expect(prompt).not.toContain("omita esse termo")
+  })
+
+  it("keeps every search-term group together and still requires one pick", () => {
+    const second = {
+      ...RESULT,
+      resultId: "r2",
+      searchTermId: "s1",
+      jsonResult: { ...RESULT.jsonResult, title: "navy blazer" },
+    }
+    const otherTerm = {
+      ...RESULT,
+      resultId: "r3",
+      searchTermId: "s2",
+      jsonSearch: { ...RESULT.jsonSearch, term: "calça reta" },
+      jsonResult: { ...RESULT.jsonResult, title: "calça preta" },
+    }
+
+    const prompt = buildAnalyzeScrapedResultsPrompt({
+      locale: "pt-BR",
+      panoramaContent: "panorama",
+      routineDescription: null,
+      results: [RESULT, otherTerm, second],
+    })
+
+    const firstGroup = prompt.indexOf("Grupo s1 (termo: casual blazer):")
+    const secondListing = prompt.indexOf('"resultId":"r2"')
+    const otherGroup = prompt.indexOf("Grupo s2 (termo: calça reta):")
+    expect(firstGroup).toBeGreaterThan(-1)
+    expect(secondListing).toBeGreaterThan(firstGroup)
+    expect(otherGroup).toBeGreaterThan(secondListing)
+    expect(prompt).toContain("menos ruim")
+    expect(prompt).toContain("Nunca devolva um array vazio")
   })
 })
