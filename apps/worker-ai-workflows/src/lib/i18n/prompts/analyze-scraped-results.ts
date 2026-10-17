@@ -8,10 +8,50 @@ export interface BuildAnalyzeScrapedResultsPromptInput {
   results: UnprocessedScrapeResult[]
 }
 
+/** Fields the analyze prompt needs: ids to return plus listing text to judge. */
+export interface AnalyzePromptListing {
+  searchTermScrapedProductId: string
+  resultId: string
+  title: string | null
+  price: number | null
+  currency: string | null
+  size: string | null
+}
+
 const LOCALE_LANGUAGE_NAMES: Record<Locale, string> = {
   "pt-BR": "português brasileiro",
   "es-PE": "espanhol peruano",
   "en-US": "inglês americano",
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return null
+}
+
+function asString(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  return null
+}
+
+export function toAnalyzePromptListing(row: UnprocessedScrapeResult): AnalyzePromptListing {
+  const metadata = asRecord(row.jsonResult.metadata)
+  return {
+    searchTermScrapedProductId: row.searchTermId,
+    resultId: row.resultId,
+    title: asString(row.jsonResult.title),
+    price: asNumber(row.jsonResult.price),
+    currency: asString(row.jsonResult.currency),
+    size: asString(metadata?.size),
+  }
 }
 
 export function buildAnalyzeScrapedResultsPrompt(
@@ -21,15 +61,7 @@ export function buildAnalyzeScrapedResultsPrompt(
   const routine = input.routineDescription?.trim() || "não informada"
 
   const resultsBlock = input.results
-    .map((row) => {
-      return JSON.stringify({
-        searchTermScrapedProductId: row.searchTermId,
-        resultId: row.resultId,
-        marketplace: row.marketplace,
-        jsonSearch: row.jsonSearch,
-        jsonResult: row.jsonResult,
-      })
-    })
+    .map((row) => JSON.stringify(toAnalyzePromptListing(row)))
     .join("\n")
 
   return `
