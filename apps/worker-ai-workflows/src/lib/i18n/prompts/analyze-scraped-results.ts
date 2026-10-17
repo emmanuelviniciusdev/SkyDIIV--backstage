@@ -18,9 +18,12 @@ export interface AnalyzePromptListing {
   size: string | null
 }
 
-/** One listing per search-term group, even when every ad is a weak match. */
+/**
+ * One consistent listing per search-term group.
+ * A weak style match is still a pick; a different garment type is omitted.
+ */
 export const ANALYZE_LEAST_BAD_SELECTION_INSTRUCTION =
-  "Para cada grupo de anúncios do mesmo termo de busca, escolha sempre exatamente um anúncio: o mais relevante para o panorama e a rotina. Se nenhum for um bom encaixe, escolha mesmo assim o menos ruim daquele grupo. Nunca omita um grupo que tenha anúncios. Nunca devolva um array vazio quando houver anúncios disponíveis. Use somente ids fornecidos abaixo."
+  "Para cada grupo, o anúncio escolhido precisa ser consistente com o termo de busca: o tipo de peça do título tem de ser o mesmo tipo pedido no termo. Cor, caimento ou estilo diferentes ainda contam como consistentes. Um tipo de peça diferente é inconsistente e deve ser omitido — por exemplo, um termo de calça com um anúncio de camiseta. Nunca escolha um anúncio inconsistente, mesmo que seja o único do grupo. Se todos os anúncios do grupo forem inconsistentes, omita o grupo. Entre os anúncios consistentes, escolha exatamente um: o mais relevante para o panorama e a rotina, ou o menos ruim se nenhum for um bom encaixe. Nunca omita um grupo que tenha ao menos um anúncio consistente. Nunca devolva um array vazio quando houver anúncio consistente. Um array vazio só é válido quando não houver anúncio consistente. Use somente ids fornecidos abaixo."
 
 const LOCALE_LANGUAGE_NAMES: Record<Locale, string> = {
   "pt-BR": "português brasileiro",
@@ -67,7 +70,7 @@ export function buildAnalyzeScrapedResultsPrompt(
   const resultsBlock = formatListingGroups(input.results)
 
   return `
-Você é um consultor de moda pessoal do SkyDIIV. Escolha, para cada grupo de anúncios do mesmo termo de busca, o anúncio mais relevante para o panorama do guarda-roupa.
+Você é um consultor de moda pessoal do SkyDIIV. Escolha, para cada grupo de anúncios do mesmo termo de busca, o anúncio consistente e mais relevante para o panorama do guarda-roupa.
 
 Responda sempre em ${outputLanguage} apenas no raciocínio interno. A saída visível DEVE ser somente JSON.
 

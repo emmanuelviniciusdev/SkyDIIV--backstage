@@ -70,6 +70,8 @@ describe("buildAnalyzeScrapedResultsPrompt()", () => {
     expect(prompt).not.toContain('"searchTerm"')
     expect(prompt).toContain(ANALYZE_LEAST_BAD_SELECTION_INSTRUCTION)
     expect(prompt).toContain("Grupo s1 (termo: casual blazer):")
+    expect(prompt).toContain("tipo de peça diferente é inconsistente")
+    expect(prompt).toContain("Um array vazio só é válido quando não houver anúncio consistente")
     expect(prompt).not.toContain("omita esse termo")
   })
 
@@ -102,6 +104,28 @@ describe("buildAnalyzeScrapedResultsPrompt()", () => {
     expect(secondListing).toBeGreaterThan(firstGroup)
     expect(otherGroup).toBeGreaterThan(secondListing)
     expect(prompt).toContain("menos ruim")
-    expect(prompt).toContain("Nunca devolva um array vazio")
+    expect(prompt).toContain("Nunca devolva um array vazio quando houver anúncio consistente")
+    expect(prompt).toContain("Nunca escolha um anúncio inconsistente")
+  })
+
+  it("still shows a mismatched listing so the model can omit it", () => {
+    const mismatched = {
+      ...RESULT,
+      resultId: "r-shirt",
+      searchTermId: "s-pants",
+      jsonSearch: { ...RESULT.jsonSearch, term: "calça sarja reta casual" },
+      jsonResult: { ...RESULT.jsonResult, title: "camiseta cinza" },
+    }
+
+    const prompt = buildAnalyzeScrapedResultsPrompt({
+      locale: "pt-BR",
+      panoramaContent: "panorama",
+      routineDescription: null,
+      results: [mismatched],
+    })
+
+    expect(prompt).toContain("Grupo s-pants (termo: calça sarja reta casual):")
+    expect(prompt).toContain('"title":"camiseta cinza"')
+    expect(prompt).toContain("termo de calça com um anúncio de camiseta")
   })
 })
