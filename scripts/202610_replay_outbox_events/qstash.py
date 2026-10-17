@@ -9,7 +9,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 from urllib.parse import urljoin
 
-DEFAULT_QSTASH_URL = "https://qstash.upstash.io"
+DEFAULT_QSTASH_URL = "https://qstash-us-east-1.upstash.io"
 PROCESS_OUTBOX_EVENT_PATH = "/process-outbox-event"
 BATCH_SIZE = 100
 
@@ -46,7 +46,16 @@ def post_json(url: str, token: str, body: Any, *, timeout_s: float = 60) -> None
             response.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"QStash batch publish failed ({exc.code}): {detail}") from exc
+        hint = ""
+        if "not found in this region" in detail:
+            hint = (
+                " Set QSTASH_URL to the regional endpoint of this QStash instance "
+                f"(this project uses {DEFAULT_QSTASH_URL}). "
+                "See https://upstash.com/docs/qstash/howto/multi-region"
+            )
+        raise RuntimeError(
+            f"QStash batch publish failed ({exc.code}): {detail}{hint}"
+        ) from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"QStash batch publish request failed: {exc}") from exc
 

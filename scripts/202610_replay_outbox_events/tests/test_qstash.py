@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import urllib.error
+from io import BytesIO
+from unittest.mock import patch
 
 import pytest
 
 from qstash import (
     BATCH_SIZE,
     build_batch_messages,
+    post_json,
     publish_process_outbox_events,
     resolve_process_outbox_event_url,
 )
@@ -89,6 +93,23 @@ def test_publish_posts_one_batch_for_a_small_list() -> None:
     assert isinstance(body, list)
     assert len(body) == 2
     assert json.loads(body[0]["body"]) == {"outboxEventId": "evt-1"}
+
+
+def test_post_json_region_mismatch_hints_at_qstash_url() -> None:
+    error = urllib.error.HTTPError(
+        url="https://qstash.upstash.io/v2/batch",
+        code=404,
+        msg="Not Found",
+        hdrs=None,
+        fp=BytesIO(
+            b'{"error":"user (abc) not found in this region (eu-central-1). '
+            b'Check that you are using the correct endpoint."}'
+        ),
+    )
+    with patch("qstash.urllib.request.urlopen", side_effect=error):
+        with pytest.raises(RuntimeError, match="QSTASH_URL") as exc_info:
+            post_json("https://qstash.upstash.io/v2/batch", "token", [])
+    assert "qstash-us-east-1.upstash.io" in str(exc_info.value)
 
 
 def test_publish_chunks_at_qstash_batch_limit() -> None:

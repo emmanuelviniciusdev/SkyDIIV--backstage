@@ -36,7 +36,7 @@ cp .env.example .env
 |----------|---------|---------|
 | `DATABASE_URL_UNPOOLED` or `DATABASE_URL` | — | Postgres connection string |
 | `QSTASH_TOKEN` | — | Outbound QStash publish |
-| `QSTASH_URL` | `https://qstash.upstash.io` | QStash API origin |
+| `QSTASH_URL` | — | Regional QStash origin |
 | `WORKER_OUTBOX_EVENTS_URL` | — | Worker origin (no path); the script appends `/process-outbox-event` |
 
 You can place `.env` in:
@@ -45,8 +45,10 @@ You can place `.env` in:
 - the current working directory when running the script
 - or pass it explicitly via `--env`
 
-`--dry-run` only needs the database URL. A real replay also needs `QSTASH_TOKEN`
-and `WORKER_OUTBOX_EVENTS_URL`.
+`--dry-run` only needs the database URL. A real replay also needs `QSTASH_TOKEN`,
+`QSTASH_URL`, and `WORKER_OUTBOX_EVENTS_URL`.
+
+Point `QSTASH_URL` at the same regional endpoint the workers use.
 
 ---
 

@@ -107,12 +107,23 @@ def test_missing_event_ids_preserves_request_order() -> None:
     assert missing_event_ids([ID_A, ID_B, ID_C], found) == [ID_A, ID_C]
 
 
-def test_load_qstash_config_requires_token_and_worker_url(
+def test_load_qstash_config_requires_token_url_and_worker_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("QSTASH_TOKEN", raising=False)
-    monkeypatch.delenv("WORKER_OUTBOX_EVENTS_URL", raising=False)
+    monkeypatch.setenv("QSTASH_TOKEN", "")
+    monkeypatch.setenv("QSTASH_URL", "")
+    monkeypatch.setenv("WORKER_OUTBOX_EVENTS_URL", "")
     with pytest.raises(RuntimeError, match="QSTASH_TOKEN"):
+        load_qstash_config()
+
+
+def test_load_qstash_config_requires_regional_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("QSTASH_TOKEN", "token")
+    monkeypatch.setenv("WORKER_OUTBOX_EVENTS_URL", "https://worker.example")
+    monkeypatch.setenv("QSTASH_URL", "")
+    with pytest.raises(RuntimeError, match="QSTASH_URL"):
         load_qstash_config()
 
 
@@ -180,6 +191,7 @@ def test_run_rejects_invalid_uuid_before_connecting() -> None:
 
 def test_run_resets_pending_then_publishes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QSTASH_TOKEN", "token")
+    monkeypatch.setenv("QSTASH_URL", "https://qstash-us-east-1.upstash.io")
     monkeypatch.setenv("WORKER_OUTBOX_EVENTS_URL", "https://worker.example")
     conn = FakeConn(
         [
@@ -206,6 +218,7 @@ def test_run_resets_pending_then_publishes(monkeypatch: pytest.MonkeyPatch) -> N
     assert {row["updated_by"] for row in conn.rows} == {"script:202610_replay_outbox_events"}
     assert published[0].ids == [ID_A, ID_B]
     assert published[0].qstash_token == "token"
+    assert published[0].qstash_url == "https://qstash-us-east-1.upstash.io"
     assert published[0].worker_outbox_events_url == "https://worker.example"
     assert conn.closed is True
 
@@ -213,8 +226,9 @@ def test_run_resets_pending_then_publishes(monkeypatch: pytest.MonkeyPatch) -> N
 def test_run_does_not_update_when_qstash_config_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("QSTASH_TOKEN", raising=False)
-    monkeypatch.delenv("WORKER_OUTBOX_EVENTS_URL", raising=False)
+    monkeypatch.setenv("QSTASH_TOKEN", "")
+    monkeypatch.setenv("QSTASH_URL", "")
+    monkeypatch.setenv("WORKER_OUTBOX_EVENTS_URL", "")
     conn = FakeConn([{"id": ID_A, "status": "ERROR", "updated_by": None}])
 
     code = run(
@@ -231,6 +245,7 @@ def test_run_does_not_update_when_qstash_config_is_missing(
 
 def test_run_returns_error_when_publish_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QSTASH_TOKEN", "token")
+    monkeypatch.setenv("QSTASH_URL", "https://qstash-us-east-1.upstash.io")
     monkeypatch.setenv("WORKER_OUTBOX_EVENTS_URL", "https://worker.example")
     conn = FakeConn([{"id": ID_A, "status": "ERROR", "updated_by": None}])
 

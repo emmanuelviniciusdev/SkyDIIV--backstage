@@ -99,15 +99,20 @@ def validate_event_ids(event_ids: Sequence[str]) -> list[str]:
 def load_qstash_config() -> QStashConfig:
     token = os.environ.get("QSTASH_TOKEN", "").strip()
     worker_url = os.environ.get("WORKER_OUTBOX_EVENTS_URL", "").strip()
-    qstash_url = os.environ.get("QSTASH_URL", "").strip() or DEFAULT_QSTASH_URL
+    qstash_url = os.environ.get("QSTASH_URL", "").strip()
     missing: list[str] = []
     if not token:
         missing.append("QSTASH_TOKEN")
+    if not qstash_url:
+        missing.append("QSTASH_URL")
     if not worker_url:
         missing.append("WORKER_OUTBOX_EVENTS_URL")
     if missing:
         raise RuntimeError(
-            "Missing required environment variables: " + ", ".join(missing)
+            "Missing required environment variables: "
+            + ", ".join(missing)
+            + f". QSTASH_URL must be the regional endpoint (e.g. {DEFAULT_QSTASH_URL}), "
+            "not the geo-routed https://qstash.upstash.io host."
         )
     return QStashConfig(
         token=token,
