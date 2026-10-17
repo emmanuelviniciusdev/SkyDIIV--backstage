@@ -1,9 +1,9 @@
 ---
-name: conventional-commit
+name: generate-commit-message
 description: Suggest a conventional commit message from git status, diff, and recent history. Use when the user asks for a commit message, wants help committing, or wants a message for recent or staged changes.
 ---
 
-# Conventional Commit
+# Generate Commit Message
 
 Suggest a commit message in this repo's style. Do **not** create the commit unless the user explicitly asked to commit.
 
