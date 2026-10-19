@@ -1,0 +1,17 @@
+[project]
+name = "backfill-clothing-item-colors-and-sizes"
+version = "0.1.0"
+description = "Backfill catalog colors and type-scoped sizes for existing clothing items"
+requires-python = ">=3.12"
+dependencies = [
+    "modern-colorthief>=0.1",
+    "pillow>=11",
+    "psycopg[binary]>=3.2",
+    "pytest>=8",
+    "python-dotenv>=1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [".", ".."]
+testpaths = ["tests"]
+addopts = "-q"
