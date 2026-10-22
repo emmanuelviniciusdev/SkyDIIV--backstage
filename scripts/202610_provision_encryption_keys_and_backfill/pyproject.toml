@@ -1,0 +1,17 @@
+[project]
+name = "provision-encryption-keys-and-backfill"
+version = "0.1.0"
+description = "Provision Cloudflare D1 encryption_keys and backfill listed Neon columns"
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=44",
+    "httpx>=0.28",
+    "psycopg[binary]>=3.2",
+    "pytest>=8",
+    "python-dotenv>=1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [".", ".."]
+testpaths = ["tests"]
+addopts = "-q"
