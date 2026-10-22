@@ -46,17 +46,29 @@ function decryptPacked(key: Buffer, payload: string, aad?: Buffer): Buffer {
 
 describe("field encryption", () => {
   it("maps only the columns that are sealed today", () => {
-    expect(ENCRYPTED_MODELS.ClothingItem.fields.map((field) => field.column)).toEqual([
-      "image_url",
-      "created_by",
-      "updated_by",
-    ])
-    expect(ENCRYPTED_MODELS.Outfit.fields.map((field) => field.column)).toEqual([
-      "image_url",
-      "created_by",
-      "updated_by",
-    ])
-    expect(ENCRYPTED_MODELS.Tag.fields.map((field) => field.column)).toEqual(["created_by", "updated_by"])
+    expect(ENCRYPTED_MODELS.ClothingItem.fields.map((field) => field.column)).toEqual(["image_url"])
+    expect(ENCRYPTED_MODELS.Outfit.fields.map((field) => field.column)).toEqual(["image_url"])
+    expect(ENCRYPTED_MODELS.Tag).toBeUndefined()
+  })
+
+  it("leaves created_by and updated_by unsealed even when those values are passed in", () => {
+    const sealed = sealModelValues({
+      model: "WardrobePanorama",
+      rowId: "pano-1",
+      values: {
+        content: "# Wardrobe",
+        createdBy: "worker-sync",
+        updatedBy: "worker-sync",
+      },
+      kek,
+      kekVersion: 1,
+      lookupKey,
+    })
+    expect(sealed.values.createdBy).toBeUndefined()
+    expect(sealed.values.updatedBy).toBeUndefined()
+    expect(sealed.encryptedColumns).toEqual(["content"])
+    expect(sealed.encryptedColumns).not.toContain("created_by")
+    expect(sealed.encryptedColumns).not.toContain("updated_by")
   })
 
   it("round-trips AES-256-GCM and omits null columns", () => {

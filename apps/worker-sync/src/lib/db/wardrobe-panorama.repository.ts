@@ -16,7 +16,7 @@ export class SqlWardrobePanoramaSyncRepository {
 
   async findTranslatableByUserId(userId: string): Promise<TranslatableWardrobePanorama | null> {
     const rows = await this.readDb<PanoramaEnvelopeRow[]>`
-      SELECT id, content, dek, kek_version, encrypted_columns, created_by, updated_by
+      SELECT id, content, dek, kek_version, encrypted_columns
       FROM wardrobe_panorama
       WHERE user_id = ${userId}
       LIMIT 1
@@ -29,7 +29,7 @@ export class SqlWardrobePanoramaSyncRepository {
 
   async updateContent(id: string, content: string): Promise<void> {
     const rows = await this.readDb<PanoramaEnvelopeRow[]>`
-      SELECT id, content, dek, kek_version, encrypted_columns, created_by, updated_by
+      SELECT id, content, dek, kek_version, encrypted_columns
       FROM wardrobe_panorama
       WHERE id = ${id}
       LIMIT 1
@@ -37,15 +37,10 @@ export class SqlWardrobePanoramaSyncRepository {
     const row = rows[0]
     if (!row) return
 
-    const opened = await this.openContent(row)
     const sealed = await sealListedFields({
       model: "WardrobePanorama",
       rowId: row.id,
-      values: {
-        content,
-        createdBy: opened.createdBy ?? CREATED_BY,
-        updatedBy: CREATED_BY,
-      },
+      values: { content },
     })
     const now = new Date()
     await this.writeDb`
@@ -56,8 +51,8 @@ export class SqlWardrobePanoramaSyncRepository {
         kek_version = ${sealed.kekVersion},
         encrypted_columns = ${sealed.encryptedColumns},
         updated_at = ${now},
-        created_by = ${sealed.values.createdBy},
-        updated_by = ${sealed.values.updatedBy}
+        created_by = ${CREATED_BY},
+        updated_by = ${CREATED_BY}
       WHERE id = ${id}
     `
   }
@@ -67,7 +62,7 @@ export class SqlWardrobePanoramaSyncRepository {
     return open({
       model: "WardrobePanorama",
       rowId: row.id,
-      values: { content: row.content, createdBy: row.created_by, updatedBy: row.updated_by },
+      values: { content: row.content },
       dek: row.dek,
       kekVersion: row.kek_version,
       encryptedColumns: row.encrypted_columns,
@@ -81,6 +76,4 @@ interface PanoramaEnvelopeRow {
   dek: string | null
   kek_version: number | null
   encrypted_columns: string[] | null
-  created_by: string | null
-  updated_by: string | null
 }

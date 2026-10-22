@@ -102,9 +102,9 @@ describe("SqlSummariesFeedbacksAutomaticThriftingRepository", () => {
     expect(sql).toMatch(/encrypted_columns/)
     expect(sql).not.toMatch(/ON CONFLICT/)
     const bound = db.mock.calls.flat().filter((v) => typeof v === "string" || Array.isArray(v))
-    expect(bound).not.toContain("worker-ai-workflows")
+    expect(bound).toContain("worker-ai-workflows")
     expect(bound).not.toContain("new")
-    expect(bound).toContainEqual(["summary", "created_by", "updated_by"])
+    expect(bound).toContainEqual(["summary"])
   })
 
   it("updates a sealed summary and keeps the outdated CAS", async () => {
@@ -134,7 +134,8 @@ describe("SqlSummariesFeedbacksAutomaticThriftingRepository", () => {
     expect(sql).not.toMatch(/ON CONFLICT/)
     const bound = db.mock.calls.flat().filter((v) => typeof v === "string" || Array.isArray(v))
     expect(bound).not.toContain("likes blazers")
-    expect(bound).toContainEqual(["summary", "created_by", "updated_by"])
+    expect(bound).toContain("worker-ai-workflows")
+    expect(bound).toContainEqual(["summary"])
   })
 
   it("stores a sealed empty string and returns it as plaintext on a later find", async () => {
@@ -227,7 +228,9 @@ describe("SqlSummariesFeedbacksAutomaticThriftingRepository", () => {
     expect(sql).toMatch(/updated_at <=/)
     expect(sql).not.toMatch(/SET summary = ''/)
     expect(stored?.summary).not.toBe("")
-    expect(stored?.encrypted_columns).toEqual(["summary", "created_by", "updated_by"])
+    expect(stored?.encrypted_columns).toEqual(["summary"])
+    expect(stored?.created_by).toBe("worker-ai-workflows")
+    expect(stored?.updated_by).toBe("worker-ai-workflows")
 
     const reader = makeSqlMock([stored])
     const found = await new SqlSummariesFeedbacksAutomaticThriftingRepository(reader).findByUserId("u1")

@@ -1,6 +1,6 @@
 # Field encryption
 
-Language sync decrypts `wardrobe_panorama.content` before the translation LLM and encrypts the translated content before writing it back. `llm_interactions.prompt` and `response` are sealed on insert. `created_by` / `updated_by` on those envelope rows are sealed too; this worker still writes `worker-sync` into those columns. Historical emails in actor columns are rewritten to that email’s `email_lookup` HMAC by the provision/backfill script, not by this worker. `weekly_outfits.weather_summary` and `weekly_outfits.description_temperature` stay plaintext. `created_by` / `updated_by` on `access_keys`, `domains`, `events`, and `outbox_events` stay plaintext.
+Language sync decrypts `wardrobe_panorama.content` before the translation LLM and encrypts the translated content before writing it back. `llm_interactions.prompt` and `response` are sealed on insert. `created_by` / `updated_by` stay plaintext; this worker writes `worker-sync` into those columns. Historical emails in actor columns are rewritten to that email’s `email_lookup` HMAC by the provision/backfill script, not by this worker. `weekly_outfits.weather_summary` and `weekly_outfits.description_temperature` stay plaintext. `created_by` / `updated_by` on `access_keys`, `domains`, `events`, and `outbox_events` stay plaintext.
 
 The envelope matches SkyDIIV web app. Workflow payloads stay plaintext.
 
