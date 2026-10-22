@@ -343,6 +343,32 @@ def test_clothing_item_title_stays_plaintext_and_tags_are_untouched() -> None:
     assert not any(" from tags" in query[0].lower() for query in conn.queries)
 
 
+def test_backfill_enables_autocommit_so_row_updates_survive_close() -> None:
+    conn = FakeConn({"users": {"user-1": _user()}}, LISTED)
+    assert conn.autocommit is False
+    code = _run(conn, _d1(), dry_run=False, table="users")
+    assert code == 0
+    assert conn.autocommit is True
+    assert conn.closed is True
+    assert conn.tables["users"]["user-1"]["dek"] is not None
+
+
+def test_non_user_lock_select_omits_lookup_columns() -> None:
+    conn = FakeConn({"clothing_items": {"item-1": _item()}}, LISTED)
+    code = _run(conn, _d1(), dry_run=False, table="clothing_items")
+    assert code == 0
+    lock_sql = next(query[0] for query in conn.queries if "for update" in query[0].lower())
+    assert "lookup_columns" not in lock_sql.lower()
+    assert "email_lookup" not in lock_sql.lower()
+    user_conn = FakeConn({"users": {"user-1": _user()}}, LISTED)
+    _run(user_conn, _d1(), dry_run=False, table="users")
+    user_lock = next(
+        query[0] for query in user_conn.queries if "for update" in query[0].lower()
+    )
+    assert "lookup_columns" in user_lock.lower()
+    assert "email_lookup" in user_lock.lower()
+
+
 def test_limit_and_table_flags() -> None:
     conn = FakeConn(
         {

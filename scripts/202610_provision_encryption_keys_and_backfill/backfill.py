@@ -51,6 +51,11 @@ def backfill(
         log.error(f"Failed to connect: {exc}")
         return 1
 
+    # fetch_candidate_ids SELECTs first. With autocommit off that opens an
+    # implicit transaction, so seal_row's connection.transaction() only
+    # creates savepoints and conn.close() rolls every UPDATE back.
+    conn.autocommit = True
+
     tables = (table,) if table else BACKFILL_TABLES
     try:
         for name in tables:
@@ -58,7 +63,7 @@ def backfill(
             try:
                 ids = fetch_candidate_ids(conn, spec, limit)
             except Exception as exc:
-                log.error(f"Failed to list {name} error={type(exc).__name__}")
+                log.error(f"Failed to list {name} error={type(exc).__name__}: {exc}")
                 return 1
             log.info(f"{name} candidates={len(ids)}")
             for row_id in ids:
@@ -73,7 +78,8 @@ def backfill(
                         log.info(f"Skipped {name} id={row_id}")
                 except Exception as exc:
                     log.error(
-                        f"Failed to seal {name} id={row_id} error={type(exc).__name__}"
+                        f"Failed to seal {name} id={row_id} "
+                        f"error={type(exc).__name__}: {exc}"
                     )
                     continue
         return 0
@@ -102,10 +108,9 @@ def fetch_candidate_ids(
 
 def seal_row(conn: Any, spec: EncryptedModelSpec, row_id: str, keys: Any) -> bool:
     listed = ", ".join(spec.fields)
-    extra = ", email_lookup" if spec.table == "users" else ""
+    extra = ", lookup_columns, email_lookup" if spec.lookup else ""
     select_sql = (
-        f"SELECT id, {listed}, dek, kek_version, encrypted_columns, "
-        f"lookup_columns{extra} "
+        f"SELECT id, {listed}, dek, kek_version, encrypted_columns{extra} "
         f"FROM {spec.table} WHERE id = %s AND dek IS NULL FOR UPDATE"
     )
     with conn.transaction():
@@ -150,4 +155,4 @@ def seal_row(conn: Any, spec: EncryptedModelSpec, row_id: str, keys: Any) -> boo
                 "WHERE id = %s AND dek IS NULL",
                 tuple(params),
             )
-            return True
+            return cur.rowcount > 0

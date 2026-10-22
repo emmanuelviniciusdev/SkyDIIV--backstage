@@ -14,6 +14,7 @@ class FakeCursor:
     def __init__(self, conn: FakeConn) -> None:
         self.conn = conn
         self._rows: list[dict[str, Any]] = []
+        self.rowcount = 0
 
     def __enter__(self) -> FakeCursor:
         return self
@@ -27,9 +28,11 @@ class FakeCursor:
         lower = sql.lower()
         if lower.startswith("select") and "for update" in lower:
             self._lock_row(sql, params)
+            self.rowcount = len(self._rows)
             return
         if lower.startswith("select"):
             self._select_candidates(sql, params)
+            self.rowcount = len(self._rows)
             return
         if lower.startswith("update"):
             self._update(sql, params)
@@ -77,8 +80,10 @@ class FakeCursor:
         updates = dict(zip(assignments, params[:-1], strict=True))
         row = self.conn.tables.get(table, {}).get(row_id)
         if row is None or row.get("dek") is not None:
+            self.rowcount = 0
             return
         row.update(updates)
+        self.rowcount = 1
 
 
 class FakeTransaction:
@@ -108,6 +113,8 @@ class FakeConn:
         self.fail_update_ids = fail_update_ids or set()
         self.queries: list[tuple[str, tuple[Any, ...] | None]] = []
         self.closed = False
+        self.autocommit = False
+        self._baseline = copy.deepcopy(tables)
 
     def cursor(self, row_factory: Any = None) -> FakeCursor:
         return FakeCursor(self)
@@ -117,6 +124,8 @@ class FakeConn:
 
     def close(self) -> None:
         self.closed = True
+        if not self.autocommit:
+            self.tables = copy.deepcopy(self._baseline)
 
     def updates(self) -> list[tuple[str, tuple[Any, ...] | None]]:
         return [
