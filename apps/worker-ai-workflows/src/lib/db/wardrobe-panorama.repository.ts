@@ -24,6 +24,8 @@ interface WardrobePanoramaRow {
   dek: string | null
   kek_version: number | null
   encrypted_columns: string[] | null
+  created_by: string | null
+  updated_by: string | null
 }
 
 export class SqlWardrobePanoramaRepository {
@@ -32,7 +34,7 @@ export class SqlWardrobePanoramaRepository {
   async findById(id: string): Promise<WardrobePanoramaRecord | null> {
     const reader = this.readDb ?? this.writeDb
     const rows = await reader<WardrobePanoramaRow[]>`
-      SELECT id, user_id, content, dek, kek_version, encrypted_columns
+      SELECT id, user_id, content, dek, kek_version, encrypted_columns, created_by, updated_by
       FROM wardrobe_panorama
       WHERE id = ${id}
       LIMIT 1
@@ -43,7 +45,7 @@ export class SqlWardrobePanoramaRepository {
     const opened = await open({
       model: "WardrobePanorama",
       rowId: row.id,
-      values: { content: row.content },
+      values: { content: row.content, createdBy: row.created_by, updatedBy: row.updated_by },
       dek: row.dek,
       kekVersion: row.kek_version,
       encryptedColumns: row.encrypted_columns,
@@ -58,7 +60,7 @@ export class SqlWardrobePanoramaRepository {
     // Attempt to read using the provided readDb if available, otherwise use writeDb
     const reader = this.readDb ?? this.writeDb
     const existing = await reader<WardrobePanoramaRow[]>`
-      SELECT id, user_id, content, dek, kek_version, encrypted_columns
+      SELECT id, user_id, content, dek, kek_version, encrypted_columns, created_by, updated_by
       FROM wardrobe_panorama
       WHERE user_id = ${input.userId}
       LIMIT 1
@@ -69,7 +71,7 @@ export class SqlWardrobePanoramaRepository {
       const sealed = await sealListedFields({
         model: "WardrobePanorama",
         rowId: id,
-        values: { content: input.content },
+        values: { content: input.content, createdBy: CREATED_BY, updatedBy: CREATED_BY },
       })
       await this.writeDb`
         INSERT INTO wardrobe_panorama (
@@ -78,17 +80,17 @@ export class SqlWardrobePanoramaRepository {
         ) VALUES (
           ${id}, ${input.userId}, ${input.llmInteractionId ?? null}, ${sealed.values.content},
           ${sealed.dek}, ${sealed.kekVersion}, ${sealed.encryptedColumns},
-          ${now}, ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
+          ${now}, ${sealed.values.createdBy}, ${sealed.values.updatedBy}, ${now}, ${now}
         )
       `
       log.info("Inserted wardrobe panorama", { id })
     } else {
       const row = existing[0]
       const open = createListedRowOpener()
-      await open({
+      const opened = await open({
         model: "WardrobePanorama",
         rowId: row.id,
-        values: { content: row.content },
+        values: { content: row.content, createdBy: row.created_by, updatedBy: row.updated_by },
         dek: row.dek,
         kekVersion: row.kek_version,
         encryptedColumns: row.encrypted_columns,
@@ -96,7 +98,11 @@ export class SqlWardrobePanoramaRepository {
       const sealed = await sealListedFields({
         model: "WardrobePanorama",
         rowId: row.id,
-        values: { content: input.content },
+        values: {
+          content: input.content,
+          createdBy: opened.createdBy ?? CREATED_BY,
+          updatedBy: CREATED_BY,
+        },
       })
       await this.writeDb`
         UPDATE wardrobe_panorama
@@ -107,7 +113,8 @@ export class SqlWardrobePanoramaRepository {
             encrypted_columns = ${sealed.encryptedColumns},
             generated_at = ${now},
             updated_at = ${now},
-            updated_by = ${CREATED_BY}
+            created_by = ${sealed.values.createdBy},
+            updated_by = ${sealed.values.updatedBy}
         WHERE id = ${row.id}
       `
       log.info("Updated wardrobe panorama", { id: row.id })

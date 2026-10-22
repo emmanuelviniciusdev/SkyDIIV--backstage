@@ -31,6 +31,8 @@ interface SummaryRow {
   dek: string | null
   kek_version: number | null
   encrypted_columns: string[] | null
+  created_by: string | null
+  updated_by: string | null
 }
 
 export class SqlSummariesFeedbacksAutomaticThriftingRepository
@@ -40,7 +42,7 @@ export class SqlSummariesFeedbacksAutomaticThriftingRepository
 
   async findByUserId(userId: string): Promise<SummaryFeedbackAutomaticThriftingRow | null> {
     const rows = await this.db<SummaryRow[]>`
-      SELECT id, user_id, summary, outdated, updated_at, dek, kek_version, encrypted_columns
+      SELECT id, user_id, summary, outdated, updated_at, dek, kek_version, encrypted_columns, created_by, updated_by
       FROM summaries_feedbacks_automatic_thrifting
       WHERE user_id = ${userId}
       LIMIT 1
@@ -63,7 +65,7 @@ export class SqlSummariesFeedbacksAutomaticThriftingRepository
     readAt: Date
   }): Promise<void> {
     const existing = await this.db<SummaryRow[]>`
-      SELECT id, user_id, summary, outdated, updated_at, dek, kek_version, encrypted_columns
+      SELECT id, user_id, summary, outdated, updated_at, dek, kek_version, encrypted_columns, created_by, updated_by
       FROM summaries_feedbacks_automatic_thrifting
       WHERE user_id = ${input.userId}
       LIMIT 1
@@ -75,7 +77,7 @@ export class SqlSummariesFeedbacksAutomaticThriftingRepository
       const sealed = await sealListedFields({
         model: "SummaryFeedbackAutomaticThrifting",
         rowId: id,
-        values: { summary: input.summary },
+        values: { summary: input.summary, createdBy: CREATED_BY, updatedBy: CREATED_BY },
       })
       await this.db`
         INSERT INTO summaries_feedbacks_automatic_thrifting (
@@ -89,8 +91,8 @@ export class SqlSummariesFeedbacksAutomaticThriftingRepository
           ${sealed.kekVersion},
           ${sealed.encryptedColumns},
           ${false},
-          ${CREATED_BY},
-          ${CREATED_BY},
+          ${sealed.values.createdBy},
+          ${sealed.values.updatedBy},
           ${now},
           ${now}
         )
@@ -98,11 +100,15 @@ export class SqlSummariesFeedbacksAutomaticThriftingRepository
       return
     }
 
-    await this.openSummary(current)
+    const opened = await this.openSummary(current)
     const sealed = await sealListedFields({
       model: "SummaryFeedbackAutomaticThrifting",
       rowId: current.id,
-      values: { summary: input.summary },
+      values: {
+        summary: input.summary,
+        createdBy: opened.createdBy ?? CREATED_BY,
+        updatedBy: CREATED_BY,
+      },
     })
     await this.db`
       UPDATE summaries_feedbacks_automatic_thrifting
@@ -116,7 +122,8 @@ export class SqlSummariesFeedbacksAutomaticThriftingRepository
             THEN false
             ELSE summaries_feedbacks_automatic_thrifting.outdated
           END,
-          updated_by = ${CREATED_BY},
+          created_by = ${sealed.values.createdBy},
+          updated_by = ${sealed.values.updatedBy},
           updated_at = ${now}
       WHERE id = ${current.id}
     `
@@ -124,7 +131,7 @@ export class SqlSummariesFeedbacksAutomaticThriftingRepository
 
   async clearStaleEmpty(input: { userId: string; readAt: Date }): Promise<void> {
     const rows = await this.db<SummaryRow[]>`
-      SELECT id, user_id, summary, outdated, updated_at, dek, kek_version, encrypted_columns
+      SELECT id, user_id, summary, outdated, updated_at, dek, kek_version, encrypted_columns, created_by, updated_by
       FROM summaries_feedbacks_automatic_thrifting
       WHERE user_id = ${input.userId}
         AND outdated = true
@@ -134,11 +141,15 @@ export class SqlSummariesFeedbacksAutomaticThriftingRepository
     const current = rows[0]
     if (!current) return
 
-    await this.openSummary(current)
+    const opened = await this.openSummary(current)
     const sealed = await sealListedFields({
       model: "SummaryFeedbackAutomaticThrifting",
       rowId: current.id,
-      values: { summary: "" },
+      values: {
+        summary: "",
+        createdBy: opened.createdBy ?? CREATED_BY,
+        updatedBy: CREATED_BY,
+      },
     })
     const now = new Date()
     await this.db`
@@ -148,7 +159,8 @@ export class SqlSummariesFeedbacksAutomaticThriftingRepository
           kek_version = ${sealed.kekVersion},
           encrypted_columns = ${sealed.encryptedColumns},
           outdated = false,
-          updated_by = ${CREATED_BY},
+          created_by = ${sealed.values.createdBy},
+          updated_by = ${sealed.values.updatedBy},
           updated_at = ${now}
       WHERE id = ${current.id}
         AND outdated = true
@@ -161,7 +173,7 @@ export class SqlSummariesFeedbacksAutomaticThriftingRepository
     return open({
       model: "SummaryFeedbackAutomaticThrifting",
       rowId: row.id,
-      values: { summary: row.summary },
+      values: { summary: row.summary, createdBy: row.created_by, updatedBy: row.updated_by },
       dek: row.dek,
       kekVersion: row.kek_version,
       encryptedColumns: row.encrypted_columns,

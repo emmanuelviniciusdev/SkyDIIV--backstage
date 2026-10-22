@@ -37,6 +37,6 @@ describe("SqlLlmInteractionsRepository", () => {
     const values = db.mock.calls.flatMap((call) => call.slice(1))
     expect(values).not.toContain("Translate Análise")
     expect(values).not.toContain("Wardrobe analysis")
-    expect(values).toContainEqual(["prompt", "response"])
+    expect(values).toContainEqual(["prompt", "response", "created_by", "updated_by"])
   })
 })

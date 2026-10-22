@@ -102,9 +102,9 @@ describe("SqlSummariesFeedbacksAutomaticThriftingRepository", () => {
     expect(sql).toMatch(/encrypted_columns/)
     expect(sql).not.toMatch(/ON CONFLICT/)
     const bound = db.mock.calls.flat().filter((v) => typeof v === "string" || Array.isArray(v))
-    expect(bound).toContain("worker-ai-workflows")
+    expect(bound).not.toContain("worker-ai-workflows")
     expect(bound).not.toContain("new")
-    expect(bound).toContainEqual(["summary"])
+    expect(bound).toContainEqual(["summary", "created_by", "updated_by"])
   })
 
   it("updates a sealed summary and keeps the outdated CAS", async () => {
@@ -134,7 +134,7 @@ describe("SqlSummariesFeedbacksAutomaticThriftingRepository", () => {
     expect(sql).not.toMatch(/ON CONFLICT/)
     const bound = db.mock.calls.flat().filter((v) => typeof v === "string" || Array.isArray(v))
     expect(bound).not.toContain("likes blazers")
-    expect(bound).toContainEqual(["summary"])
+    expect(bound).toContainEqual(["summary", "created_by", "updated_by"])
   })
 
   it("stores a sealed empty string and returns it as plaintext on a later find", async () => {
@@ -149,6 +149,8 @@ describe("SqlSummariesFeedbacksAutomaticThriftingRepository", () => {
       dek: string
       kek_version: number
       encrypted_columns: string[]
+      created_by: string | null
+      updated_by: string | null
     } | null = null
     const db = vi.fn().mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = strings.join(" ")
@@ -165,6 +167,8 @@ describe("SqlSummariesFeedbacksAutomaticThriftingRepository", () => {
         dek: String(dek),
         kek_version: 1,
         encrypted_columns: columns as string[],
+        created_by: null,
+        updated_by: null,
       }
       return Promise.resolve([])
     }) as unknown as postgres.Sql
@@ -181,6 +185,8 @@ describe("SqlSummariesFeedbacksAutomaticThriftingRepository", () => {
       dek: "",
       kek_version: 1,
       encrypted_columns: [],
+      created_by: "worker-ai-workflows",
+      updated_by: "worker-ai-workflows",
     }
     const seeded = {
       id: "s1",
@@ -208,6 +214,8 @@ describe("SqlSummariesFeedbacksAutomaticThriftingRepository", () => {
           dek: String(dek),
           kek_version: Number(kekVersion),
           encrypted_columns: columns as string[],
+          created_by: String(values[4]),
+          updated_by: String(values[5]),
         }
         return Promise.resolve([])
       }) as unknown as postgres.Sql
@@ -219,7 +227,7 @@ describe("SqlSummariesFeedbacksAutomaticThriftingRepository", () => {
     expect(sql).toMatch(/updated_at <=/)
     expect(sql).not.toMatch(/SET summary = ''/)
     expect(stored?.summary).not.toBe("")
-    expect(stored?.encrypted_columns).toEqual(["summary"])
+    expect(stored?.encrypted_columns).toEqual(["summary", "created_by", "updated_by"])
 
     const reader = makeSqlMock([stored])
     const found = await new SqlSummariesFeedbacksAutomaticThriftingRepository(reader).findByUserId("u1")

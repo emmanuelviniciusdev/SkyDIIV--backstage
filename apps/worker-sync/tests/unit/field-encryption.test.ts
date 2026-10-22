@@ -46,9 +46,17 @@ function decryptPacked(key: Buffer, payload: string, aad?: Buffer): Buffer {
 
 describe("field encryption", () => {
   it("maps only the columns that are sealed today", () => {
-    expect(ENCRYPTED_MODELS.ClothingItem.fields.map((field) => field.column)).toEqual(["image_url"])
-    expect(ENCRYPTED_MODELS.Outfit.fields.map((field) => field.column)).toEqual(["image_url"])
-    expect(ENCRYPTED_MODELS.Tag).toBeUndefined()
+    expect(ENCRYPTED_MODELS.ClothingItem.fields.map((field) => field.column)).toEqual([
+      "image_url",
+      "created_by",
+      "updated_by",
+    ])
+    expect(ENCRYPTED_MODELS.Outfit.fields.map((field) => field.column)).toEqual([
+      "image_url",
+      "created_by",
+      "updated_by",
+    ])
+    expect(ENCRYPTED_MODELS.Tag.fields.map((field) => field.column)).toEqual(["created_by", "updated_by"])
   })
 
   it("round-trips AES-256-GCM and omits null columns", () => {

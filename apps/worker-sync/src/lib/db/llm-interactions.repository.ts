@@ -27,6 +27,8 @@ export class SqlLlmInteractionsRepository {
         prompt: input.prompt,
         clientPrompt: null,
         response: input.response ?? null,
+        createdBy: CREATED_BY,
+        updatedBy: CREATED_BY,
       },
     })
     await this.db`
@@ -47,7 +49,7 @@ export class SqlLlmInteractionsRepository {
         ${sealed.dek},
         ${sealed.kekVersion},
         ${sealed.encryptedColumns},
-        ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
+        ${sealed.values.createdBy}, ${sealed.values.updatedBy}, ${now}, ${now}
       )
     `
   }

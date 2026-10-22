@@ -45,6 +45,11 @@ export type EncryptedModelSpec = {
   lookup: readonly LookupField[]
 }
 
+const ACTOR_FIELDS: readonly ListedField[] = [
+  { prisma: "createdBy", column: "created_by" },
+  { prisma: "updatedBy", column: "updated_by" },
+]
+
 /**
  * Columns sealed on write. `encrypted_columns` on a row names the fields
  * below that currently hold ciphertext (nulls are omitted).
@@ -55,17 +60,17 @@ export type EncryptedModelSpec = {
 export const ENCRYPTED_MODELS: Record<string, EncryptedModelSpec> = {
   ClothingItem: {
     table: "clothing_items",
-    fields: [{ prisma: "imageUrl", column: "image_url" }],
+    fields: [{ prisma: "imageUrl", column: "image_url" }, ...ACTOR_FIELDS],
     lookup: [],
   },
   FeedbackAutomaticThrifting: {
     table: "feedbacks_automatic_thrifting",
-    fields: [{ prisma: "reason", column: "reason" }],
+    fields: [{ prisma: "reason", column: "reason" }, ...ACTOR_FIELDS],
     lookup: [],
   },
   SummaryFeedbackAutomaticThrifting: {
     table: "summaries_feedbacks_automatic_thrifting",
-    fields: [{ prisma: "summary", column: "summary" }],
+    fields: [{ prisma: "summary", column: "summary" }, ...ACTOR_FIELDS],
     lookup: [],
   },
   LlmInteraction: {
@@ -74,12 +79,13 @@ export const ENCRYPTED_MODELS: Record<string, EncryptedModelSpec> = {
       { prisma: "prompt", column: "prompt" },
       { prisma: "clientPrompt", column: "client_prompt" },
       { prisma: "response", column: "response" },
+      ...ACTOR_FIELDS,
     ],
     lookup: [],
   },
   Outfit: {
     table: "outfits",
-    fields: [{ prisma: "imageUrl", column: "image_url" }],
+    fields: [{ prisma: "imageUrl", column: "image_url" }, ...ACTOR_FIELDS],
     lookup: [],
   },
   ShoppingSuggestionsPreferences: {
@@ -89,7 +95,13 @@ export const ENCRYPTED_MODELS: Record<string, EncryptedModelSpec> = {
       { prisma: "bottomSize", column: "bottom_size" },
       { prisma: "footSize", column: "foot_size" },
       { prisma: "gender", column: "gender" },
+      ...ACTOR_FIELDS,
     ],
+    lookup: [],
+  },
+  Tag: {
+    table: "tags",
+    fields: [...ACTOR_FIELDS],
     lookup: [],
   },
   User: {
@@ -101,6 +113,7 @@ export const ENCRYPTED_MODELS: Record<string, EncryptedModelSpec> = {
       { prisma: "email", column: "email" },
       { prisma: "birthDate", column: "birth_date" },
       { prisma: "profilePictureUrl", column: "profile_picture_url" },
+      ...ACTOR_FIELDS,
     ],
     lookup: [
       {
@@ -113,7 +126,7 @@ export const ENCRYPTED_MODELS: Record<string, EncryptedModelSpec> = {
   },
   WardrobePanorama: {
     table: "wardrobe_panorama",
-    fields: [{ prisma: "content", column: "content" }],
+    fields: [{ prisma: "content", column: "content" }, ...ACTOR_FIELDS],
     lookup: [],
   },
   WeeklyOutfitPreferences: {
@@ -121,6 +134,7 @@ export const ENCRYPTED_MODELS: Record<string, EncryptedModelSpec> = {
     fields: [
       { prisma: "location", column: "location" },
       { prisma: "routineDescription", column: "routine_description" },
+      ...ACTOR_FIELDS,
     ],
     lookup: [],
   },

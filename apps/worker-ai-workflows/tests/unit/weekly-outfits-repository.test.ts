@@ -352,7 +352,7 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     )
   })
 
-  it("inserts outfits with a plaintext title and leaves dek null while image_url is null", async () => {
+  it("inserts outfits with a plaintext title and seals actor columns while image_url is null", async () => {
     const { db: writeDb, tx } = makeWriteDb([])
     const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
     await repo.saveWeeklyOutfits(BASE_INPUT)
@@ -366,9 +366,10 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     })
     expect(insertCall).toBeDefined()
     const sql = (insertCall![0] as string[]).join(" ")
-    expect(sql).not.toMatch(/dek/i)
-    expect(sql).not.toMatch(/encrypted_columns/i)
+    expect(sql).toMatch(/dek/)
+    expect(sql).toMatch(/encrypted_columns/)
     expect(getInterpolatedValues(tx)).toContain("Weekly AI Outfit — Sunday")
+    expect(getInterpolatedValues(tx)).toContainEqual(["created_by", "updated_by"])
   })
 
   it("returns an empty array when all suggestions are skipped", async () => {
@@ -399,6 +400,8 @@ describe("SqlWeeklyOutfitsRepository.updateOutfitImageUrl()", () => {
             dek: null,
             kek_version: null,
             encrypted_columns: [],
+            created_by: "worker-ai-workflows",
+            updated_by: "worker-ai-workflows",
           },
         ])
       }
@@ -418,6 +421,6 @@ describe("SqlWeeklyOutfitsRepository.updateOutfitImageUrl()", () => {
     const values = getInterpolatedValues(writeMock)
     expect(values).not.toContain("https://r2.example.com/outfits/outfit-1.png")
     expect(values).toContain("outfit-1")
-    expect(values).toContainEqual(["image_url"])
+    expect(values).toContainEqual(["image_url", "created_by", "updated_by"])
   })
 })

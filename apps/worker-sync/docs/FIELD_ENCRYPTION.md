@@ -1,6 +1,6 @@
 # Field encryption
 
-Language sync decrypts `wardrobe_panorama.content` before the translation LLM and encrypts the translated content before writing it back. `llm_interactions.prompt` and `response` are sealed on insert. `weekly_outfits.weather_summary` and `weekly_outfits.description_temperature` stay plaintext.
+Language sync decrypts `wardrobe_panorama.content` before the translation LLM and encrypts the translated content before writing it back. `llm_interactions.prompt` and `response` are sealed on insert. `created_by` / `updated_by` on those envelope rows are sealed too; this worker still writes `worker-sync` into those columns. Historical emails in actor columns are rewritten to that email’s `email_lookup` HMAC by the provision/backfill script, not by this worker. `weekly_outfits.weather_summary` and `weekly_outfits.description_temperature` stay plaintext. `created_by` / `updated_by` on `access_keys`, `domains`, `events`, and `outbox_events` stay plaintext.
 
 The envelope matches SkyDIIV web app. Workflow payloads stay plaintext.
 
@@ -22,6 +22,8 @@ If the key store cannot supply the KEK version a write needs, the worker does no
 ## Keys
 
 KEK and lookup material live in a Clouflare D1 database. They are not stored in the application database.
+
+Operators create that D1 database and table `encryption_keys` with `scripts/202610_provision_encryption_keys_and_backfill/` (`provision`, then set `CLOUDFLARE_D1_ENCRYPTION_DATABASE_ID`, then `backfill`). This worker only reads the table.
 
 | `DEPLOYMENT_ENVIRONMENT` | Key source                                                                                                 |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------- |

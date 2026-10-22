@@ -93,6 +93,6 @@ describe("SqlWardrobePanoramaSyncRepository", () => {
     expect(sql).toContain("encrypted_columns")
     const values = writeMock.mock.calls.flatMap((call) => call.slice(1))
     expect(values).not.toContain("Wardrobe analysis")
-    expect(values).toContainEqual(["content"])
+    expect(values).toContainEqual(["content", "created_by", "updated_by"])
   })
 })

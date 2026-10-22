@@ -137,13 +137,23 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
           hasWeatherSummary: outfit.weatherSummary !== null,
         })
 
+        const sealedOutfit = await sealListedFields({
+          model: "Outfit",
+          rowId: outfit.outfitId,
+          values: {
+            imageUrl: null,
+            createdBy: CREATED_BY,
+            updatedBy: CREATED_BY,
+          },
+        })
         await tx`
           INSERT INTO outfits (
-            id, user_id, type, title,
+            id, user_id, type, title, dek, kek_version, encrypted_columns,
             created_by, updated_by, created_at, updated_at
           ) VALUES (
             ${outfit.outfitId}, ${userId}, 'AI_GENERATED', ${outfit.title},
-            ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
+            ${sealedOutfit.dek}, ${sealedOutfit.kekVersion}, ${sealedOutfit.encryptedColumns},
+            ${sealedOutfit.values.createdBy}, ${sealedOutfit.values.updatedBy}, ${now}, ${now}
           )
         `
 
@@ -205,8 +215,10 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
       dek: string | null
       kek_version: number | null
       encrypted_columns: string[] | null
+      created_by: string | null
+      updated_by: string | null
     }[]>`
-      SELECT id, image_url, dek, kek_version, encrypted_columns
+      SELECT id, image_url, dek, kek_version, encrypted_columns, created_by, updated_by
       FROM outfits
       WHERE id = ${outfitId}
       LIMIT 1
@@ -215,10 +227,14 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
     if (!row) return
 
     const open = createListedRowOpener()
-    await open({
+    const opened = await open({
       model: "Outfit",
       rowId: row.id,
-      values: { imageUrl: row.image_url },
+      values: {
+        imageUrl: row.image_url,
+        createdBy: row.created_by,
+        updatedBy: row.updated_by,
+      },
       dek: row.dek,
       kekVersion: row.kek_version,
       encryptedColumns: row.encrypted_columns,
@@ -226,7 +242,11 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
     const sealed = await sealListedFields({
       model: "Outfit",
       rowId: row.id,
-      values: { imageUrl },
+      values: {
+        imageUrl,
+        createdBy: opened.createdBy ?? CREATED_BY,
+        updatedBy: CREATED_BY,
+      },
     })
     const now = new Date()
     await this.writeDb`
@@ -236,7 +256,8 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
           kek_version = ${sealed.kekVersion},
           encrypted_columns = ${sealed.encryptedColumns},
           updated_at = ${now},
-          updated_by = ${CREATED_BY}
+          created_by = ${sealed.values.createdBy},
+          updated_by = ${sealed.values.updatedBy}
       WHERE id = ${outfitId}
     `
   }

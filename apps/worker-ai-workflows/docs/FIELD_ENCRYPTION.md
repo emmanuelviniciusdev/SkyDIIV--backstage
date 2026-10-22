@@ -21,23 +21,26 @@ If the key store cannot supply the KEK version a write needs, the worker does no
 
 | Table | Columns | This worker |
 |---|---|---|
-| `users` | `first_name`, `last_name`, `preferred_name` | Read |
-| `weekly_outfit_preferences` | `location`, `routine_description` | Read |
-| `shopping_suggestions_preferences` | `top_size`, `bottom_size`, `foot_size`, `gender` | Read |
-| `clothing_items` | `image_url` | Read |
-| `feedbacks_automatic_thrifting` | `reason` | Read |
-| `summaries_feedbacks_automatic_thrifting` | `summary` (including empty string) | Read and write |
-| `llm_interactions` | `prompt`, `client_prompt`, `response` | Write |
-| `outfits` | `image_url` | Write |
-| `wardrobe_panorama` | `content` | Read and write |
+| `users` | `first_name`, `last_name`, `preferred_name`, `created_by`, `updated_by` | Read |
+| `weekly_outfit_preferences` | `location`, `routine_description`, `created_by`, `updated_by` | Read |
+| `shopping_suggestions_preferences` | `top_size`, `bottom_size`, `foot_size`, `gender`, `created_by`, `updated_by` | Read |
+| `clothing_items` | `image_url`, `created_by`, `updated_by` | Read |
+| `feedbacks_automatic_thrifting` | `reason`, `created_by`, `updated_by` | Read |
+| `summaries_feedbacks_automatic_thrifting` | `summary` (including empty string), `created_by`, `updated_by` | Read and write |
+| `llm_interactions` | `prompt`, `client_prompt`, `response`, `created_by`, `updated_by` | Write |
+| `outfits` | `image_url`, `created_by`, `updated_by` | Write |
+| `wardrobe_panorama` | `content`, `created_by`, `updated_by` | Read and write |
+| `tags` | `created_by`, `updated_by` | (web writes) |
 
-`clothing_items.title`, `outfits.title`, `tags.name`, `outbox_events.payload`, `json_search`, `json_result`, `json_listed_product`, and `weekly_outfits.weather_summary` stay plaintext. `llm_interactions.client_prompt` is stored null here and is omitted from `encrypted_columns`.
+`clothing_items.title`, `outfits.title`, `tags.name`, `outbox_events.payload`, `json_search`, `json_result`, `json_listed_product`, and `weekly_outfits.weather_summary` stay plaintext. `created_by` / `updated_by` on `access_keys`, `domains`, `events`, and `outbox_events` stay plaintext. `llm_interactions.client_prompt` is stored null here and is omitted from `encrypted_columns`. This worker still writes `worker-ai-workflows` into actor columns. Historical emails in those columns are rewritten to that email’s `email_lookup` HMAC by the provision/backfill script, not by this worker.
 
-Summary writes load the current row, seal the new text (a new DEK for the listed set), then `UPDATE`. The `outdated` / `updated_at` compare-and-swap stays in that `UPDATE`. Outfit inserts still leave `image_url` and `dek` null; `updateOutfitImageUrl` seals `image_url` and leaves `title` plaintext.
+Summary writes load the current row, seal the new text (a new DEK for the listed set), then `UPDATE`. The `outdated` / `updated_at` compare-and-swap stays in that `UPDATE`. Outfit inserts seal actor columns (and set `dek`) while `image_url` is null; `updateOutfitImageUrl` seals `image_url` plus actor columns and leaves `title` plaintext.
 
 ## Keys
 
 KEK and lookup material live in a Clouflare D1 database. They are not stored in the application database (~durrrr).
+
+Operators create that D1 database and table `encryption_keys` with `scripts/202610_provision_encryption_keys_and_backfill/` (`provision`, then set `CLOUDFLARE_D1_ENCRYPTION_DATABASE_ID`, then `backfill`). This worker only reads the table.
 
 | `DEPLOYMENT_ENVIRONMENT` | Key source                                                                                                 |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------- |

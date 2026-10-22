@@ -260,7 +260,7 @@ describe("sealed repository writes", () => {
     expect(values).toContain(id)
     expect(values).not.toContain("Hello Ana")
     expect(values).not.toContain("markdown")
-    expect(values).toContainEqual(["prompt", "response"])
+    expect(values).toContainEqual(["prompt", "response", "created_by", "updated_by"])
     expect(values).not.toContainEqual(expect.arrayContaining(["client_prompt"]))
   })
 
@@ -307,7 +307,7 @@ describe("sealed repository writes", () => {
     expect(insertSql).toMatch(/dek/)
     expect(insertSql).toMatch(/encrypted_columns/)
     expect(boundValues(db)).not.toContain("# Wardrobe")
-    expect(boundValues(db)).toContainEqual(["content"])
+    expect(boundValues(db)).toContainEqual(["content", "created_by", "updated_by"])
 
     const existing = seal("WardrobePanorama", "p1", { content: "# Old" })
     const updateDb = vi.fn().mockImplementation((strings: TemplateStringsArray) => {
@@ -332,6 +332,6 @@ describe("sealed repository writes", () => {
     })
     expect(sqlText(updateDb)).toMatch(/UPDATE wardrobe_panorama/)
     expect(boundValues(updateDb)).not.toContain("# Wardrobe")
-    expect(boundValues(updateDb)).toContainEqual(["content"])
+    expect(boundValues(updateDb)).toContainEqual(["content", "created_by", "updated_by"])
   })
 })
