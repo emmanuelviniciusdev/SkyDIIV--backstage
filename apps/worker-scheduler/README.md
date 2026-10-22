@@ -65,7 +65,7 @@ The CRON expression, timezone, and which endpoint QStash calls are configured en
 **Downstream:** `POST /generate-weekly-outfits` on `worker-ai-workflows`  
 **Workflow doc:** [WEEKLY_OUTFITS_WORKFLOW.md](../worker-ai-workflows/docs/WEEKLY_OUTFITS_WORKFLOW.md)
 
-1. Queries `weekly_outfit_preferences` for users with non-empty `location` and `routine_description`
+1. Queries `weekly_outfit_preferences` without decrypting rows. A legacy row (`dek` is null) qualifies when `location` and `routine_description` are both non-null and not `''`. A sealed row qualifies when `encrypted_columns` contains both `location` and `routine_description`. After encryption, an unset location or routine is stored as NULL (and omitted from `encrypted_columns`), so ciphertext is not treated as an opt-in just because it is not an empty string.
 2. Publishes one signed queue message per eligible user (`{ userId }`) to `{WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits`
 3. Messages are batched in groups of 100
 

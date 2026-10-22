@@ -261,7 +261,24 @@ describe("generate-search-terms feedback summary steps", () => {
       }
       return Promise.resolve([])
     })
-    mocks.writeDb.mockResolvedValue([])
+    mocks.writeDb.mockImplementation((strings: TemplateStringsArray) => {
+      const query = Array.isArray(strings) ? strings.join(" ") : String(strings)
+      if (query.includes("SELECT")) {
+        return Promise.resolve([
+          {
+            id: "s1",
+            user_id: mocks.userId,
+            summary: "old",
+            outdated: true,
+            updated_at: new Date("2026-09-01T00:00:00.000Z"),
+            dek: null,
+            kek_version: null,
+            encrypted_columns: [],
+          },
+        ])
+      }
+      return Promise.resolve([])
+    })
 
     const plan = await planFeedbackSummaryStep(mocks.userId)
     expect(plan.action).toBe("clear-stale-empty")
@@ -272,6 +289,7 @@ describe("generate-search-terms feedback summary steps", () => {
       clearStaleEmpty: true,
     })
     expect(writeSql()).toMatch(/UPDATE summaries_feedbacks_automatic_thrifting/)
+    expect(writeSql()).toMatch(/dek/)
     expect(writeSql()).not.toMatch(/INSERT INTO search_terms_scraped_products/)
   })
 

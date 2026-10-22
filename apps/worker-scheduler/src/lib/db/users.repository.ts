@@ -2,7 +2,7 @@ import type postgres from "postgres"
 
 /**
  * A user eligible for weekly outfit generation.
- * A row existing in weekly_outfit_preferences means generation is enabled.
+ * Eligibility is the dek / encrypted_columns filter in findUsersWithOutfitPreferences.
  */
 export interface EligibleUser {
   userId: string
@@ -17,10 +17,11 @@ interface PreferencesRow {
 }
 
 /**
- * Queries all users that have outfit preferences defined.
- * "Defined" means a row exists in weekly_outfit_preferences — the presence
- * of the row (with required non-null location + routine_description) is the
- * opt-in signal per the Prisma schema comment in the web app.
+ * Queries users eligible for weekly outfit generation.
+ * Legacy rows (`dek` is null) still need a non-empty location and routine.
+ * Sealed rows qualify when `encrypted_columns` contains both fields.
+ * Unset location or routine is stored as NULL and omitted from that array.
+ * This query does not decrypt preference rows.
  */
 export class SqlUsersRepository implements UsersRepository {
   constructor(private readonly db: postgres.Sql) {}
@@ -29,10 +30,20 @@ export class SqlUsersRepository implements UsersRepository {
     const rows = await this.db<PreferencesRow[]>`
       SELECT user_id
       FROM weekly_outfit_preferences
-      WHERE location    IS NOT NULL
-        AND location    <> ''
+      WHERE
+        location IS NOT NULL
         AND routine_description IS NOT NULL
-        AND routine_description <> ''
+        AND (
+          (
+            dek IS NULL
+            AND location <> ''
+            AND routine_description <> ''
+          )
+          OR (
+            dek IS NOT NULL
+            AND encrypted_columns @> ARRAY['location', 'routine_description']::text[]
+          )
+        )
     `
 
     return rows.map((row) => ({ userId: row.user_id }))

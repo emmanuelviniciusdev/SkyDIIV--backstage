@@ -11,6 +11,8 @@ Workflows are registered with `serveMany`, which routes requests by the **last p
 
 Observability (Grafana Cloud OTLP, vendor-agnostic port): [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md).
 
+Listed database columns (`wardrobe_panorama.content`, `llm_interactions` prompt and response) use envelope encryption: [docs/FIELD_ENCRYPTION.md](./docs/FIELD_ENCRYPTION.md).
+
 ```mermaid
 flowchart LR
     APP["SkyDIIV app / services"] -->|POST signed payload| SL["POST /sync/language"]
@@ -42,7 +44,8 @@ flowchart LR
 
 ```
 ├── docs/
-│   └── SYNC_LANGUAGE_WORKFLOW.md           # sync-language — workflow reference
+│   ├── SYNC_LANGUAGE_WORKFLOW.md           # sync-language — workflow reference
+│   └── FIELD_ENCRYPTION.md                 # Envelope encryption for listed database columns
 ├── src/
 │   ├── index.ts                            # Worker entry (health check + serveMany dispatch)
 │   ├── workflows/
@@ -96,7 +99,7 @@ const { fetch: serveManyFetch } = serveMany({
 - All workflow requests are signed by QStash and verified before any step runs
 - `GET /` is the only unsigned endpoint (health check)
 - `userid` comes from the verified workflow payload
-- Secrets (database, cache) are Cloudflare Worker secrets — never in source control
+- Secrets (database, cache, encryption keys) are Cloudflare Worker secrets — never in source control
 
 ---
 
@@ -167,7 +170,8 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `QSTASH_URL`, `QSTASH_TOKEN`, `QSTASH_*_SIGNING_KEY` | All workflows |
 | `WORKER_SYNC_URL` | All workflows + web app — worker origin (no path); web app appends `/sync/language` for QStash delivery |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | `sync-language` (LLM translation) |
-| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | `invalidate-cache` step |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | `invalidate-cache` step and the encryption-key cache |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_D1_ENCRYPTION_DATABASE_ID`, `CLOUDFLARE_D1_API_TOKEN` | Key database `encryption_keys` when `DEPLOYMENT_ENVIRONMENT` is `production` or `staging`. See [docs/FIELD_ENCRYPTION.md](./docs/FIELD_ENCRYPTION.md) |
 
 `WORKER_SYNC_URL` is shared between the web app (initial QStash delivery) and this worker (Upstash Workflow step callbacks via `serveMany` `baseUrl`).
 
@@ -197,5 +201,7 @@ The web app uses the same `WORKER_SYNC_URL` origin and targets `{WORKER_SYNC_URL
 | Secret | Description |
 |---|---|
 | `CLOUDFLARE_API_TOKEN` | Workers deploy permissions |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID (deploy and key database `encryption_keys`) |
+| `CLOUDFLARE_D1_ENCRYPTION_DATABASE_ID` | Key database that holds `encryption_keys` |
+| `CLOUDFLARE_D1_API_TOKEN` | API token that can query that key database |
 | `CLOUDFLARE_SUBDOMAIN` | `*.workers.dev` subdomain |

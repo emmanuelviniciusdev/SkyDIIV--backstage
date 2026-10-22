@@ -107,3 +107,59 @@ export async function setRedisKey(key: string, value: string): Promise<boolean> 
   const body: { result?: string } = await response.json()
   return body.result === "OK"
 }
+
+/**
+ * Reads a JSON value via the Upstash REST API.
+ * Returns null when the key is missing, the payload is not JSON, or Redis is not configured.
+ */
+export async function getRedisJson<T>(key: string): Promise<T | null> {
+  const credentials = getUpstashRestCredentials()
+  if (!credentials) return null
+
+  const response = await fetch(credentials.url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${credentials.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(["GET", key]),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Redis GET failed (${response.status})`)
+  }
+
+  const body: { result?: string | null } = await response.json()
+  if (body.result == null || body.result === "") return null
+  try {
+    return JSON.parse(body.result) as T
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Stores a JSON value with a TTL via the Upstash REST API.
+ * Returns false when Redis is not configured.
+ */
+export async function setRedisJson(key: string, value: unknown, ttlSeconds: number): Promise<boolean> {
+  const credentials = getUpstashRestCredentials()
+  if (!credentials) return false
+
+  const ttl = Math.max(1, Math.floor(ttlSeconds))
+  const response = await fetch(credentials.url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${credentials.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(["SET", key, JSON.stringify(value), "EX", ttl]),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Redis SET failed (${response.status})`)
+  }
+
+  const body: { result?: string } = await response.json()
+  return body.result === "OK"
+}

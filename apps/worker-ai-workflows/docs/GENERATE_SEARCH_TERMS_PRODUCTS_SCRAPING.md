@@ -22,8 +22,8 @@ A missing or empty `wardrobePanoramaId` fails the workflow without inserting sea
 sequenceDiagram
   participant OB as worker-outbox-events
   participant AI as worker-ai-workflows
-  participant DB as Neon
-  participant LLM as Gemini
+  participant DB as Database
+  participant LLM as LLM
   participant R as robot-scrape-products
 
   OB->>AI: POST /generate-search-terms-products-scraping
@@ -111,21 +111,34 @@ The search-term prompt treats the summary as a **steer**: avoid disliked pattern
 
 ### CAS persist
 
+The worker loads the summary row, seals `summary` (including an empty string), then writes ciphertext plus `dek`, `kek_version`, and `encrypted_columns`. A missing row is inserted. An existing row is updated. The outdated flag still flips only when `updated_at <= :readAt` and `outdated` is true.
+
 ```sql
--- create/refresh
-INSERT … ON CONFLICT (user_id) DO UPDATE
-SET summary = EXCLUDED.summary,
+-- create
+INSERT … (summary, dek, kek_version, encrypted_columns, outdated, …)
+
+-- refresh
+UPDATE …
+SET summary = :sealed,
+    dek = :dek,
+    kek_version = :kek_version,
+    encrypted_columns = :encrypted_columns,
     outdated = CASE
       WHEN updated_at <= :readAt AND outdated = true THEN false
       ELSE outdated
     END, …
 
 -- zero feedbacks + outdated row
-UPDATE … SET summary = '', outdated = false
-WHERE user_id = :userId AND outdated = true AND updated_at <= :readAt
+UPDATE …
+SET summary = :sealed_empty,
+    dek = :dek,
+    kek_version = :kek_version,
+    encrypted_columns = :encrypted_columns,
+    outdated = false
+WHERE id = :id AND outdated = true AND updated_at <= :readAt
 ```
 
-`created_by` / `updated_by` = `worker-ai-workflows`.
+`created_by` / `updated_by` = `worker-ai-workflows`. Panorama `content`, routine, shopping gender/sizes, feedback `reason`, and `summary` are plaintext in the prompt and ciphertext in the database. `json_search` gender and size copies stay plaintext JSON. `llm_interactions.prompt` / `response` are sealed on insert. See [FIELD_ENCRYPTION.md](./FIELD_ENCRYPTION.md).
 
 ---
 

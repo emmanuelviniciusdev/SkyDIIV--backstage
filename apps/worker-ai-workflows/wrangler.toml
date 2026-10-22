@@ -33,7 +33,19 @@ DEPLOYMENT_ENVIRONMENT = "production"
 #   wrangler secret put OTEL_EXPORTER_OTLP_ENDPOINT
 #   wrangler secret put OTEL_EXPORTER_OTLP_HEADERS
 # Optional vars: OBSERVABILITY_PROVIDER (grafana-cloud|noop), OTEL_SERVICE_NAME
-# DEPLOYMENT_ENVIRONMENT is set in [vars] / [env.staging.vars]. See docs/OBSERVABILITY.md.
+# DEPLOYMENT_ENVIRONMENT is hardcoded by the deploy workflow (production on
+# main, staging on the staging branch). [vars] / [env.staging.vars] keep the
+# same values for manual deploys; .dev.vars sets local.
+# It selects the field-encryption key source: production and staging load the
+# key database; local or unset uses the local test vectors. There is no ENCRYPTION_KEY_SOURCE.
+# See docs/FIELD_ENCRYPTION.md and docs/OBSERVABILITY.md.
+#
+# ── Field encryption (encryption_keys) ────────────────────────────────────────
+# Secrets (wrangler secret put). Required when DEPLOYMENT_ENVIRONMENT is
+# production or staging. Do not put KEK material in [vars].
+#   wrangler secret put CLOUDFLARE_ACCOUNT_ID
+#   wrangler secret put CLOUDFLARE_D1_ENCRYPTION_DATABASE_ID
+#   wrangler secret put CLOUDFLARE_D1_API_TOKEN
 #
 # ── Redis ─────────────────────────────────────────────────────────────────────
 #   wrangler secret put UPSTASH_REDIS_REST_URL

@@ -9,6 +9,7 @@ on:
     paths:
       - "apps/worker-outbox-events/**"
       - ".github/workflows/deploy-worker-outbox-events.yml"
+      - ".github/scripts/sync-wrangler-vars.cjs"
   pull_request:
     branches:
       - main
@@ -102,32 +103,16 @@ jobs:
       - name: Sync Worker vars
         env:
           TOML_SECTION: '[env.staging.vars]'
+          DEPLOYMENT_ENVIRONMENT: staging
           QSTASH_URL: ${{ vars.QSTASH_URL }}
           WORKER_OUTBOX_EVENTS_URL: ${{ vars.WORKER_OUTBOX_EVENTS_URL }}
           WORKER_SYNC_URL: ${{ vars.WORKER_SYNC_URL }}
           WORKER_NOTIFICATION_URL: ${{ vars.WORKER_NOTIFICATION_URL }}
           WORKER_AI_WORKFLOWS_URL: ${{ vars.WORKER_AI_WORKFLOWS_URL }}
-        run: |
-          node -e '
-            const fs = require("fs");
-            const keys = ["QSTASH_URL", "WORKER_OUTBOX_EVENTS_URL", "WORKER_SYNC_URL", "WORKER_NOTIFICATION_URL", "WORKER_AI_WORKFLOWS_URL"];
-            const entries = keys
-              .map((k) => [k, process.env[k]])
-              .filter(([, v]) => typeof v === "string" && v.length > 0);
-            if (!entries.length) process.exit(0);
-            const lines = entries.map(([k, v]) => k + " = " + JSON.stringify(String(v))).join("\n");
-            const header = process.env.TOML_SECTION;
-            let toml = fs.readFileSync("wrangler.toml", "utf8");
-            const rows = toml.split("\n");
-            const idx = rows.findIndex((l) => l.trim() === header);
-            if (idx >= 0) {
-              rows.splice(idx + 1, 0, lines);
-              toml = rows.join("\n");
-            } else {
-              toml = toml.trimEnd() + "\n\n" + header + "\n" + lines + "\n";
-            }
-            fs.writeFileSync("wrangler.toml", toml);
-          '
+        run: >
+          node "${{ github.workspace }}/.github/scripts/sync-wrangler-vars.cjs"
+          DEPLOYMENT_ENVIRONMENT QSTASH_URL WORKER_OUTBOX_EVENTS_URL
+          WORKER_SYNC_URL WORKER_NOTIFICATION_URL WORKER_AI_WORKFLOWS_URL
 
       - name: Deploy to Staging
         run: npm run deploy -- --env staging
@@ -189,32 +174,16 @@ jobs:
       - name: Sync Worker vars
         env:
           TOML_SECTION: '[vars]'
+          DEPLOYMENT_ENVIRONMENT: production
           QSTASH_URL: ${{ vars.QSTASH_URL }}
           WORKER_OUTBOX_EVENTS_URL: ${{ vars.WORKER_OUTBOX_EVENTS_URL }}
           WORKER_SYNC_URL: ${{ vars.WORKER_SYNC_URL }}
           WORKER_NOTIFICATION_URL: ${{ vars.WORKER_NOTIFICATION_URL }}
           WORKER_AI_WORKFLOWS_URL: ${{ vars.WORKER_AI_WORKFLOWS_URL }}
-        run: |
-          node -e '
-            const fs = require("fs");
-            const keys = ["QSTASH_URL", "WORKER_OUTBOX_EVENTS_URL", "WORKER_SYNC_URL", "WORKER_NOTIFICATION_URL", "WORKER_AI_WORKFLOWS_URL"];
-            const entries = keys
-              .map((k) => [k, process.env[k]])
-              .filter(([, v]) => typeof v === "string" && v.length > 0);
-            if (!entries.length) process.exit(0);
-            const lines = entries.map(([k, v]) => k + " = " + JSON.stringify(String(v))).join("\n");
-            const header = process.env.TOML_SECTION;
-            let toml = fs.readFileSync("wrangler.toml", "utf8");
-            const rows = toml.split("\n");
-            const idx = rows.findIndex((l) => l.trim() === header);
-            if (idx >= 0) {
-              rows.splice(idx + 1, 0, lines);
-              toml = rows.join("\n");
-            } else {
-              toml = toml.trimEnd() + "\n\n" + header + "\n" + lines + "\n";
-            }
-            fs.writeFileSync("wrangler.toml", toml);
-          '
+        run: >
+          node "${{ github.workspace }}/.github/scripts/sync-wrangler-vars.cjs"
+          DEPLOYMENT_ENVIRONMENT QSTASH_URL WORKER_OUTBOX_EVENTS_URL
+          WORKER_SYNC_URL WORKER_NOTIFICATION_URL WORKER_AI_WORKFLOWS_URL
 
       - name: Deploy to Production
         run: npm run deploy

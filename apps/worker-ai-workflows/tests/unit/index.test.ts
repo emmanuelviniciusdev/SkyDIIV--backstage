@@ -81,6 +81,17 @@ describe("worker fetch routing", () => {
     expect(res.status).toBe(401)
   })
 
+  it("returns 401 for an unsigned panorama request", async () => {
+    mockWorkflowsFetch.mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }))
+    const res = await worker.fetch(
+      makeRequest("POST", "/generate-wardrobe-panorama"),
+      {},
+      makeCtx(),
+    )
+    expect(res.status).toBe(401)
+    expect(mockWorkflowsFetch).toHaveBeenCalledOnce()
+  })
+
   it("returns 401 for an unsigned analyze request", async () => {
     mockWorkflowsFetch.mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }))
     const res = await worker.fetch(

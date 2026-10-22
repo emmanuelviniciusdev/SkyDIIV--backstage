@@ -42,5 +42,8 @@ describe("SqlWeeklyOutfitsSyncRepository", () => {
     expect(writeDb).toHaveBeenCalledOnce()
     const sql = getSqlStrings(writeDb as unknown as ReturnType<typeof vi.fn>).join(" ")
     expect(sql).toContain("UPDATE weekly_outfits")
+    expect(sql).toContain("weather_summary")
+    expect(sql).not.toMatch(/\bdek\b/)
+    expect(sql).not.toContain("encrypted_columns")
   })
 })

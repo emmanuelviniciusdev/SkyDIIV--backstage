@@ -35,8 +35,8 @@ One row per weekday in a generated weekly plan. Linked to the user via `weekly_o
 | Column | Type | Translated |
 |---|---|---|
 | `id` | UUID | — (used as key) |
-| `weather_summary` | `String?` | yes |
-| `description_temperature` | `String?` | yes |
+| `weather_summary` | `String?` | yes — stored as plaintext |
+| `description_temperature` | `String?` | yes — stored as plaintext |
 
 **Read query:** all rows for the user where at least one of the translatable columns is non-null.
 
@@ -47,11 +47,13 @@ One AI-generated wardrobe analysis per user (`user_id` unique).
 | Column | Type | Translated |
 |---|---|---|
 | `id` | UUID | — (used as key) |
-| `content` | `String` | yes |
+| `content` | `String` | yes — ciphertext at rest; the translation prompt receives plaintext |
+
+A row with `dek` null is legacy plaintext. The translated write seals `content` and sets `dek`, `kek_version`, and `encrypted_columns`. See [FIELD_ENCRYPTION.md](./FIELD_ENCRYPTION.md).
 
 ### `llm_interactions`
 
-Every LLM call (success or failure) is logged for traceability.
+Every LLM call (success or failure) is logged for traceability. `prompt` and `response` are ciphertext at rest. `client_prompt` stays null.
 
 ---
 

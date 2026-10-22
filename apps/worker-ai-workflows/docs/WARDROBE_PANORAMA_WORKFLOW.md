@@ -393,12 +393,14 @@ The prompt intro includes: `"Responda sempre em {languageName}."`, where `langua
 | `llm_interactions` | Write | Audit log of the language model call |
 | `outbox_events` | Write | PENDING `scrape-shopping-suggestions` for worker-outbox-events |
 
+`wardrobe_panorama.content` and `llm_interactions.prompt` / `response` are ciphertext at rest. Prompt inputs (`users` names, `weekly_outfit_preferences.location` / `routine_description`, `shopping_suggestions_preferences` sizes and gender, `clothing_items.image_url`) are decrypted before the LLM call. `clothing_items.title`, `tags.name`, and `outbox_events.payload` stay plaintext. See [FIELD_ENCRYPTION.md](./FIELD_ENCRYPTION.md).
+
 ### Key conventions
 
 | Field | Value |
 |---|---|
 | `wardrobe_panorama.user_id` | One row per user |
-| `wardrobe_panorama.content` | Raw markdown from the language model |
+| `wardrobe_panorama.content` | Markdown from the language model, stored as envelope ciphertext |
 | `wardrobe_panorama.llm_interaction_id` | FK to the audit log entry from step 3 |
 | `wardrobe_panorama.generated_at` | Timestamp of the latest generation |
 | `created_by` / `updated_by` | `'worker-ai-workflows'` |

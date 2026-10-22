@@ -65,6 +65,7 @@ flowchart LR
 │   ├── GENERATE_SEARCH_TERMS_PRODUCTS_SCRAPING.md  # generate-search-terms + feedback summaries
 │   ├── ANALYZE_SCRAPED_PRODUCTS_RESULTS.md # analyze-scraped-products-results — swap + registers
 │   ├── OBSERVABILITY.md                    # Grafana Cloud OTLP — port, factory, secrets
+│   ├── FIELD_ENCRYPTION.md                 # Envelope encryption for listed database columns
 ├── src/
 │   ├── index.ts                            # Worker entry (health check + serveMany dispatch)
 │   ├── workflows/
@@ -119,7 +120,8 @@ export const { fetch: workflowsFetch } = serveMany({
 - All workflow requests are signed by QStash and verified before any step runs
 - `GET /` is the only unsigned endpoint (health check)
 - `userId` comes from the verified workflow payload
-- Secrets (database, cache, storage, LLM) are Cloudflare Worker secrets — never in source control
+- Secrets (database, cache, storage, LLM, encryption keys) are Cloudflare Worker secrets — never in source control
+- Listed database columns are sealed at the repository boundary. See [docs/FIELD_ENCRYPTION.md](./docs/FIELD_ENCRYPTION.md)
 
 ---
 
@@ -198,6 +200,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `R2_BUCKET`, `R2_PUBLIC_URL` | `generate-weekly-outfits` — bucket name and public URL prefix (vars) |
 | `FEEDBACK_SUMMARY_CHUNK_SIZE`, `FEEDBACK_SUMMARY_MAX_ENTRIES` | `generate-search-terms-products-scraping` — summarizer chunk (default 50) and max recent feedbacks (default 250); `wrangler.toml` `[vars]` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | Grafana Cloud OTLP (optional; missing → noop). See [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_D1_ENCRYPTION_DATABASE_ID`, `CLOUDFLARE_D1_API_TOKEN` | Key database `encryption_keys` when `DEPLOYMENT_ENVIRONMENT` is `production` or `staging`. See [docs/FIELD_ENCRYPTION.md](./docs/FIELD_ENCRYPTION.md) |
 
 Per-workflow env requirements and scheduler upstream URLs are documented in each workflow's doc.
 
@@ -236,7 +239,9 @@ Configure these in the **staging** and **production** GitHub environments (Setti
 | Secret | Description |
 |---|---|
 | `CLOUDFLARE_API_TOKEN` | Workers deploy permissions |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID (deploy and key database `encryption_keys`) |
+| `CLOUDFLARE_D1_ENCRYPTION_DATABASE_ID` | Key database that holds `encryption_keys` |
+| `CLOUDFLARE_D1_API_TOKEN` | API token that can query that key database |
 | `CLOUDFLARE_SUBDOMAIN` | `*.workers.dev` subdomain |
 | `DATABASE_URL` / `DATABASE_URL_UNPOOLED` | Neon PostgreSQL |
 | `QSTASH_TOKEN`, `QSTASH_*_SIGNING_KEY` | Upstash Workflow / QStash |

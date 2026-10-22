@@ -31,7 +31,7 @@ Adding another backend: implement the port under `infrastructure/observability/p
 |---|---|---|
 | `OBSERVABILITY_PROVIDER` | optional wrangler `[vars]` / `.dev.vars` | no |
 | `OTEL_SERVICE_NAME` | optional; default `worker-notification` | no |
-| `DEPLOYMENT_ENVIRONMENT` | wrangler `[vars]=production`, `[env.staging.vars]=staging` | no |
+| `DEPLOYMENT_ENVIRONMENT` | CI deploy job hardcodes `production` / `staging`; wrangler.toml fallback; `.dev.vars` for local | no |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Worker secret / `.dev.vars` (Grafana OTLP gateway, e.g. `https://otlp-gateway-….grafana.net/otlp`) | yes |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Worker secret / `.dev.vars` (`Authorization=Basic …`, `Authorization=Basic%20…`, the base64 blob alone, or `instanceId:glc_…`) | yes |
 

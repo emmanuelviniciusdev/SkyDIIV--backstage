@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto"
 import type postgres from "postgres"
+import { sealListedFields } from "../field-encryption/open-seal"
 
 export interface LogLlmInteractionInput {
   userId: string
@@ -18,20 +19,34 @@ export class SqlLlmInteractionsRepository {
 
   async log(input: LogLlmInteractionInput): Promise<void> {
     const now = new Date()
+    const recordId = randomUUID()
+    const sealed = await sealListedFields({
+      model: "LlmInteraction",
+      rowId: recordId,
+      values: {
+        prompt: input.prompt,
+        clientPrompt: null,
+        response: input.response ?? null,
+      },
+    })
     await this.db`
       INSERT INTO llm_interactions (
-        id, user_id, model, prompt, response, status,
-        error_message, latency_ms,
+        id, user_id, model, prompt, client_prompt, response, status,
+        error_message, latency_ms, dek, kek_version, encrypted_columns,
         created_by, updated_by, created_at, updated_at
       ) VALUES (
-        ${randomUUID()},
+        ${recordId},
         ${input.userId},
         ${input.model},
-        ${input.prompt},
-        ${input.response ?? null},
+        ${sealed.values.prompt},
+        ${null},
+        ${sealed.values.response ?? null},
         ${input.status},
         ${input.errorMessage ?? null},
         ${input.latencyMs},
+        ${sealed.dek},
+        ${sealed.kekVersion},
+        ${sealed.encryptedColumns},
         ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
       )
     `

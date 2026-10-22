@@ -1,4 +1,5 @@
 import type postgres from "postgres"
+import { createListedRowOpener } from "../field-encryption/open-seal"
 
 export interface UserProfile {
   preferredName: string | null
@@ -11,9 +12,13 @@ export interface UsersRepository {
 }
 
 interface UserRow {
+  id: string
   preferred_name: string | null
   first_name: string
   last_name: string
+  dek: string | null
+  kek_version: number | null
+  encrypted_columns: string[] | null
 }
 
 /**
@@ -37,7 +42,7 @@ export class SqlUsersRepository implements UsersRepository {
 
   async findByUserId(userId: string): Promise<UserProfile | null> {
     const rows = await this.db<UserRow[]>`
-      SELECT preferred_name, first_name, last_name
+      SELECT id, preferred_name, first_name, last_name, dek, kek_version, encrypted_columns
       FROM users
       WHERE id = ${userId}
       LIMIT 1
@@ -46,10 +51,23 @@ export class SqlUsersRepository implements UsersRepository {
     if (rows.length === 0) return null
 
     const row = rows[0]
+    const open = createListedRowOpener()
+    const opened = await open({
+      model: "User",
+      rowId: row.id,
+      values: {
+        preferredName: row.preferred_name,
+        firstName: row.first_name,
+        lastName: row.last_name,
+      },
+      dek: row.dek,
+      kekVersion: row.kek_version,
+      encryptedColumns: row.encrypted_columns,
+    })
     return {
-      preferredName: row.preferred_name,
-      firstName: row.first_name,
-      lastName: row.last_name,
+      preferredName: opened.preferredName ?? null,
+      firstName: opened.firstName ?? "",
+      lastName: opened.lastName ?? "",
     }
   }
 }

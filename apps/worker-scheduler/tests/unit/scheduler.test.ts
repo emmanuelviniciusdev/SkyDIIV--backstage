@@ -41,10 +41,12 @@ describe("handleSchedule", () => {
 
   // ── Auth ───────────────────────────────────────────────────────────────────
 
-  it("returns 401 when upstash-signature header is missing", async () => {
-    const res = await handleSchedule(makeRequest(null), "sunday")
+  it("returns 401 for unsigned POST /schedule/every-sunday and does not publish generate-weekly-outfits", async () => {
+    const res = await handleSchedule(makeRequest(null, "sunday"), "sunday")
     expect(res.status).toBe(401)
     expect(mockGetFlowsForDay).not.toHaveBeenCalled()
+    expect(mockRunA).not.toHaveBeenCalled()
+    expect(mockRunB).not.toHaveBeenCalled()
   })
 
   it("returns 401 when QStash signature verification throws", async () => {

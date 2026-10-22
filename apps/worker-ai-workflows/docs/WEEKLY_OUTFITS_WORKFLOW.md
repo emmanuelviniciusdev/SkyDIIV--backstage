@@ -366,6 +366,8 @@ The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of 
 | `weekly_outfits` | Write | Links outfit to week/day with weather summary |
 | `llm_interactions` | Write | Audit log of every language model call |
 
+Reads of `weekly_outfit_preferences.location` / `routine_description`, `users` names, and `clothing_items.image_url` are decrypted before prompts, geocoding, and image fetches. `outfits.image_url` and `llm_interactions.prompt` / `response` are ciphertext at rest. `outfits.title`, `clothing_items.title`, `tags.name`, and `weekly_outfits.weather_summary` stay plaintext. Inserts leave `outfits.dek` null while `image_url` is null; the thumbnail update seals `image_url`. See [FIELD_ENCRYPTION.md](./FIELD_ENCRYPTION.md).
+
 ### Key conventions
 
 | Field | Value |

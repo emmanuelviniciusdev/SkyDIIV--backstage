@@ -23,8 +23,8 @@ sequenceDiagram
   participant R as robot-scrape-products
   participant OB as worker-outbox-events
   participant AI as worker-ai-workflows
-  participant DB as Neon
-  participant LLM as Gemini
+  participant DB as Database
+  participant LLM as LLM
   participant Redis as web Redis
 
   R->>OB: outbox analyze-scraped-products-results
@@ -89,7 +89,9 @@ Runs only when at least one new `scraped_products` row is ready to insert:
 | `results_search_terms_scraped_products` (`is_processed = false`) | Input listings for the prompt |
 | `search_terms_scraped_products` | Joined for `json_search` and marketplace |
 | `scraped_products` | Replaced only when new rows are inserted. Each new row stores `result_search_term_scraped_product_id` pointing at its source result (unique; nullable only for legacy rows the web app still lists) |
-| `llm_interactions` | Audit of the analyze prompt |
+| `llm_interactions` | Audit of the analyze prompt. `prompt` and `response` are ciphertext at rest |
+| `wardrobe_panorama` | `content` is decrypted before the prompt |
+| `weekly_outfit_preferences` | `location` and `routine_description` are decrypted before the prompt |
 | `shopping-suggestions:{userId}` | Web list cache — deleted after a successful swap |
 | `notification:new-shopping-suggestions:{userId}` | Unread flag — set after a successful swap |
 

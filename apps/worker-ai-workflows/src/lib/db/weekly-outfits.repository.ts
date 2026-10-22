@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto"
 import type postgres from "postgres"
+import { createListedRowOpener, sealListedFields } from "../field-encryption/open-seal"
 import { createLogger } from "../logger"
 import type { DayWeatherInfo } from "../i18n/weather/formatters"
 import {
@@ -198,10 +199,44 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
   }
 
   async updateOutfitImageUrl(outfitId: string, imageUrl: string): Promise<void> {
+    const rows = await this.writeDb<{
+      id: string
+      image_url: string | null
+      dek: string | null
+      kek_version: number | null
+      encrypted_columns: string[] | null
+    }[]>`
+      SELECT id, image_url, dek, kek_version, encrypted_columns
+      FROM outfits
+      WHERE id = ${outfitId}
+      LIMIT 1
+    `
+    const row = rows[0]
+    if (!row) return
+
+    const open = createListedRowOpener()
+    await open({
+      model: "Outfit",
+      rowId: row.id,
+      values: { imageUrl: row.image_url },
+      dek: row.dek,
+      kekVersion: row.kek_version,
+      encryptedColumns: row.encrypted_columns,
+    })
+    const sealed = await sealListedFields({
+      model: "Outfit",
+      rowId: row.id,
+      values: { imageUrl },
+    })
     const now = new Date()
     await this.writeDb`
       UPDATE outfits
-      SET image_url = ${imageUrl}, updated_at = ${now}, updated_by = ${CREATED_BY}
+      SET image_url = ${sealed.values.imageUrl},
+          dek = ${sealed.dek},
+          kek_version = ${sealed.kekVersion},
+          encrypted_columns = ${sealed.encryptedColumns},
+          updated_at = ${now},
+          updated_by = ${CREATED_BY}
       WHERE id = ${outfitId}
     `
   }

@@ -1,4 +1,5 @@
 import type postgres from "postgres"
+import { createListedRowOpener } from "../field-encryption/open-seal"
 
 export interface FeedbackAutomaticThriftingRow {
   id: string
@@ -27,15 +28,21 @@ interface FeedbackRow {
   json_result: unknown
   json_listed_product: unknown
   created_at: Date
+  dek: string | null
+  kek_version: number | null
+  encrypted_columns: string[] | null
 }
 
-function mapRow(row: FeedbackRow): FeedbackAutomaticThriftingRow {
+function mapRow(
+  row: FeedbackRow,
+  reason: string | null,
+): FeedbackAutomaticThriftingRow {
   return {
     id: row.id,
     userId: row.user_id,
     scrapedProductId: row.scraped_product_id,
     liked: row.liked,
-    reason: row.reason,
+    reason,
     jsonSearch: row.json_search,
     jsonResult: row.json_result,
     jsonListedProduct: row.json_listed_product,
@@ -71,12 +78,26 @@ export class SqlFeedbacksAutomaticThriftingRepository
         json_search,
         json_result,
         json_listed_product,
-        created_at
+        created_at,
+        dek,
+        kek_version,
+        encrypted_columns
       FROM feedbacks_automatic_thrifting
       WHERE user_id = ${userId}
       ORDER BY created_at DESC, id DESC
       LIMIT ${maxEntries}
     `
-    return rows.map(mapRow)
+    const open = createListedRowOpener()
+    return Promise.all(rows.map(async (row) => {
+      const opened = await open({
+        model: "FeedbackAutomaticThrifting",
+        rowId: row.id,
+        values: { reason: row.reason },
+        dek: row.dek,
+        kekVersion: row.kek_version,
+        encryptedColumns: row.encrypted_columns,
+      })
+      return mapRow(row, opened.reason ?? null)
+    }))
   }
 }

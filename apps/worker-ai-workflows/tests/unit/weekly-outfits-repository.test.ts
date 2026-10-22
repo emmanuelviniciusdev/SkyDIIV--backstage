@@ -352,6 +352,25 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     )
   })
 
+  it("inserts outfits with a plaintext title and leaves dek null while image_url is null", async () => {
+    const { db: writeDb, tx } = makeWriteDb([])
+    const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
+    await repo.saveWeeklyOutfits(BASE_INPUT)
+
+    const insertCall = tx.mock.calls.find((call) => {
+      const first = call[0]
+      return (
+        Array.isArray(first) &&
+        (first as string[]).some((part) => typeof part === "string" && /insert into outfits/i.test(part))
+      )
+    })
+    expect(insertCall).toBeDefined()
+    const sql = (insertCall![0] as string[]).join(" ")
+    expect(sql).not.toMatch(/dek/i)
+    expect(sql).not.toMatch(/encrypted_columns/i)
+    expect(getInterpolatedValues(tx)).toContain("Weekly AI Outfit — Sunday")
+  })
+
   it("returns an empty array when all suggestions are skipped", async () => {
     const { db: writeDb } = makeWriteDb([])
     const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
@@ -366,15 +385,39 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
 })
 
 describe("SqlWeeklyOutfitsRepository.updateOutfitImageUrl()", () => {
-  it("updates outfits.image_url for the given outfit id", async () => {
-    const { db: writeDb } = makeWriteDb([])
+  it("seals image_url, persists the envelope, and leaves title plaintext", async () => {
+    delete process.env.DEPLOYMENT_ENVIRONMENT
+    const writeDb = vi.fn().mockImplementation((first: unknown) => {
+      if (
+        Array.isArray(first) &&
+        (first as string[]).some((part) => typeof part === "string" && /select/i.test(part))
+      ) {
+        return Promise.resolve([
+          {
+            id: "outfit-1",
+            image_url: null,
+            dek: null,
+            kek_version: null,
+            encrypted_columns: [],
+          },
+        ])
+      }
+      return Promise.resolve([])
+    }) as unknown as postgres.Sql
     const writeMock = writeDb as unknown as ReturnType<typeof vi.fn>
     const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
 
     await repo.updateOutfitImageUrl("outfit-1", "https://r2.example.com/outfits/outfit-1.png")
 
-    expect(getSqlStrings(writeMock).some((s) => /update outfits/i.test(s))).toBe(true)
-    expect(getInterpolatedValues(writeMock)).toContain("https://r2.example.com/outfits/outfit-1.png")
-    expect(getInterpolatedValues(writeMock)).toContain("outfit-1")
+    const sql = getSqlStrings(writeMock).join(" ")
+    expect(sql).toMatch(/update outfits/i)
+    expect(sql).toMatch(/dek/)
+    expect(sql).toMatch(/kek_version/)
+    expect(sql).toMatch(/encrypted_columns/)
+    expect(sql).not.toMatch(/title/i)
+    const values = getInterpolatedValues(writeMock)
+    expect(values).not.toContain("https://r2.example.com/outfits/outfit-1.png")
+    expect(values).toContain("outfit-1")
+    expect(values).toContainEqual(["image_url"])
   })
 })

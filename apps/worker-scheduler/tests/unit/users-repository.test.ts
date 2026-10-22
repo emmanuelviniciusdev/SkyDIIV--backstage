@@ -35,5 +35,27 @@ describe("SqlUsersRepository", () => {
 
       expect(result).toEqual([])
     })
+
+    it("selects sealed complete rows and excludes sealed or legacy rows that are not opted in", async () => {
+      const mockDb = vi.fn().mockImplementation(() => Promise.resolve([{ user_id: "sealed-user" }]))
+      const repo = new SqlUsersRepository(mockDb as never)
+
+      const result = await repo.findUsersWithOutfitPreferences()
+
+      expect(result).toEqual([{ userId: "sealed-user" }])
+      const sql = mockDb.mock.calls
+        .flatMap((call) => {
+          const first = call[0]
+          if (Array.isArray(first)) return first.filter((part): part is string => typeof part === "string")
+          return []
+        })
+        .join(" ")
+      expect(sql).toContain("dek IS NULL")
+      expect(sql).toContain("location <> ''")
+      expect(sql).toContain("routine_description <> ''")
+      expect(sql).toContain("dek IS NOT NULL")
+      expect(sql).toContain("encrypted_columns @> ARRAY['location', 'routine_description']::text[]")
+      expect(sql).not.toMatch(/decrypt/i)
+    })
   })
 })
