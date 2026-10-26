@@ -35,7 +35,7 @@ There is no `ENCRYPTION_KEY_SOURCE` switch.
 
 Key-database query: `SELECT kek, kek_version, lookup_key, lookup_key_version FROM encryption_keys`. Current keys are the highest `kek_version`, then the highest `lookup_key_version`. Reads use `kek_version` on the row.
 
-The worker may cache those JSON rows in the cache at `encryption:database-keys` for 3600 seconds, using `src/lib/cache/redis.ts`. That key is not a product-cache key. A removed KEK can stay cached for up to one hour.
+The worker does not cache those keys in Redis. Each load queries D1.
 
 Worker secrets (GitHub Environments `staging` and `production`, `wrangler secret bulk`, never `[vars]`):
 

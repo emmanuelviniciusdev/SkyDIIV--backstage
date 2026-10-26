@@ -1,4 +1,3 @@
-import { getRedisJson, setRedisJson } from "../cache/redis"
 import { decodeAesKey, FieldEncryptionError } from "./field-encryption"
 import {
   LOCAL_ENCRYPTION_KEY_VERSION,
@@ -7,8 +6,6 @@ import {
   useLocalEncryptionKeys,
 } from "./local-encryption-keys"
 
-const KEY_CACHE_REDIS_KEY = "encryption:database-keys"
-const KEY_CACHE_TTL_SECONDS = 60 * 60
 const D1_QUERY =
   "SELECT kek, kek_version, lookup_key, lookup_key_version FROM encryption_keys"
 
@@ -30,8 +27,6 @@ type KeyRow = {
 
 type KekStoreDeps = {
   fetchImpl?: typeof fetch
-  readCache?: (key: string) => Promise<unknown>
-  writeCache?: (key: string, value: unknown, ttlSeconds: number) => Promise<void>
   env?: NodeJS.ProcessEnv
 }
 
@@ -39,7 +34,7 @@ export type EncryptionKeyAdapter = {
   loadEncryptionKeys(): Promise<EncryptionKeys>
 }
 
-/** Local development and tests. Returns fixed keys and does not call Redis or Cloudflare. */
+/** Local development and tests. Returns fixed keys and does not call Cloudflare. */
 export function createLocalEncryptionKeyAdapter(): EncryptionKeyAdapter {
   const material = toKeyMaterial([
     {
@@ -56,30 +51,15 @@ export function createLocalEncryptionKeyAdapter(): EncryptionKeyAdapter {
   }
 }
 
-/** Production and staging. Reads `encryption_keys` from Cloudflare D1, with a one-hour Redis cache. */
+/** Production and staging. Reads `encryption_keys` from Cloudflare D1 on each load. */
 export function createD1EncryptionKeyAdapter(deps: KekStoreDeps = {}): EncryptionKeyAdapter {
   const fetchImpl = deps.fetchImpl ?? fetch
-  const readCache = deps.readCache ?? ((key: string) => getRedisJson<unknown>(key))
-  const writeCache =
-    deps.writeCache ??
-    (async (key: string, value: unknown, ttlSeconds: number) => {
-      await setRedisJson(key, value, ttlSeconds)
-    })
   const env = deps.env ?? process.env
 
   return {
     async loadEncryptionKeys(): Promise<EncryptionKeys> {
-      const cached = await readCachedKeys(readCache)
-      if (cached) return toKeyMaterial(cached)
-
       const rows = await queryKeyDatabase(fetchImpl, env)
-      const material = toKeyMaterial(rows)
-      try {
-        await writeCache(KEY_CACHE_REDIS_KEY, rows, KEY_CACHE_TTL_SECONDS)
-      } catch (error) {
-        if (error instanceof FieldEncryptionError) throw error
-      }
-      return material
+      return toKeyMaterial(rows)
     },
   }
 }
@@ -92,22 +72,6 @@ export function createKekStore(deps: KekStoreDeps = {}): EncryptionKeyAdapter {
 
 export function loadEncryptionKeys(): Promise<EncryptionKeys> {
   return createKekStore().loadEncryptionKeys()
-}
-
-export const ENCRYPTION_KEY_CACHE_TTL_SECONDS = KEY_CACHE_TTL_SECONDS
-export const ENCRYPTION_KEY_CACHE_REDIS_KEY = KEY_CACHE_REDIS_KEY
-
-async function readCachedKeys(
-  readCache: (key: string) => Promise<unknown>,
-): Promise<KeyRow[] | null> {
-  try {
-    const cached = await readCache(KEY_CACHE_REDIS_KEY)
-    if (cached == null) return null
-    return parseKeyRows(cached)
-  } catch (error) {
-    if (error instanceof FieldEncryptionError) throw error
-    return null
-  }
 }
 
 async function queryKeyDatabase(

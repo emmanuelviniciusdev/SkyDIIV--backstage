@@ -12,7 +12,7 @@ Keep language sync translating plaintext panorama markdown while storing sealed 
 
 `weekly_outfits.weather_summary` and `weekly_outfits.description_temperature` MUST stay plaintext.
 
-Each write of a listed column MUST persist `dek`, `kek_version`, and `encrypted_columns` on that row. `encrypted_columns` MUST name exactly the sealed columns on that row that currently hold ciphertext. Null sealed values MUST stay null and MUST be omitted from `encrypted_columns`. The key-encryption key MUST be read from the key database `skydiiv--production`, table `encryption_keys`. The worker MAY cache keys in Redis under `encryption:database-keys` with a 1-hour TTL.
+Each write of a listed column MUST persist `dek`, `kek_version`, and `encrypted_columns` on that row. `encrypted_columns` MUST name exactly the sealed columns on that row that currently hold ciphertext. Null sealed values MUST stay null and MUST be omitted from `encrypted_columns`. The key-encryption key MUST be read from the key database `skydiiv--production`, table `encryption_keys`. The worker MUST NOT cache keys in Redis.
 
 The envelope MUST match SkyDIIV web: AES-256-GCM, per-row DEK, standard base64 of 12-byte nonce || ciphertext || 16-byte tag, field AAD of table + NUL + column + NUL + row id, DEK wrap with no AAD. The row id MUST be known before encrypting.
 
@@ -57,13 +57,14 @@ A `wardrobe_panorama` row whose `dek` is null MUST be treated as legacy plaintex
 
 ### Requirement: Key source follows the worker environment
 
-The worker MUST choose the key store from `DEPLOYMENT_ENVIRONMENT`. When that value is `production` or `staging`, it MUST load keys from Cloudflare D1 (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_D1_ENCRYPTION_DATABASE_ID`, `CLOUDFLARE_D1_API_TOKEN`) and MAY cache them in Redis. When the value is `local` or unset, it MUST use the web local test vectors and MUST NOT call D1. The worker MUST NOT introduce a separate `ENCRYPTION_KEY_SOURCE` switch.
+The worker MUST choose the key store from `DEPLOYMENT_ENVIRONMENT`. When that value is `production` or `staging`, it MUST load keys from Cloudflare D1 (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_D1_ENCRYPTION_DATABASE_ID`, `CLOUDFLARE_D1_API_TOKEN`) and MUST NOT cache them in Redis. When the value is `local` or unset, it MUST use the web local test vectors and MUST NOT call D1. The worker MUST NOT introduce a separate `ENCRYPTION_KEY_SOURCE` switch.
 
 #### Scenario: Production loads keys from D1
 
 - **GIVEN** `DEPLOYMENT_ENVIRONMENT` is `production`
 - **WHEN** language sync seals or opens `wardrobe_panorama.content`
-- **THEN** keys are read from `encryption_keys` (or the Redis cache of that table)
+- **THEN** keys are read from `encryption_keys`
+- **AND** Redis is not used as a key cache
 - **AND** the local test vectors are not used
 
 #### Scenario: Local development uses fixed test vectors

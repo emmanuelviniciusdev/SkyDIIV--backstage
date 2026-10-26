@@ -170,7 +170,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `QSTASH_URL`, `QSTASH_TOKEN`, `QSTASH_*_SIGNING_KEY` | All workflows |
 | `WORKER_SYNC_URL` | All workflows + web app — worker origin (no path); web app appends `/sync/language` for QStash delivery |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | `sync-language` (LLM translation) |
-| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | `invalidate-cache` step and the encryption-key cache |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | `invalidate-cache` step |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_D1_ENCRYPTION_DATABASE_ID`, `CLOUDFLARE_D1_API_TOKEN` | Key database `encryption_keys` when `DEPLOYMENT_ENVIRONMENT` is `production` or `staging`. See [docs/FIELD_ENCRYPTION.md](./docs/FIELD_ENCRYPTION.md) |
 
 `WORKER_SYNC_URL` is shared between the web app (initial QStash delivery) and this worker (Upstash Workflow step callbacks via `serveMany` `baseUrl`).

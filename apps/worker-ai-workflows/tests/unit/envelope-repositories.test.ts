@@ -274,9 +274,6 @@ describe("sealed repository writes", () => {
       "CLOUDFLARE_ACCOUNT_ID",
       "CLOUDFLARE_D1_ENCRYPTION_DATABASE_ID",
       "CLOUDFLARE_D1_API_TOKEN",
-      "UPSTASH_REDIS_REST_URL",
-      "UPSTASH_REDIS_REST_TOKEN",
-      "REDIS_URL",
     ] as const
     const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]))
     try {
