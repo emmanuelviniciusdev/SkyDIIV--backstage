@@ -25,23 +25,23 @@ const PROMPT_PARTS = {
     "O panorama deve ser retornado em Markdown, usando ## para títulos de seção e negrito para destacar informações relevantes. Escreva em parágrafos corridos — sem listas, sem bullets. Use linguagem próxima, como se fosse um personal stylist falando diretamente com o usuário. Trate o usuário pelo nome informado abaixo quando apropriado.\n\nCubra exatamente estas seções, nesta ordem:",
 
   sectionBalance: `## equilíbrio do guarda-roupa
-Com base nas peças, seus tipos, subtipos e tags, identifique padrões de concentração e lacunas. Utilize o resumo por tipo para identificar proporções e desequilíbrios. Aponte o que parece estar em excesso e o que pode estar faltando para montar outfits completos. Se as preferências do usuário estiverem disponíveis, considere sua rotina e localização ao interpretar os dados.`,
+Com base nas peças, seus tipos, subtipos, cores e tamanhos, identifique padrões de concentração e lacunas. Utilize o resumo por tipo para identificar proporções e desequilíbrios. Aponte o que parece estar em excesso e o que pode estar faltando para montar outfits completos. Se as preferências do usuário estiverem disponíveis, considere sua rotina e localização ao interpretar os dados.`,
 
   sectionStyle: `## seu estilo
-Com base nos títulos, tipos, subtipos e tags das peças, descreva o estilo predominante do usuário em 2-3 frases. Se o usuário tiver descrito seu próprio estilo nas preferências, aponte convergências ou divergências interessantes entre o que ele descreveu e o que o guarda-roupa revela.`,
+Com base nos títulos, tipos, subtipos e cores das peças, descreva o estilo predominante do usuário em 2-3 frases. Se o usuário tiver descrito seu próprio estilo nas preferências, aponte convergências ou divergências interessantes entre o que ele descreveu e o que o guarda-roupa revela.`,
 
   sectionShopping: `## o que vale buscar
 Com base nos padrões identificados, sugira de 2 a 4 tipos de peça que complementariam o guarda-roupa. Se as preferências estiverem disponíveis, leve em conta a rotina e a localização do usuário. Seja específico: mencione o tipo de peça e o contexto de uso. Nunca sugira compras sem antes justificar a lacuna que preencheriam.`,
 
   important:
-    "Importante: use apenas os dados fornecidos. Os títulos e tags dos itens podem estar no idioma do usuário — não os traduza. Utilize os campos Tipo e Subtipo para categorizar as peças — esses valores estão sempre em inglês (en-US), independentemente do idioma do usuário. Se as preferências do usuário não estiverem definidas, faça a análise exclusivamente com base nos dados do guarda-roupa, sem especular sobre rotina ou estilo de vida.",
+    "Importante: use apenas os dados fornecidos. Os títulos dos itens podem estar no idioma do usuário — não os traduza. Utilize os campos Tipo, Subtipo, Cores e Tamanho para descrever as peças — esses valores de catálogo estão sempre em inglês (en-US), independentemente do idioma do usuário (ex.: Top, T-Shirt, Black, M). Se as preferências do usuário não estiverem definidas, faça a análise exclusivamente com base nos dados do guarda-roupa, sem especular sobre rotina ou estilo de vida.",
 
   userDataHeader: "DADOS DO USUÁRIO:",
   nameLabel: "Nome",
   preferencesHeader: "PREFERÊNCIAS DO USUÁRIO:",
   wardrobeHeader: "DADOS DO GUARDA-ROUPA:",
   wardrobeFormatNote:
-    "Tipo e Subtipo identificam a categoria e subcategoria de cada peça. Os valores estão sempre presentes e em inglês (en-US), independentemente do idioma do usuário (ex.: Top, Bottom, T-Shirt, Jeans). Os títulos e tags das peças podem estar em outros idiomas.",
+    "Tipo e Subtipo identificam a categoria e subcategoria de cada peça. Cores e Tamanho vêm do catálogo estruturado. Esses valores de catálogo estão sempre em inglês (en-US), independentemente do idioma do usuário (ex.: Top, Bottom, Black, Navy, M, 42). Os títulos das peças podem estar em outros idiomas.",
   summaryHeader: "RESUMO POR TIPO:",
   piecesHeader: "PEÇAS:",
 }
@@ -63,9 +63,10 @@ export function buildWardrobePanoramaPrompt(input: BuildWardrobePanoramaPromptIn
       ? input.wardrobe
           .map((item) => {
             const title = (item.title || "").replace(/\n/g, " ").trim() || fallbacks.noTitlePanorama
-            const tagsArr = Array.isArray(item.tags) ? item.tags : []
-            const tags = tagsArr.length > 0 ? tagsArr.join(", ") : fallbacks.noTagsPanorama
-            return `ID: ${item.id} Título: ${title}; Tipo: ${item.pieceType ?? ""}; Subtipo: ${item.pieceSubtype ?? ""}; Tags: ${tags}`
+            const colorsArr = Array.isArray(item.colors) ? item.colors : []
+            const colors = colorsArr.length > 0 ? colorsArr.join(", ") : fallbacks.noColors
+            const size = item.size?.trim() || fallbacks.noSize
+            return `ID: ${item.id} Título: ${title}; Tipo: ${item.pieceType ?? ""}; Subtipo: ${item.pieceSubtype ?? ""}; Cores: ${colors}; Tamanho: ${size}`
           })
           .join("\n")
       : fallbacks.noPieces

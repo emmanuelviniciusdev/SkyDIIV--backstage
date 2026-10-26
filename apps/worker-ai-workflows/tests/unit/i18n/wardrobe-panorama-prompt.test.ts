@@ -11,9 +11,9 @@ const PREFERENCES: UserPreferences = {
 }
 
 const WARDROBE: WardrobeItem[] = [
-  { id: "item-1", title: "Camisa blanca", imageUrl: null, tags: ["formal"], pieceType: "Top", pieceSubtype: "Shirt" },
-  { id: "item-2", title: "Jeans azul", imageUrl: null, tags: ["casual"], pieceType: "Bottom", pieceSubtype: "Jeans" },
-  { id: "item-3", title: "Camiseta branca", imageUrl: null, tags: ["casual"], pieceType: "Top", pieceSubtype: "T-Shirt" },
+  { id: "item-1", title: "Camisa blanca", imageUrl: null, colors: ["White"], size: "M", pieceType: "Top", pieceSubtype: "Shirt" },
+  { id: "item-2", title: "Jeans azul", imageUrl: null, colors: ["Blue"], size: "42", pieceType: "Bottom", pieceSubtype: "Jeans" },
+  { id: "item-3", title: "Camiseta branca", imageUrl: null, colors: ["White"], size: "P", pieceType: "Top", pieceSubtype: "T-Shirt" },
 ]
 
 describe("buildWardrobePanoramaPrompt()", () => {
@@ -85,8 +85,8 @@ describe("buildWardrobePanoramaPrompt()", () => {
       wardrobe: WARDROBE,
     })
 
-    expect(prompt).toContain("ID: item-1 Título: Camisa blanca; Tipo: Top; Subtipo: Shirt; Tags: formal")
-    expect(prompt).toContain("ID: item-2 Título: Jeans azul; Tipo: Bottom; Subtipo: Jeans; Tags: casual")
+    expect(prompt).toContain("ID: item-1 Título: Camisa blanca; Tipo: Top; Subtipo: Shirt; Cores: White; Tamanho: M")
+    expect(prompt).toContain("ID: item-2 Título: Jeans azul; Tipo: Bottom; Subtipo: Jeans; Cores: Blue; Tamanho: 42")
   })
 
   it("uses pt-BR preferences section labels", () => {
@@ -135,9 +135,23 @@ describe("buildWardrobePanoramaPrompt()", () => {
     expect(prompt).toContain("Nenhuma peça cadastrada.")
   })
 
+  it("uses 'sem cores' and 'sem tamanho' when a piece has no catalog colors or size", () => {
+    const wardrobe: WardrobeItem[] = [
+      { id: "x1", title: "Mystery Item", imageUrl: null, colors: [], size: null, pieceType: "Top", pieceSubtype: "T-Shirt" },
+    ]
+    const prompt = buildWardrobePanoramaPrompt({
+      locale: "pt-BR",
+      userName: "Ana",
+      preferences: null,
+      wardrobe,
+    })
+
+    expect(prompt).toContain("ID: x1 Título: Mystery Item; Tipo: Top; Subtipo: T-Shirt; Cores: sem cores; Tamanho: sem tamanho")
+  })
+
   it("item titles can be in user language — not translated by the prompt", () => {
     const wardrobe: WardrobeItem[] = [
-      { id: "x1", title: "White shirt", imageUrl: null, tags: ["formal"], pieceType: "Top", pieceSubtype: "Shirt" },
+      { id: "x1", title: "White shirt", imageUrl: null, colors: ["White"], size: "M", pieceType: "Top", pieceSubtype: "Shirt" },
     ]
     const prompt = buildWardrobePanoramaPrompt({
       locale: "en-US",

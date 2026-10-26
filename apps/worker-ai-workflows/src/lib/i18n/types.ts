@@ -12,13 +12,13 @@ export interface LocaleMessages {
     noWardrobe: string
     noPreferences: string
     noTitle: string
-    noTags: string
+    noColors: string
+    noSize: string
     userNameUnknown: string
     locationUndefined: string
     routineUndefined: string
     preferencesUndefined: string
     noPieces: string
     noTitlePanorama: string
-    noTagsPanorama: string
   }
 }

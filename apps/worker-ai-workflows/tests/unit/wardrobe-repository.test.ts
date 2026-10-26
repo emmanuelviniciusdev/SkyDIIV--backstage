@@ -7,13 +7,14 @@ function makeSqlMock(rows: unknown[] = []): postgres.Sql {
 }
 
 describe("SqlWardrobeRepository.findByUserId()", () => {
-  it("returns mapped WardrobeItem array with imageUrl and piece type fields", async () => {
+  it("returns mapped WardrobeItem array with imageUrl, colors, size, and piece type fields", async () => {
     const dbRows = [
       {
         id: "i1",
         title: "White Shirt",
         image_url: "https://r2.example.com/shirt.jpg",
-        tags: ["formal"],
+        colors: ["White"],
+        piece_size: "M",
         piece_type: "Top",
         piece_subtype: "Shirt",
       },
@@ -21,7 +22,8 @@ describe("SqlWardrobeRepository.findByUserId()", () => {
         id: "i2",
         title: "Black Jeans",
         image_url: null,
-        tags: ["casual", "denim"],
+        colors: ["Black", "Navy"],
+        piece_size: "42",
         piece_type: "Bottom",
         piece_subtype: "Jeans",
       },
@@ -36,7 +38,8 @@ describe("SqlWardrobeRepository.findByUserId()", () => {
         id: "i1",
         title: "White Shirt",
         imageUrl: "https://r2.example.com/shirt.jpg",
-        tags: ["formal"],
+        colors: ["White"],
+        size: "M",
         pieceType: "Top",
         pieceSubtype: "Shirt",
       },
@@ -44,7 +47,8 @@ describe("SqlWardrobeRepository.findByUserId()", () => {
         id: "i2",
         title: "Black Jeans",
         imageUrl: null,
-        tags: ["casual", "denim"],
+        colors: ["Black", "Navy"],
+        size: "42",
         pieceType: "Bottom",
         pieceSubtype: "Jeans",
       },
@@ -57,13 +61,14 @@ describe("SqlWardrobeRepository.findByUserId()", () => {
     expect(await repo.findByUserId("user-empty")).toEqual([])
   })
 
-  it("maps items with an empty tags array correctly", async () => {
+  it("maps items with empty colors and null size correctly", async () => {
     const db = makeSqlMock([
-      { id: "i1", title: "Mystery Item", image_url: null, tags: [], piece_type: null, piece_subtype: null },
+      { id: "i1", title: "Mystery Item", image_url: null, colors: [], piece_size: null, piece_type: null, piece_subtype: null },
     ])
     const repo = new SqlWardrobeRepository(db)
     const item = (await repo.findByUserId("user-123"))[0]
-    expect(item.tags).toEqual([])
+    expect(item.colors).toEqual([])
+    expect(item.size).toBeNull()
     expect(item.imageUrl).toBeNull()
     expect(item.pieceType).toBeNull()
     expect(item.pieceSubtype).toBeNull()
@@ -71,7 +76,7 @@ describe("SqlWardrobeRepository.findByUserId()", () => {
 
   it("maps imageUrl to null when image_url column is null", async () => {
     const db = makeSqlMock([
-      { id: "i1", title: "No Image Item", image_url: null, tags: [], piece_type: null, piece_subtype: null },
+      { id: "i1", title: "No Image Item", image_url: null, colors: [], piece_size: null, piece_type: null, piece_subtype: null },
     ])
     const repo = new SqlWardrobeRepository(db)
     const result = await repo.findByUserId("user-123")
@@ -80,7 +85,7 @@ describe("SqlWardrobeRepository.findByUserId()", () => {
 
   it("maps imageUrl correctly when image_url column has a value", async () => {
     const url = "https://assets.skydiiv.com/items/shirt.jpg"
-    const db = makeSqlMock([{ id: "i1", title: "Shirt", image_url: url, tags: [], piece_type: null, piece_subtype: null }])
+    const db = makeSqlMock([{ id: "i1", title: "Shirt", image_url: url, colors: [], piece_size: null, piece_type: null, piece_subtype: null }])
     const repo = new SqlWardrobeRepository(db)
     const result = await repo.findByUserId("user-123")
     expect(result[0].imageUrl).toBe(url)
@@ -88,17 +93,18 @@ describe("SqlWardrobeRepository.findByUserId()", () => {
 
   it("maps pieceType and pieceSubtype from piece_type and piece_subtype columns", async () => {
     const db = makeSqlMock([
-      { id: "i1", title: "Blazer", image_url: null, tags: [], piece_type: "Outerwear", piece_subtype: "Blazer" },
+      { id: "i1", title: "Blazer", image_url: null, colors: [], piece_size: "G", piece_type: "Outerwear", piece_subtype: "Blazer" },
     ])
     const repo = new SqlWardrobeRepository(db)
     const result = await repo.findByUserId("user-123")
     expect(result[0].pieceType).toBe("Outerwear")
     expect(result[0].pieceSubtype).toBe("Blazer")
+    expect(result[0].size).toBe("G")
   })
 
   it("maps pieceType and pieceSubtype to null when columns are null", async () => {
     const db = makeSqlMock([
-      { id: "i1", title: "Unclassified Item", image_url: null, tags: [], piece_type: null, piece_subtype: null },
+      { id: "i1", title: "Unclassified Item", image_url: null, colors: [], piece_size: null, piece_type: null, piece_subtype: null },
     ])
     const repo = new SqlWardrobeRepository(db)
     const result = await repo.findByUserId("user-123")

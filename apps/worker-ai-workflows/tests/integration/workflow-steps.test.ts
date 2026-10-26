@@ -28,9 +28,9 @@ const mocks = vi.hoisted(() => {
   }
 
   const fakeWardrobeRows = [
-    { id: "item-1", title: "White T-Shirt", image_url: "https://r2.example.com/items/item-1.jpg", tags: ["casual", "summer"], piece_type: "Top", piece_subtype: "T-Shirt" },
-    { id: "item-2", title: "Black Jeans", image_url: "https://r2.example.com/items/item-2.jpg", tags: ["casual", "denim"], piece_type: "Bottom", piece_subtype: "Jeans" },
-    { id: "item-3", title: "Blue Sneakers", image_url: null, tags: ["shoes", "casual"], piece_type: "Footwear", piece_subtype: "Sneakers" },
+    { id: "item-1", title: "White T-Shirt", image_url: "https://r2.example.com/items/item-1.jpg", colors: ["White"], piece_size: "M", piece_type: "Top", piece_subtype: "T-Shirt" },
+    { id: "item-2", title: "Black Jeans", image_url: "https://r2.example.com/items/item-2.jpg", colors: ["Black"], piece_size: "42", piece_type: "Bottom", piece_subtype: "Jeans" },
+    { id: "item-3", title: "Blue Sneakers", image_url: null, colors: ["Blue"], piece_size: "40", piece_type: "Footwear", piece_subtype: "Sneakers" },
   ]
 
   const fakeForecast = {

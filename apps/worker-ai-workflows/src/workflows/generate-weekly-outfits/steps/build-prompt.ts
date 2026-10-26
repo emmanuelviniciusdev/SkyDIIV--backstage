@@ -42,7 +42,7 @@ function buildDayWeatherByWeekday(days: DailyWeather[], locale: Locale): Record<
  * Step 1 — Gathers all data needed to build the LLM prompt:
  *   - user locale (from app_preferences.language_id)
  *   - user preferences (location, routine description)
- *   - wardrobe items with tags
+ *   - wardrobe items with catalog colors and size
  *   - 7-day weather forecast for the user's location
  *
  * Throws if the user has no preferences or no wardrobe items.

@@ -4,9 +4,9 @@ import type { WardrobeItem } from "../../../src/lib/db/wardrobe.repository"
 import type { WeeklyForecast } from "../../../src/lib/weather/types"
 
 const WARDROBE: WardrobeItem[] = [
-  { id: "item-1", title: "White T-Shirt", imageUrl: null, tags: ["casual", "summer"], pieceType: "Top", pieceSubtype: "T-Shirt" },
-  { id: "item-2", title: "Black Jeans", imageUrl: null, tags: ["casual"], pieceType: "Bottom", pieceSubtype: "Jeans" },
-  { id: "item-3", title: "Blue Shirt", imageUrl: null, tags: ["formal"], pieceType: "Top", pieceSubtype: "Shirt" },
+  { id: "item-1", title: "White T-Shirt", imageUrl: null, colors: ["White"], size: "M", pieceType: "Top", pieceSubtype: "T-Shirt" },
+  { id: "item-2", title: "Black Jeans", imageUrl: null, colors: ["Black"], size: "42", pieceType: "Bottom", pieceSubtype: "Jeans" },
+  { id: "item-3", title: "Blue Shirt", imageUrl: null, colors: ["Blue"], size: "G", pieceType: "Top", pieceSubtype: "Shirt" },
 ]
 
 const FORECAST: WeeklyForecast = {
@@ -30,7 +30,8 @@ describe("buildWeeklyOutfitsPrompt()", () => {
       expect(prompt).toContain("TÍTULO:")
       expect(prompt).toContain("TIPO:")
       expect(prompt).toContain("SUBTIPO:")
-      expect(prompt).toContain("TAGS:")
+      expect(prompt).toContain("CORES:")
+      expect(prompt).toContain("TAMANHO:")
       expect(prompt).toContain("fornecidos em inglês (en-US)")
     }
   })
@@ -43,8 +44,8 @@ describe("buildWeeklyOutfitsPrompt()", () => {
       forecast: FORECAST,
     })
 
-    expect(prompt).toContain("ID:item-1 | TÍTULO:White T-Shirt | TIPO:Top | SUBTIPO:T-Shirt | TAGS:casual, summer")
-    expect(prompt).toContain("ID:item-2 | TÍTULO:Black Jeans | TIPO:Bottom | SUBTIPO:Jeans | TAGS:casual")
+    expect(prompt).toContain("ID:item-1 | TÍTULO:White T-Shirt | TIPO:Top | SUBTIPO:T-Shirt | CORES:White | TAMANHO:M")
+    expect(prompt).toContain("ID:item-2 | TÍTULO:Black Jeans | TIPO:Bottom | SUBTIPO:Jeans | CORES:Black | TAMANHO:42")
   })
 
   it("uses pt-BR wardrobe item format even for non-pt-BR locales", () => {
@@ -122,7 +123,7 @@ describe("buildWeeklyOutfitsPrompt()", () => {
 
   it("item titles can be in user language — not translated by the prompt", () => {
     const wardrobe: WardrobeItem[] = [
-      { id: "x1", title: "Camisa blanca", imageUrl: null, tags: ["formal"], pieceType: "Top", pieceSubtype: "Shirt" },
+      { id: "x1", title: "Camisa blanca", imageUrl: null, colors: ["White"], size: "M", pieceType: "Top", pieceSubtype: "Shirt" },
     ]
     const prompt = buildWeeklyOutfitsPrompt({
       locale: "es-PE",

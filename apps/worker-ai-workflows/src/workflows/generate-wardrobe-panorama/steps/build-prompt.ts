@@ -9,7 +9,7 @@ export interface BuildPromptResult {
   userId: string
   locale: Locale
   prompt: string
-  wardrobeItems: { id: string; title: string; tags: string[] }[]
+  wardrobeItems: { id: string; title: string; colors: string[]; size: string | null }[]
   validClothingItemIds: string[]
 }
 
@@ -45,7 +45,7 @@ export async function buildPromptStep(userId: string): Promise<BuildPromptResult
     userId,
     locale,
     prompt,
-    wardrobeItems: wardrobe.map((i) => ({ id: i.id, title: i.title, tags: i.tags })),
+    wardrobeItems: wardrobe.map((i) => ({ id: i.id, title: i.title, colors: i.colors, size: i.size })),
     validClothingItemIds: wardrobe.map((i) => i.id),
   }
 }

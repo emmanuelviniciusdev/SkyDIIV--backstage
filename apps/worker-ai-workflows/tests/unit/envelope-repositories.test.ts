@@ -161,14 +161,15 @@ describe("sealed repository reads", () => {
     expect(sealed.encryptedColumns).not.toContain("bottom_size")
   })
 
-  it("decrypts clothing image urls and leaves title and tag names unchanged", async () => {
+  it("decrypts clothing image urls and leaves title, colors, and size unchanged", async () => {
     const sealed = seal("ClothingItem", "item-1", { imageUrl: "https://r2.example/shirt.jpg" })
     const db = makeSqlMock([
       {
         id: "item-1",
         title: "Linen shirt",
         image_url: sealed.values.imageUrl,
-        tags: ["linen"],
+        colors: ["Beige"],
+        piece_size: "M",
         piece_type: "Top",
         piece_subtype: "Shirt",
         dek: sealed.dek,
@@ -179,7 +180,8 @@ describe("sealed repository reads", () => {
     const [item] = await new SqlWardrobeRepository(db).findByUserId("user-1")
     expect(item?.imageUrl).toBe("https://r2.example/shirt.jpg")
     expect(item?.title).toBe("Linen shirt")
-    expect(item?.tags).toEqual(["linen"])
+    expect(item?.colors).toEqual(["Beige"])
+    expect(item?.size).toBe("M")
     expect(sealed.values.imageUrl).not.toBe("https://r2.example/shirt.jpg")
   })
 

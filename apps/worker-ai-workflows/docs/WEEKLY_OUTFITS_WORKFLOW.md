@@ -161,7 +161,7 @@ Loads all inputs needed for the language model call:
 |---|---|---|
 | User locale | `app_preferences` + `domains` | Resolved via `resolveUserLocale()`; used for weather_summary DB storage and locale-specific fallbacks |
 | User preferences | `weekly_outfit_preferences` | `location`, `routine_description` |
-| Wardrobe items | `clothing_items` + `tags` + `domains` | ID, title, tags, optional `image_url`, piece type and subtype (always present, values in en-US) |
+| Wardrobe items | `clothing_items` + `clothing_item_colors` + `domains` | ID, title, catalog colors, catalog size (`id_size`), optional `image_url`, piece type and subtype (type/subtype/colors/size always in en-US) |
 | Weather forecast | Weather API | 7 days from week start; geocoded from `location`; formatted in pt-BR for the prompt |
 
 **Parallel fetches:** locale, preferences, and wardrobe are loaded concurrently.
@@ -315,15 +315,15 @@ Value: {"updatedAt":"<ISO timestamp>"}
 **Builder:** `src/lib/prompt/builder.ts` → delegates to i18n  
 **Locale resolution:** `src/lib/i18n/resolve-user-locale.ts` (reads `app_preferences.language_id`)
 
-The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of the user's locale. Since the output is structured JSON (not natural-language prose), no output-language directive is needed. Item titles and tags may be in the user's language; types and subtypes are always in English (en-US).
+The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of the user's locale. Since the output is structured JSON (not natural-language prose), no output-language directive is needed. Item titles may be in the user's language; types, subtypes, catalog colors, and catalog sizes are always in English (en-US).
 
 ### Input sections
 
 1. **Guarda-roupa (wardrobe)** — one line per item, always in pt-BR format:
    ```
-   ID:{id} | TÍTULO:{title} | TIPO:{pieceType} | SUBTIPO:{pieceSubtype} | TAGS:{tag1, tag2, …}
+   ID:{id} | TÍTULO:{title} | TIPO:{pieceType} | SUBTIPO:{pieceSubtype} | CORES:{color1, color2, …} | TAMANHO:{size}
    ```
-   `TIPO` and `SUBTIPO` are always present and in English (en-US). `TÍTULO` and `TAGS` may be in the user's language.
+   `TIPO`, `SUBTIPO`, `CORES`, and `TAMANHO` are catalog domain names in English (en-US). `TÍTULO` may be in the user's language.
 2. **Resumo por tipo** — piece count grouped by type and subtype, sorted by frequency, e.g.:
    ```
    - Top: 8 peças → T-Shirt (5), Shirt (3)
@@ -339,8 +339,8 @@ The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of 
 - Use **only** IDs from the provided wardrobe
 - Use piece **type and subtype** (English en-US values) to build balanced outfits (e.g. pair a Bottom with a Top)
 - Use the **type summary** to ensure category balance across the week
-- Consider weather, tags, user preferences, and day-to-day variety
-- Do not translate or interpret item titles/tags
+- Consider weather, catalog colors, user preferences, and day-to-day variety
+- Do not translate or interpret item titles
 - Prioritize thermal comfort (cold/hot/rainy day heuristics)
 - Do not invent pieces or IDs
 
@@ -358,15 +358,15 @@ The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of 
 | `app_preferences` | Read | User language preference (`language_id`) |
 | `domains` | Read (join) | Language domain (`name`; `source` is always null for languages) |
 | `weekly_outfit_preferences` | Read | User location and style/routine description |
-| `clothing_items` | Read | Wardrobe items with titles, image URLs, and piece type/subtype FKs |
-| `clothing_item_tags` / `tags` | Read (join) | Tags describing each piece |
-| `domains` | Read (join) | Piece type and subtype names (`type = 'piece_type'` / `'piece_subtype'`) |
+| `clothing_items` | Read | Wardrobe items with titles, image URLs, `id_size`, and piece type/subtype FKs |
+| `clothing_item_colors` | Read (join) | Catalog colors attached to each piece (`color_id` → `piece_color` domain) |
+| `domains` | Read (join) | Piece type, subtype, color, and size names (`piece_type` / `piece_subtype` / `piece_color` / `piece_size`) |
 | `outfits` | Write | One AI-generated outfit per day; `image_url` updated in step 4 |
 | `outfit_items` | Write | Join table: outfit ↔ clothing item + creative-board layout columns |
 | `weekly_outfits` | Write | Links outfit to week/day with weather summary |
 | `llm_interactions` | Write | Audit log of every language model call |
 
-Reads of `weekly_outfit_preferences.location` / `routine_description`, `users` names, and `clothing_items.image_url` are decrypted before prompts, geocoding, and image fetches. `outfits.image_url` and `llm_interactions.prompt` / `response` are ciphertext at rest. `outfits.title`, `clothing_items.title`, `tags.name`, and `weekly_outfits.weather_summary` stay plaintext. Inserts leave `outfits.dek` null while `image_url` is null; the thumbnail update seals `image_url`. See [FIELD_ENCRYPTION.md](./FIELD_ENCRYPTION.md).
+Reads of `weekly_outfit_preferences.location` / `routine_description`, `users` names, and `clothing_items.image_url` are decrypted before prompts, geocoding, and image fetches. `outfits.image_url` and `llm_interactions.prompt` / `response` are ciphertext at rest. `outfits.title`, `clothing_items.title`, catalog color/size domain names, and `weekly_outfits.weather_summary` stay plaintext. Inserts leave `outfits.dek` null while `image_url` is null; the thumbnail update seals `image_url`. See [FIELD_ENCRYPTION.md](./FIELD_ENCRYPTION.md).
 
 ### Key conventions
 

@@ -14,8 +14,8 @@ const mocks = vi.hoisted(() => {
   }
 
   const fakeWardrobeRows = [
-    { id: "item-1", title: "Camisa branca", image_url: "https://r2.example.com/items/item-1.jpg", tags: ["formal", "white"], piece_type: "Top", piece_subtype: "Shirt" },
-    { id: "item-2", title: "Calça jeans", image_url: null, tags: ["casual", "denim"], piece_type: "Bottom", piece_subtype: "Jeans" },
+    { id: "item-1", title: "Camisa branca", image_url: "https://r2.example.com/items/item-1.jpg", colors: ["White"], piece_size: "M", piece_type: "Top", piece_subtype: "Shirt" },
+    { id: "item-2", title: "Calça jeans", image_url: null, colors: ["Blue"], piece_size: "42", piece_type: "Bottom", piece_subtype: "Jeans" },
   ]
 
   const fakeUserRow = {
@@ -101,8 +101,8 @@ describe("generate-wardrobe-panorama workflow steps", () => {
     expect(result.prompt).toContain("Top: 1 peça → Shirt (1)")
     expect(result.prompt).toContain("Bottom: 1 peça → Jeans (1)")
     expect(result.prompt).toContain("Total: 2 peças")
-    expect(result.prompt).toContain("ID: item-1 Título: Camisa branca; Tipo: Top; Subtipo: Shirt; Tags: formal, white")
-    expect(result.prompt).toContain("ID: item-2 Título: Calça jeans; Tipo: Bottom; Subtipo: Jeans; Tags: casual, denim")
+    expect(result.prompt).toContain("ID: item-1 Título: Camisa branca; Tipo: Top; Subtipo: Shirt; Cores: White; Tamanho: M")
+    expect(result.prompt).toContain("ID: item-2 Título: Calça jeans; Tipo: Bottom; Subtipo: Jeans; Cores: Blue; Tamanho: 42")
     expect(result.prompt).toContain("## o que vale buscar")
     expect(result.prompt).not.toContain("sizeCategory")
     expect(result.prompt).not.toContain("```json")

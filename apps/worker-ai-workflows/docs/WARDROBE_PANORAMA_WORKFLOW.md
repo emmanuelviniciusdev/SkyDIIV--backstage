@@ -197,7 +197,7 @@ Loads data and assembles the language model prompt via `buildWardrobePanoramaPro
 | User name | `users` | `preferred_name`, falling back to `first_name` + `last_name`; pt-BR fallback when missing |
 | Preferences | `weekly_outfit_preferences` | Optional — location and routine description |
 | Shopping preferences | `shopping_suggestions_preferences` | Optional — gender / top / bottom / foot sizes for scrape enrichment |
-| Wardrobe items | `clothing_items` + `tags` + `domains` | ID, title, tags, piece type and subtype per item (type/subtype always in en-US; title/tags in user's language) |
+| Wardrobe items | `clothing_items` + `clothing_item_colors` + `domains` | ID, title, catalog colors, catalog size (`id_size`), piece type and subtype per item (type/subtype/colors/size always in en-US; title in user's language) |
 
 **Parallel fetches:** locale, user profile, preferences, shopping preferences, and wardrobe are loaded concurrently.
 
@@ -328,7 +328,7 @@ Downstream: `worker-outbox-events` batch-publishes `{ event, payload }` to `CF_S
 
 **Source:** `src/lib/i18n/prompts/wardrobe-panorama.ts`
 
-The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of the user's locale. The model is instructed to respond in the user's language via an explicit output-language directive in the prompt intro. Item titles and tags may be in the user's language — the model is told not to translate them.
+The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of the user's locale. The model is instructed to respond in the user's language via an explicit output-language directive in the prompt intro. Item titles may be in the user's language — the model is told not to translate them. Catalog colors and sizes are always English (en-US) domain names.
 
 ### Output language directive
 
@@ -344,7 +344,7 @@ The prompt intro includes: `"Responda sempre em {languageName}."`, where `langua
 
 | Section | Content |
 |---|---|
-| `## equilíbrio do guarda-roupa` | Patterns, concentrations, and gaps based on pieces, types, subtypes, tags, and the summary |
+| `## equilíbrio do guarda-roupa` | Patterns, concentrations, and gaps based on pieces, types, subtypes, catalog colors, sizes, and the summary |
 | `## seu estilo` | Predominant style in 2–3 sentences; compare with user-stated preferences when available |
 | `## o que vale buscar` | 2–4 specific piece types that would complement the wardrobe, with justification |
 | Trailing ` ```json ` block | 2–5 objects: `{ searchTerm, brand, sizeCategory }` where `sizeCategory` is `top` \| `bottom` \| `foot` \| `none` |
@@ -354,7 +354,7 @@ The prompt intro includes: `"Responda sempre em {languageName}."`, where `langua
 1. **DADOS DO USUÁRIO** — preferred name (falls back to first + last name)
 2. **PREFERÊNCIAS DO USUÁRIO** — location and routine description (or `"não definidas"`)
 3. **DADOS DO GUARDA-ROUPA**:
-   - **Format note** — explains type/subtype are always in English (en-US); titles and tags may be in the user's language
+   - **Format note** — explains type/subtype/colors/size are always in English (en-US); titles may be in the user's language
    - **RESUMO POR TIPO** — piece count grouped by type and subtype, sorted by frequency, e.g.:
      ```
      - Top: 8 peças → T-Shirt (5), Shirt (3)
@@ -363,16 +363,16 @@ The prompt intro includes: `"Responda sempre em {languageName}."`, where `langua
      ```
    - **PEÇAS** — one line per item:
      ```
-     ID: {id} Título: {title}; Tipo: {pieceType}; Subtipo: {pieceSubtype}; Tags: {tags}
+     ID: {id} Título: {title}; Tipo: {pieceType}; Subtipo: {pieceSubtype}; Cores: {colors}; Tamanho: {size}
      ```
-     `Tipo` and `Subtipo` are always in English (en-US). `Título` and `Tags` reflect the user's language.
+     `Tipo`, `Subtipo`, `Cores`, and `Tamanho` are catalog domain names in English (en-US). `Título` reflects the user's language.
 
 ### Constraints
 
 - Use only the data provided
 - Use **Type / Subtype** fields (English en-US values) to categorize items
 - Use the type summary to identify wardrobe proportions and imbalances
-- Do not translate item titles or tags
+- Do not translate item titles
 - If preferences are undefined, analyze wardrobe data only
 - Address the user by name when appropriate
 - Respond in the user's language (as instructed in the prompt intro)
@@ -386,14 +386,14 @@ The prompt intro includes: `"Responda sempre em {languageName}."`, where `langua
 | `users` | Read | User's preferred name (fallback: first + last) for personalized prompt |
 | `weekly_outfit_preferences` | Read | Optional location and routine description |
 | `shopping_suggestions_preferences` | Read | Optional gender / size filters for scrape payload |
-| `clothing_items` | Read | Wardrobe items with titles, image URLs, and piece type/subtype FKs |
-| `clothing_item_tags` / `tags` | Read (join) | Tags describing each piece |
-| `domains` | Read (join) | Piece type and subtype names (`type = 'piece_type'` / `'piece_subtype'`) |
+| `clothing_items` | Read | Wardrobe items with titles, image URLs, `id_size`, and piece type/subtype FKs |
+| `clothing_item_colors` | Read (join) | Catalog colors attached to each piece (`color_id` → `piece_color` domain) |
+| `domains` | Read (join) | Piece type, subtype, color, and size names (`piece_type` / `piece_subtype` / `piece_color` / `piece_size`) |
 | `wardrobe_panorama` | Write | One markdown panorama per user (insert or update) |
 | `llm_interactions` | Write | Audit log of the language model call |
 | `outbox_events` | Write | PENDING `scrape-shopping-suggestions` for worker-outbox-events |
 
-`wardrobe_panorama.content` and `llm_interactions.prompt` / `response` are ciphertext at rest. Prompt inputs (`users` names, `weekly_outfit_preferences.location` / `routine_description`, `shopping_suggestions_preferences` sizes and gender, `clothing_items.image_url`) are decrypted before the LLM call. `clothing_items.title`, `tags.name`, and `outbox_events.payload` stay plaintext. See [FIELD_ENCRYPTION.md](./FIELD_ENCRYPTION.md).
+`wardrobe_panorama.content` and `llm_interactions.prompt` / `response` are ciphertext at rest. Prompt inputs (`users` names, `weekly_outfit_preferences.location` / `routine_description`, `shopping_suggestions_preferences` sizes and gender, `clothing_items.image_url`) are decrypted before the LLM call. `clothing_items.title`, catalog color/size domain names, and `outbox_events.payload` stay plaintext. See [FIELD_ENCRYPTION.md](./FIELD_ENCRYPTION.md).
 
 ### Key conventions
 
@@ -422,7 +422,8 @@ erDiagram
 
     clothing_items {
         string title
-        string tags "via join"
+        string colors "via clothing_item_colors"
+        string size "id_size domain name"
     }
 ```
 

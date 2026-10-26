@@ -4,7 +4,8 @@ import { createListedRowOpener } from "../field-encryption/open-seal"
 export interface WardrobeItem {
   id: string
   title: string
-  tags: string[]
+  colors: string[]
+  size: string | null
   imageUrl: string | null
   pieceType: string | null
   pieceSubtype: string | null
@@ -18,7 +19,8 @@ interface WardrobeRow {
   id: string
   title: string
   image_url: string | null
-  tags: string[]
+  colors: string[]
+  piece_size: string | null
   piece_type: string | null
   piece_subtype: string | null
   dek: string | null
@@ -40,17 +42,19 @@ export class SqlWardrobeRepository implements WardrobeRepository {
         ci.encrypted_columns,
         pt.name AS piece_type,
         ps.name AS piece_subtype,
+        sz.name AS piece_size,
         COALESCE(
-          ARRAY_AGG(t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL),
+          ARRAY_AGG(pc.name ORDER BY pc.name) FILTER (WHERE pc.name IS NOT NULL),
           '{}'::text[]
-        ) AS tags
+        ) AS colors
       FROM clothing_items ci
-      LEFT JOIN clothing_item_tags cit ON cit.clothing_item_id = ci.id
-      LEFT JOIN tags t ON t.id = cit.tag_id
+      LEFT JOIN clothing_item_colors cic ON cic.clothing_item_id = ci.id
+      LEFT JOIN domains pc ON pc.id = cic.color_id
       LEFT JOIN domains pt ON pt.id = ci.piece_type_id
       LEFT JOIN domains ps ON ps.id = ci.piece_subtype_id
+      LEFT JOIN domains sz ON sz.id = ci.id_size
       WHERE ci.user_id = ${userId}
-      GROUP BY ci.id, ci.title, ci.image_url, ci.dek, ci.kek_version, ci.encrypted_columns, pt.name, ps.name
+      GROUP BY ci.id, ci.title, ci.image_url, ci.dek, ci.kek_version, ci.encrypted_columns, pt.name, ps.name, sz.name
       ORDER BY ci.created_at ASC
     `
 
@@ -67,7 +71,8 @@ export class SqlWardrobeRepository implements WardrobeRepository {
       return {
         id: row.id,
         title: row.title,
-        tags: row.tags,
+        colors: row.colors,
+        size: row.piece_size,
         imageUrl: opened.imageUrl ?? null,
         pieceType: row.piece_type,
         pieceSubtype: row.piece_subtype,

@@ -16,9 +16,9 @@ Sua única responsabilidade é selecionar peças de roupa para cada dia da seman
 
 O guarda-roupa é fornecido como uma lista de strings no formato:
 
-ID:\${id} | TÍTULO:\${title} | TIPO:\${pieceType} | SUBTIPO:\${pieceSubtype} | TAGS:\${tags}
+ID:\${id} | TÍTULO:\${title} | TIPO:\${pieceType} | SUBTIPO:\${pieceSubtype} | CORES:\${colors} | TAMANHO:\${size}
 
-Os campos TIPO e SUBTIPO representam a categoria e subcategoria de cada peça (ex.: Top / T-Shirt, Bottom / Jeans). Esses valores estão sempre presentes e são fornecidos em inglês (en-US), independentemente do idioma do usuário. Os títulos e tags das peças podem estar em outros idiomas. As tags descrevem características adicionais da peça, incluindo estilo, ocasião, estação, temperatura adequada, cor, material ou qualquer outro atributo relevante.
+Os campos TIPO e SUBTIPO representam a categoria e subcategoria de cada peça (ex.: Top / T-Shirt, Bottom / Jeans). Esses valores estão sempre presentes e são fornecidos em inglês (en-US), independentemente do idioma do usuário. Os títulos das peças podem estar em outros idiomas. CORES e TAMANHO vêm do catálogo estruturado (nomes de domínio em en-US, ex.: Black, Navy, M, 42) e descrevem as cores catalogadas e o tamanho da peça.
 
 {wardrobe}
 
@@ -48,7 +48,7 @@ Ao selecionar as peças:
 * Considere as condições climáticas previstas para cada dia.
 * Utilize o tipo e subtipo das peças para garantir montagens equilibradas (ex.: incluir uma peça Bottom quando houver uma Top selecionada).
 * Utilize o resumo por tipo para garantir equilíbrio entre categorias de peças no conjunto da semana.
-* Utilize as tags das peças para determinar adequação climática e visual.
+* Utilize as cores das peças para determinar coerência visual.
 * Priorize conforto, funcionalidade e coerência entre as peças selecionadas.
 * Em dias frios, priorize peças associadas a frio, inverno ou proteção térmica.
 * Em dias quentes, priorize peças leves e adequadas para calor.
@@ -107,8 +107,9 @@ export function buildWeeklyOutfitsPrompt(input: BuildWeeklyOutfitsPromptInput): 
       ? input.wardrobe
           .map((item) => {
             const title = item.title.trim() || fallbacks.noTitle
-            const tags = item.tags.length > 0 ? item.tags.join(", ") : fallbacks.noTags
-            return `ID:${item.id} | TÍTULO:${title} | TIPO:${item.pieceType ?? ""} | SUBTIPO:${item.pieceSubtype ?? ""} | TAGS:${tags}`
+            const colors = item.colors.length > 0 ? item.colors.join(", ") : fallbacks.noColors
+            const size = item.size?.trim() || fallbacks.noSize
+            return `ID:${item.id} | TÍTULO:${title} | TIPO:${item.pieceType ?? ""} | SUBTIPO:${item.pieceSubtype ?? ""} | CORES:${colors} | TAMANHO:${size}`
           })
           .join("\n")
       : fallbacks.noWardrobe
