@@ -167,6 +167,25 @@ describe("dispatch", () => {
     expect(mockPublishBatchToCloudflareQueue).not.toHaveBeenCalled()
   })
 
+  it("publishes generate-weekly-outfits payload to worker-ai-workflows and does not call CF Queues", async () => {
+    mockPublishJSON.mockResolvedValueOnce({})
+    const payload = { userId: "user-7" }
+    const event = makeEvent({
+      event_name: OUTBOX_ROUTES.GENERATE_WEEKLY_OUTFITS_QSTASH.eventName,
+      broker_name: BROKER_NAMES.QSTASH,
+      payload,
+    })
+
+    await dispatch(event)
+
+    expect(mockPublishJSON).toHaveBeenCalledOnce()
+    expect(mockPublishJSON).toHaveBeenCalledWith({
+      url: "https://worker-ai-workflows.example.workers.dev/generate-weekly-outfits",
+      body: payload,
+    })
+    expect(mockPublishBatchToCloudflareQueue).not.toHaveBeenCalled()
+  })
+
   it("throws when WORKER_AI_WORKFLOWS_URL is not set for generate-search-terms", async () => {
     delete process.env.WORKER_AI_WORKFLOWS_URL
     const event = makeEvent({

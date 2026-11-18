@@ -224,7 +224,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Processing lock (or `REDIS_URL` as alternative) |
 | `WORKER_SYNC_URL` | Dispatch target for event `language-changed` (QStash) |
 | `WORKER_NOTIFICATION_URL` | Dispatch target for event `user-account-created` (QStash) |
-| `WORKER_AI_WORKFLOWS_URL` | Dispatch target for automatic-thrifting workflows (QStash). Origin only — no path. |
+| `WORKER_AI_WORKFLOWS_URL` | Dispatch target for automatic-thrifting and generate-weekly-outfits workflows (QStash). Origin only — no path. |
 | `CF_ACCOUNT_ID` | Cloudflare account for CF Queues publish |
 | `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` | Queue ID for `scrape-shopping-suggestions` |
 | `CF_QUEUES_API_TOKEN` | Token with Queues Edit (publish) |
@@ -236,6 +236,7 @@ Set via `wrangler secret put <KEY>` in production, or `.dev.vars` locally. See `
 {WORKER_NOTIFICATION_URL}/email--welcome
 {WORKER_AI_WORKFLOWS_URL}/generate-search-terms-products-scraping
 {WORKER_AI_WORKFLOWS_URL}/analyze-scraped-products-results
+{WORKER_AI_WORKFLOWS_URL}/generate-weekly-outfits
 ```
 
 `scrape-shopping-suggestions` batch-publishes `{ event, payload }` to `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` via `POST .../messages/batch`. That leftover route is unused by automatic thrifting; `robot-scrape-products` reads search terms from Postgres instead of draining CF Queues.

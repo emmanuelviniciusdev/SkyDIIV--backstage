@@ -47,6 +47,10 @@ export const OUTBOX_ROUTES = {
     eventName: "analyze-scraped-products-results",
     brokerName: BROKER_NAMES.QSTASH,
   },
+  GENERATE_WEEKLY_OUTFITS_QSTASH: {
+    eventName: "generate-weekly-outfits",
+    brokerName: BROKER_NAMES.QSTASH,
+  },
 } as const
 
 export type OutboxRoute = (typeof OUTBOX_ROUTES)[keyof typeof OUTBOX_ROUTES]
@@ -106,6 +110,15 @@ export async function dispatch(event: OutboxEventRow): Promise<void> {
     ): {
       const client = getQStashClient()
       const url = resolveWorkerAiWorkflowsUrl("/analyze-scraped-products-results")
+      await client.publishJSON({ url, body: event.payload })
+      break
+    }
+    case outboxRouteKey(
+      OUTBOX_ROUTES.GENERATE_WEEKLY_OUTFITS_QSTASH.eventName,
+      OUTBOX_ROUTES.GENERATE_WEEKLY_OUTFITS_QSTASH.brokerName,
+    ): {
+      const client = getQStashClient()
+      const url = resolveWorkerAiWorkflowsUrl("/generate-weekly-outfits")
       await client.publishJSON({ url, body: event.payload })
       break
     }

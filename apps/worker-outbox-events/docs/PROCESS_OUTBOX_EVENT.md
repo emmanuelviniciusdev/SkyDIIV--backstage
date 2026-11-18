@@ -194,6 +194,7 @@ Routing logic lives in `src/lib/dispatcher.ts`. The `dispatch()` function switch
 | `user-account-created` | `QStash` | `worker-notification` `POST /email--welcome` | QStash `publishJSON` | `WORKER_NOTIFICATION_URL` |
 | `generate-search-terms-products-scraping` | `QStash` | `worker-ai-workflows` `POST /generate-search-terms-products-scraping` | QStash `publishJSON` | `WORKER_AI_WORKFLOWS_URL` (origin only) |
 | `analyze-scraped-products-results` | `QStash` | `worker-ai-workflows` `POST /analyze-scraped-products-results` | QStash `publishJSON` | `WORKER_AI_WORKFLOWS_URL` (origin only) |
+| `generate-weekly-outfits` | `QStash` | `worker-ai-workflows` `POST /generate-weekly-outfits` | QStash `publishJSON` | `WORKER_AI_WORKFLOWS_URL` (origin only) |
 | `scrape-shopping-suggestions` | `CF Queues` | Queue `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID` (e.g. leftover `scrape-shopping-suggestions` rows) | CF Queues HTTP **batch** publish (`POST .../messages/batch`, `{ event, payload }`) | `CF_ACCOUNT_ID`, `CF_SCRAPE_SHOPP_SUGG_QUEUE_ID`, `CF_QUEUES_API_TOKEN` |
 
 Each CF Queues event publishes to its **own** queue ID env var (declared as `queueIdEnv` on the route in `OUTBOX_ROUTES`).
