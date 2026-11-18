@@ -75,6 +75,7 @@ export const generateWeeklyOutfitsWorkflow = createWorkflow<GenerateWeeklyOutfit
       return saveOutfitsStep({
         userId: promptData.userId,
         weeklyOutfitPreferencesId: promptData.weeklyOutfitPreferencesId,
+        location: promptData.location,
         weekStartDate: promptData.weekStartDate,
         suggestions,
         dayWeatherByWeekday: promptData.dayWeatherByWeekday,

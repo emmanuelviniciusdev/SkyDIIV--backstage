@@ -48,7 +48,54 @@ describe("field encryption", () => {
   it("maps only the columns that are sealed today", () => {
     expect(ENCRYPTED_MODELS.ClothingItem.fields.map((field) => field.column)).toEqual(["image_url"])
     expect(ENCRYPTED_MODELS.Outfit.fields.map((field) => field.column)).toEqual(["image_url"])
+    expect(ENCRYPTED_MODELS.WeeklyOutfit.fields.map((field) => field.column)).toEqual(["location"])
+    expect(ENCRYPTED_MODELS.WeeklyOutfit.lookup).toEqual([])
     expect(ENCRYPTED_MODELS.Tag).toBeUndefined()
+  })
+
+  it("encrypts weekly outfit location with that row dek", () => {
+    const location = "Campinas, São Paulo, Brasil"
+    const preferences = sealModelValues({
+      model: "WeeklyOutfitPreferences",
+      rowId: "prefs-1",
+      values: { location, routineDescription: "Office weekdays" },
+      kek,
+      kekVersion: 1,
+      lookupKey,
+    })
+    const day = sealModelValues({
+      model: "WeeklyOutfit",
+      rowId: "week-day-1",
+      values: { location },
+      kek,
+      kekVersion: 1,
+      lookupKey,
+    })
+
+    expect(day.dek).not.toBe(preferences.dek)
+    expect(day.values.location).not.toBe(location)
+    expect(day.values.location).not.toBe(preferences.values.location)
+    expect(day.encryptedColumns).toEqual(["location"])
+    expect(
+      openModelValues({
+        model: "WeeklyOutfit",
+        rowId: "week-day-1",
+        values: day.values,
+        dek: day.dek,
+        kek,
+        encryptedColumns: day.encryptedColumns,
+      }).location,
+    ).toBe(location)
+    expect(() =>
+      openModelValues({
+        model: "WeeklyOutfit",
+        rowId: "week-day-1",
+        values: day.values,
+        dek: preferences.dek,
+        kek,
+        encryptedColumns: day.encryptedColumns,
+      }),
+    ).toThrow(FieldEncryptionError)
   })
 
   it("leaves created_by and updated_by unsealed even when those values are passed in", () => {

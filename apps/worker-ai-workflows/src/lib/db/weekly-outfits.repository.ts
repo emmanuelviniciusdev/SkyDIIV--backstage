@@ -17,6 +17,8 @@ export interface OutfitSuggestion {
 export interface SaveWeeklyOutfitsInput {
   userId: string
   weeklyOutfitPreferencesId: string
+  /** Preferences location in effect for this run; snapshotted onto each weekly_outfits row. */
+  location: string
   /** Sunday of the target week in ISO format: "YYYY-MM-DD". */
   weekStartDate: string
   suggestions: OutfitSuggestion[]
@@ -84,13 +86,22 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
    * `rotation` is always persisted as 0 — CF Images does not apply rotation
    * when compositing thumbnails.
    * `outfits.image_url` is left NULL here — thumbnails are generated in a
-   * later workflow step.
+   * later workflow step. `weekly_outfits.location` is the preferences location
+   * at generation time, sealed with that weekly_outfits row’s own DEK.
    *
    * Returns refs for every outfit that was successfully inserted (including layout).
    */
   async saveWeeklyOutfits(input: SaveWeeklyOutfitsInput): Promise<SavedOutfitRef[]> {
-    const { userId, weeklyOutfitPreferencesId, weekStartDate, suggestions, dayWeatherByWeekday, pieceTypeById } =
-      input
+    const {
+      userId,
+      weeklyOutfitPreferencesId,
+      location,
+      weekStartDate,
+      suggestions,
+      dayWeatherByWeekday,
+      pieceTypeById,
+    } = input
+    const snapshotLocation = location === "" ? null : location
     const log = createLogger("weekly-outfits-repo", userId)
     const typeById = pieceTypeById ?? {}
 
@@ -167,17 +178,26 @@ export class SqlWeeklyOutfitsRepository implements WeeklyOutfitsRepository {
           `
         }
 
+        const weeklyOutfitId = randomUUID()
+        const sealedWeeklyOutfit = await sealListedFields({
+          model: "WeeklyOutfit",
+          rowId: weeklyOutfitId,
+          values: { location: snapshotLocation },
+        })
         await tx`
           INSERT INTO weekly_outfits (
             id, weekly_outfit_preferences_id, outfit_id,
             week_start_date, day_of_week, weather_summary, weather_code,
             min_temperature, max_temperature, unity_temperature, description_temperature,
+            location, dek, kek_version, encrypted_columns,
             created_by, updated_by, created_at, updated_at
           ) VALUES (
-            ${randomUUID()}, ${weeklyOutfitPreferencesId}, ${outfit.outfitId},
+            ${weeklyOutfitId}, ${weeklyOutfitPreferencesId}, ${outfit.outfitId},
             ${weekStartDate}::date, ${outfit.dayOfWeek}, ${outfit.weatherSummary}, ${outfit.dayWeather?.weatherCode ?? null},
             ${outfit.dayWeather?.minTemperature ?? null}, ${outfit.dayWeather?.maxTemperature ?? null},
             ${outfit.dayWeather?.unityTemperature ?? null}, ${outfit.dayWeather?.descriptionTemperature ?? null},
+            ${sealedWeeklyOutfit.values.location ?? null}, ${sealedWeeklyOutfit.dek},
+            ${sealedWeeklyOutfit.kekVersion}, ${sealedWeeklyOutfit.encryptedColumns},
             ${CREATED_BY}, ${CREATED_BY}, ${now}, ${now}
           )
         `

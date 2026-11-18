@@ -180,6 +180,7 @@ Loads all inputs needed for the language model call:
 | `locale` | Resolved user locale (`pt-BR`, `es-PE`, `en-US`) |
 | `prompt` | Full localized prompt string for the language model |
 | `weeklyOutfitPreferencesId` | FK for `weekly_outfits` inserts |
+| `location` | Preferences location in effect for this run; snapshotted onto each `weekly_outfits` row |
 | `weekStartDate` | Sunday ISO date (`YYYY-MM-DD`) |
 | `dayWeatherByWeekday` | Map of English weekday → structured weather data for the database (summary + temperature fields) |
 | `wardrobeImageMap` | clothing item ID → public image URL (pieces with images only); used by step 4 |
@@ -243,7 +244,7 @@ Persists outfit suggestions atomically and idempotently.
 |---|---|
 | `outfits` | `type = 'AI_GENERATED'`, title `Weekly AI Outfit — {Weekday}`, `created_by = 'worker-ai-workflows'` |
 | `outfit_items` | One row per selected clothing item + board layout columns |
-| `weekly_outfits` | Links outfit to preferences, week, day (`0`=Sun … `6`=Sat), weather summary, and temperature fields |
+| `weekly_outfits` | Links outfit to preferences, week, day (`0`=Sun … `6`=Sat), weather summary, temperature fields, and sealed generation-time `location` |
 
 Suggestions with unknown weekdays or zero clothing pieces after sanitization are skipped with a warning.
 
@@ -363,10 +364,10 @@ The prompt is **always written in Brazilian Portuguese (pt-BR)**, regardless of 
 | `domains` | Read (join) | Piece type, subtype, color, and size names (`piece_type` / `piece_subtype` / `piece_color` / `piece_size`) |
 | `outfits` | Write | One AI-generated outfit per day; `image_url` updated in step 4 |
 | `outfit_items` | Write | Join table: outfit ↔ clothing item + creative-board layout columns |
-| `weekly_outfits` | Write | Links outfit to week/day with weather summary |
+| `weekly_outfits` | Write | Links outfit to week/day with weather summary and sealed generation-time location |
 | `llm_interactions` | Write | Audit log of every language model call |
 
-Reads of `weekly_outfit_preferences.location` / `routine_description`, `users` names, and `clothing_items.image_url` are decrypted before prompts, geocoding, and image fetches. `outfits.image_url` and `llm_interactions.prompt` / `response` are ciphertext at rest. `outfits.title`, `clothing_items.title`, catalog color/size domain names, and `weekly_outfits.weather_summary` stay plaintext. Inserts leave `outfits.dek` null while `image_url` is null; the thumbnail update seals `image_url`. See [FIELD_ENCRYPTION.md](./FIELD_ENCRYPTION.md).
+Reads of `weekly_outfit_preferences.location` / `routine_description`, `users` names, and `clothing_items.image_url` are decrypted before prompts, geocoding, and image fetches. `outfits.image_url`, `weekly_outfits.location`, and `llm_interactions.prompt` / `response` are ciphertext at rest. `outfits.title`, `clothing_items.title`, catalog color/size domain names, and `weekly_outfits.weather_summary` stay plaintext. Inserts leave `outfits.dek` set while `image_url` is null; the thumbnail update seals `image_url`. Each `weekly_outfits` insert snapshots the current preferences location and seals it with that row’s own DEK. See [FIELD_ENCRYPTION.md](./FIELD_ENCRYPTION.md).
 
 ### Key conventions
 
@@ -383,6 +384,7 @@ Reads of `weekly_outfit_preferences.location` / `routine_description`, `users` n
 | `weekly_outfits.max_temperature` | Maximum daily temperature from the forecast (°C, raw float from Open-Meteo) |
 | `weekly_outfits.unity_temperature` | Temperature unit symbol (`°C`) |
 | `weekly_outfits.description_temperature` | Localized WMO weather code description, e.g. `"Céu limpo"` (pt-BR) |
+| `weekly_outfits.location` | Preferences location at generation time, same plaintext on every day of the week. Ciphertext under that row’s `dek`. Empty preference location is stored as `NULL`. |
 
 ### Entity relationship (simplified)
 
@@ -396,6 +398,7 @@ erDiagram
     weekly_outfits {
         date week_start_date
         int day_of_week
+        string location "sealed snapshot"
         string weather_summary "localized"
         int weather_code "WMO code"
         float min_temperature

@@ -174,6 +174,7 @@ describe("Step 1 — buildPromptStep()", () => {
 
     expect(result.userId).toBe(mocks.USER_ID)
     expect(result.weeklyOutfitPreferencesId).toBe(mocks.PREFERENCES_ID)
+    expect(result.location).toBe("Rio de Janeiro, Rio de Janeiro, Brasil")
     expect(result.weekStartDate).toBe(mocks.WEEK_START)
     expect(result.locale).toBe("pt-BR")
     expect(typeof result.prompt).toBe("string")
@@ -293,6 +294,7 @@ describe("Step 3 — saveOutfitsStep()", () => {
     const result = await saveOutfitsStep({
       userId: mocks.USER_ID,
       weeklyOutfitPreferencesId: mocks.PREFERENCES_ID,
+      location: "Rio de Janeiro, Rio de Janeiro, Brasil",
       weekStartDate: mocks.WEEK_START,
       suggestions,
       dayWeatherByWeekday: {
@@ -390,6 +392,7 @@ describe("Full pipeline (Step 1 → 2 → 3 → 4)", () => {
     const savedOutfits = await saveOutfitsStep({
       userId: promptData.userId,
       weeklyOutfitPreferencesId: promptData.weeklyOutfitPreferencesId,
+      location: promptData.location,
       weekStartDate: promptData.weekStartDate,
       suggestions,
       dayWeatherByWeekday: promptData.dayWeatherByWeekday,

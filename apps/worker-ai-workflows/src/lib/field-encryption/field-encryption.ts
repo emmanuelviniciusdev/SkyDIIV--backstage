@@ -125,6 +125,11 @@ export const ENCRYPTED_MODELS: Record<string, EncryptedModelSpec> = {
     ],
     lookup: [],
   },
+  WeeklyOutfit: {
+    table: "weekly_outfits",
+    fields: [{ prisma: "location", column: "location" }],
+    lookup: [],
+  },
 }
 
 export const ENVELOPE_PRISMA_FIELDS = [

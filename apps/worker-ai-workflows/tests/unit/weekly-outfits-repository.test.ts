@@ -92,6 +92,7 @@ const PIECE_TYPES = {
 const BASE_INPUT = {
   userId: "user-123",
   weeklyOutfitPreferencesId: "prefs-456",
+  location: "São Paulo, São Paulo, Brasil",
   weekStartDate: "2026-06-07",
   suggestions: [
     { weekday: "sunday", clothingPieceIds: ["item-1", "item-2"] },
@@ -262,6 +263,53 @@ describe("SqlWeeklyOutfitsRepository.saveWeeklyOutfits()", () => {
     expect(values).toContain(28.4)
     expect(values).toContain("°C")
     expect(values).toContain("Céu limpo")
+  })
+
+  it("seals weekly_outfits.location with that row's dek and leaves weather plaintext", async () => {
+    delete process.env.DEPLOYMENT_ENVIRONMENT
+    const { db: writeDb, tx } = makeWriteDb([])
+    const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
+
+    await repo.saveWeeklyOutfits(BASE_INPUT)
+
+    const weeklyInsert = tx.mock.calls.find((call) => {
+      const first = call[0]
+      return (
+        Array.isArray(first) &&
+        (first as string[]).some((part) => typeof part === "string" && /insert into weekly_outfits/i.test(part))
+      )
+    })
+    expect(weeklyInsert).toBeDefined()
+    const sql = (weeklyInsert![0] as string[]).join(" ")
+    expect(sql).toMatch(/location/)
+    expect(sql).toMatch(/dek/)
+    expect(sql).toMatch(/kek_version/)
+    expect(sql).toMatch(/encrypted_columns/)
+
+    const values = getInterpolatedValues(tx)
+    expect(values).not.toContain(BASE_INPUT.location)
+    expect(values).toContainEqual(["location"])
+    expect(values).toContain("Céu limpo, máx. 28°C / mín. 22°C, chuva: 10%")
+  })
+
+  it("stores null location and omits it from encrypted_columns when preferences location is empty", async () => {
+    delete process.env.DEPLOYMENT_ENVIRONMENT
+    const { db: writeDb, tx } = makeWriteDb([])
+    const repo = new SqlWeeklyOutfitsRepository(makeUnusedReadDb(), writeDb)
+
+    await repo.saveWeeklyOutfits({ ...BASE_INPUT, location: "" })
+
+    const weeklyInsert = tx.mock.calls.find((call) => {
+      const first = call[0]
+      return (
+        Array.isArray(first) &&
+        (first as string[]).some((part) => typeof part === "string" && /insert into weekly_outfits/i.test(part))
+      )
+    })
+    expect(weeklyInsert).toBeDefined()
+    const values = weeklyInsert!.slice(1)
+    expect(values[11]).toBeNull()
+    expect(values[14]).toEqual([])
   })
 
   it("skips suggestions with an unknown weekday", async () => {

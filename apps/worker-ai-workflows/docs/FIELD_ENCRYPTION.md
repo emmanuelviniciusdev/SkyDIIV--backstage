@@ -29,11 +29,12 @@ If the key store cannot supply the KEK version a write needs, the worker does no
 | `summaries_feedbacks_automatic_thrifting` | `summary` (including empty string) | Read and write |
 | `llm_interactions` | `prompt`, `client_prompt`, `response` | Write |
 | `outfits` | `image_url` | Write |
+| `weekly_outfits` | `location` | Write |
 | `wardrobe_panorama` | `content` | Read and write |
 
-`clothing_items.title`, `outfits.title`, `tags.name`, `outbox_events.payload`, `json_search`, `json_result`, `json_listed_product`, and `weekly_outfits.weather_summary` stay plaintext. `created_by` / `updated_by` stay plaintext on every table this worker writes; the value is the service name `worker-ai-workflows`. `created_by` / `updated_by` on `access_keys`, `domains`, `events`, and `outbox_events` also stay plaintext. `llm_interactions.client_prompt` is stored null here and is omitted from `encrypted_columns`. Historical emails in actor columns are rewritten to that email’s `email_lookup` HMAC by the provision/backfill script, not by this worker.
+`clothing_items.title`, `outfits.title`, `tags.name`, `outbox_events.payload`, `json_search`, `json_result`, `json_listed_product`, `weekly_outfits.weather_summary`, and `weekly_outfits.description_temperature` stay plaintext. `created_by` / `updated_by` stay plaintext on every table this worker writes; the value is the service name `worker-ai-workflows`. `created_by` / `updated_by` on `access_keys`, `domains`, `events`, and `outbox_events` also stay plaintext. `llm_interactions.client_prompt` is stored null here and is omitted from `encrypted_columns`. Historical emails in actor columns are rewritten to that email’s `email_lookup` HMAC by the provision/backfill script, not by this worker.
 
-Summary writes load the current row, seal the new text (a new DEK for the listed set), then `UPDATE`. The `outdated` / `updated_at` compare-and-swap stays in that `UPDATE`. Outfit inserts set `dek` while `image_url` is null and store the service name in actor columns; `updateOutfitImageUrl` seals `image_url` and leaves `title` and actor columns plaintext.
+Summary writes load the current row, seal the new text (a new DEK for the listed set), then `UPDATE`. The `outdated` / `updated_at` compare-and-swap stays in that `UPDATE`. Outfit inserts set `dek` while `image_url` is null and store the service name in actor columns; `updateOutfitImageUrl` seals `image_url` and leaves `title` and actor columns plaintext. Weekly-outfit inserts snapshot the current `weekly_outfit_preferences.location` onto every day row and seal it with that `weekly_outfits` row’s own DEK — not the preferences DEK. Empty preference location is stored as SQL `NULL` and omitted from `encrypted_columns`.
 
 ## Keys
 

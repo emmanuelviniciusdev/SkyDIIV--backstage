@@ -10,6 +10,8 @@ export type { SavedOutfitRef }
 export interface SaveOutfitsInput {
   userId: string
   weeklyOutfitPreferencesId: string
+  /** Preferences location at generation time; sealed on each weekly_outfits row. */
+  location: string
   weekStartDate: string
   suggestions: ParsedOutfitSuggestion[]
   dayWeatherByWeekday: Record<string, DayWeatherInfo>
@@ -61,6 +63,7 @@ export async function saveOutfitsStep(input: SaveOutfitsInput): Promise<SavedOut
   const savedOutfits = await repo.saveWeeklyOutfits({
     userId: input.userId,
     weeklyOutfitPreferencesId: input.weeklyOutfitPreferencesId,
+    location: input.location,
     weekStartDate: input.weekStartDate,
     suggestions: sanitisedSuggestions,
     dayWeatherByWeekday: input.dayWeatherByWeekday,

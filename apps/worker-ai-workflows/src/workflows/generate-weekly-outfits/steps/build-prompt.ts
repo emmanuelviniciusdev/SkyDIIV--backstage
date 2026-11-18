@@ -12,6 +12,8 @@ const ENGLISH_WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday"
 export interface BuildPromptResult {
   userId: string
   weeklyOutfitPreferencesId: string
+  /** Preferences location in effect for this run; snapshotted onto weekly_outfits. */
+  location: string
   weekStartDate: string
   locale: Locale
   prompt: string
@@ -123,6 +125,7 @@ export async function buildPromptStep(
   return {
     userId,
     weeklyOutfitPreferencesId: preferences.id,
+    location: preferences.location,
     weekStartDate,
     locale,
     prompt,
